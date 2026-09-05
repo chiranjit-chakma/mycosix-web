@@ -1,0 +1,14 @@
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    prefer_single_quotes: true
+    unnecessary_late: true
+
+analyzer:
+  errors:
+    use_key_in_widget_constructors: ignore
+    library_private_types_in_public_api: warning
+  exclude:
+    - build/**
+    - web/**

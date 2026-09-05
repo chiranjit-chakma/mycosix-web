@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <meta name="description" content="MYCOSIX MUSHROOMS — Fresh oyster mushrooms grown differently by six students. Farm-fresh, naturally good. Order on WhatsApp for delivery.">
+  <meta name="theme-color" content="#F5F1E8">
+  <meta property="og:title" content="MYCOSIX MUSHROOMS — Grown Different">
+  <meta property="og:description" content="Fresh oyster mushrooms. Fresh by Us. Naturally Good.">
+  <meta property="og:type" content="website">
+
+  <title>MYCOSIX MUSHROOMS — Grown Different</title>
+
+  <!-- Fonts: Fraunces + Manrope are bundled with the app (see pubspec.yaml);
+       no external font request leaves the device. -->
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="MYCOSIX">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <link rel="icon" type="image/png" href="favicon.png"/>
+  <link rel="manifest" href="manifest.json">
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #F5F1E8;
+    }
+    #mx-boot {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      background: #F5F1E8;
+      color: #2E332D;
+      font-family: 'Manrope', system-ui, sans-serif;
+      text-align: center;
+      z-index: 9999;
+      transition: opacity 0.45s ease;
+    }
+    #mx-boot .mark {
+      font-family: 'Fraunces', Georgia, serif;
+      font-size: 26px;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      color: #4A5D44;
+    }
+    #mx-boot .sub {
+      font-size: 12px;
+      letter-spacing: 0.42em;
+      text-transform: uppercase;
+      color: #8A7D6C;
+    }
+    #mx-boot .bar {
+      width: 132px;
+      height: 2px;
+      background: #E4DCCB;
+      overflow: hidden;
+    }
+    #mx-boot .bar i {
+      display: block;
+      width: 42%;
+      height: 100%;
+      background: #4A5D44;
+      animation: mxboot 1.1s ease-in-out infinite;
+    }
+    @keyframes mxboot {
+      0% { transform: translateX(-110%); }
+      55% { transform: translateX(160%); }
+      100% { transform: translateX(260%); }
+    }
+    #mx-boot.done { opacity: 0; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <div id="mx-boot" role="status" aria-label="Loading MYCOSIX MUSHROOMS">
+    <div class="mark">MYCOSIX</div>
+    <div class="sub">Mushrooms</div>
+    <div class="bar"><i></i></div>
+  </div>
+
+  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    // Hide the splash once Flutter takes over the page.
+    window.addEventListener('flutter-first-frame', function () {
+      var el = document.getElementById('mx-boot');
+      if (el) { el.classList.add('done'); }
+      setTimeout(function () { if (el && el.parentNode) el.parentNode.removeChild(el); }, 600);
+    });
+  </script>
+</body>
+</html>

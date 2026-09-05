@@ -1,0 +1,58 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // An administrator is anyone whose uid has a document in the `admins`
+    // collection. This is decided server-side by the rules engine on every
+    // request - never by a client-side flag.
+    function isAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Live site configuration (the single siteConfig/public document). The
+    // customer site reads it at startup for delivery settings; only admins
+    // (and the console / admin SDK) may change it.
+    match /siteConfig/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin() && docId == 'public';
+    }
+
+    // Product catalogue. The shop reads it; admins manage it. Customer carts
+    // never write here.
+    match /products/{productId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Orders are created ONLY by the trusted Cloud Function (admin SDK, which
+    // bypasses these rules). The browser cannot create, read, or delete an
+    // order; authorised admins may read orders and move them between statuses.
+    match /orders/{orderId} {
+      allow read, update: if isAdmin();
+      allow create: if false;
+      allow delete: if false;
+    }
+
+    // Admin grants. A signed-in user may read their own grant (so the app can
+    // learn who is an admin). Grants are provisioned by the project owner
+    // through the console or an admin SDK script - never by the app.
+    match /admins/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow create, update, delete: if false;
+    }
+
+    // Managed editorial + team records. Read and written by admins only; the
+    // public marketing site currently ships its own copy, so nothing here is
+    // exposed until a future section reads it on purpose.
+    match /team/{docId} {
+      allow read, create, update, delete: if isAdmin();
+    }
+    match /content/{docId} {
+      allow read, create, update, delete: if isAdmin();
+    }
+  }
+}
