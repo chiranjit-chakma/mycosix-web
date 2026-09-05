@@ -90,6 +90,21 @@ void main() {
       final exception = tester.takeException();
       expect(exception, isNull,
           reason: 'layout threw at $name ($w x $h): $exception');
+
+      // The hero fills the first viewport (clearance + hero art), so the
+      // section below it is NOT visible at load - it only appears on scroll.
+      final vh = tester.view.physicalSize.height / tester.view.devicePixelRatio;
+      final featuredTop = tester.getTopLeft(find.text('Featured Mushrooms')).dy;
+      expect(featuredTop, greaterThanOrEqualTo(vh - 1.0),
+          reason: 'section below hero should not peek into the first viewport '
+              'at $name (featured top=$featuredTop, viewport h=$vh)');
+
+      // All six grower avatars render on phones too (they wrap, not drop).
+      for (final name in ['Chandan', 'Hruday', 'Preetham', 'Jashwanth',
+          'Neha', 'Varshini']) {
+        expect(find.text(name), findsWidgets,
+            reason: 'grower "$name" should be present at $name viewport');
+      }
     });
   }
 }

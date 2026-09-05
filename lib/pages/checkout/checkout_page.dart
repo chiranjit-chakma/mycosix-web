@@ -215,6 +215,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
       _opening = false;
       _placed = order;
     });
+
+    // The cart has been turned into an order — empty it so the next order
+    // starts fresh. The success panel keeps showing because it keys on
+    // _placed, not on the cart contents.
+    try {
+      await cart.clear();
+    } catch (_) {
+      // Best-effort: a persistence failure must not undo an accepted order.
+    }
   }
 
   /// Maps the authoritative stored order into a [CustomerOrder] whose values
@@ -276,7 +285,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
       customerName: _name.text.trim(),
       phone: _phone.text.trim(),
       location: loc,
-      items: cart.lines,
+      items: List.of(cart.lines), // copy: the cart is cleared after handoff
       subtotal: cart.subtotal,
       deliveryFee: cart.deliveryFee,
       total: cart.total,
@@ -334,10 +343,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
             ),
           ),
           const SizedBox(height: 32),
-          if (cart.isEmpty)
-            _EmptyCheckout()
-          else if (_placed != null)
+          // _placed must win over cart.isEmpty: a placed order clears the cart
+          // but still needs to show its success panel.
+          if (_placed != null)
             _SuccessPanel(order: _placed!)
+          else if (cart.isEmpty)
+            _EmptyCheckout()
           else
             MxPage(
               child: Column(
@@ -862,9 +873,9 @@ class _SuccessPanel extends StatelessWidget {
               constraints: const BoxConstraints(maxWidth: 560),
               child: Text(
                 'We opened WhatsApp with your full order — items, location pin '
-                'and delivery details. Press Send there to place it, and we will '
-                'confirm on WhatsApp. Your cart is kept as a copy in case you '
-                'need to send it again.',
+                'and delivery details. Press Send there to place it, and we '
+                'will confirm on WhatsApp. Your cart has been cleared, ready '
+                'for your next order.',
                 textAlign: TextAlign.center,
                 style: MxType.bodySm(color: MxColors.charcoalSoft),
               ),
@@ -879,11 +890,6 @@ class _SuccessPanel extends StatelessWidget {
                   onPressed: () => Navigator.of(context).pushNamed(Routes.shop),
                   icon: const Icon(Icons.arrow_forward_rounded, size: 17),
                   label: const Text('Continue shopping'),
-                ),
-                TextButton.icon(
-                  onPressed: () => Navigator.of(context).pushNamed(Routes.cart),
-                  icon: const Icon(Icons.shopping_bag_outlined, size: 17),
-                  label: const Text('View cart'),
                 ),
               ],
             ),

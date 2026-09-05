@@ -103,9 +103,9 @@ class LocalProductRepository implements ProductRepository {
           'Sun-dried oyster slices with a deep, savoury umami. Rehydrate in warm '
           'water for 15 minutes and use anywhere you would use fresh mushrooms.',
       category: 'Dried',
-      image: 'assets/products/oyster_dried.jpg',
+      image: 'assets/products/oyster_dried.webp',
       gallery: [
-        'assets/products/oyster_dried.jpg',
+        'assets/products/oyster_dried.webp',
         'assets/products/oyster_bouquet.jpg',
       ],
       variant: 'Dried',
@@ -126,7 +126,7 @@ class LocalProductRepository implements ProductRepository {
       image: 'assets/products/oyster_powder.webp',
       gallery: [
         'assets/products/oyster_powder.webp',
-        'assets/products/oyster_dried.jpg',
+        'assets/products/oyster_dried.webp',
       ],
       variant: 'Dried',
       weight: '100 g',

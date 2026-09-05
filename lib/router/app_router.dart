@@ -75,6 +75,14 @@ class AppRouter {
       case Routes.admin:
         return fadeRoute(const AdminGate());
       default:
+        // A shared real-path product URL (/product/<id>) arrives with the whole
+        // path as the route name and no arguments, so it would fall through to
+        // home. Recover the id here so deep links open the product page.
+        final path = (settings.name ?? '').trim();
+        if (path.startsWith('${Routes.product}/')) {
+          final id = path.substring('${Routes.product}/'.length);
+          return fadeRoute(ProductPage(productId: id));
+        }
         return fadeRoute(const HomePage());
     }
   }

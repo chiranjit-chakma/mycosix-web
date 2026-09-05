@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../config/mx_colors.dart';
@@ -57,60 +59,92 @@ class _HeroSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
     final desktop = width >= 1024;
+    final clearance = _topClearance(context);
+    final vh = MediaQuery.of(context).size.height;
+
+    // The hero art fills the first viewport (clearance + hero >= viewport), so
+    // the section below it never peeks in at load on desktop or tall tablets.
+    // The generous cap only guards against pathological fullscreen heights.
+    final minH = desktop
+        ? math.min(math.max(600.0, vh - clearance), 1700.0)
+        : math.min(math.max(520.0, vh - clearance), 1700.0);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SizedBox(
-          height: _topClearance(context),
+          height: clearance,
           child: const ColoredBox(color: MxColors.cream),
         ),
-        Container(
-          width: double.infinity,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Color(0xFF16200F),
-                Color(0xFF1D2717),
-                Color(0xFF26331F),
-              ],
-            ),
-          ),
-          child: desktop
-              ? const _HeroBodyDesktop()
-              : const _HeroBodyCompact(),
-        ),
+        desktop
+            ? _HeroBodyDesktop(minHeight: minH)
+            : _HeroBodyCompact(minHeight: minH),
       ],
     );
   }
 }
 
-/// Desktop hero: a full-width two-column band - message on the left, a framed
-/// product visual on the right - so neither side is left as empty space.
-class _HeroBodyDesktop extends StatelessWidget {
-  const _HeroBodyDesktop();
+/// The dark hero art stack, shared by every breakpoint: the real grow-room
+/// photograph sits under a forest veil (so it reads as brand, not stock) with
+/// a stronger scrim on the copy side. The shell stretches to at least
+/// [minHeight] so the hero fills the first viewport.
+class _HeroShell extends StatelessWidget {
+  const _HeroShell({required this.minHeight, required this.child});
+
+  final double minHeight;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
-    final height = width >= 1440 ? 560.0 : (width >= 1280 ? 540.0 : 520.0);
-    return SizedBox(
-      height: height,
-      width: double.infinity,
-      child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: width >= 1440 ? 88 : 56),
-        child: Center(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const Flexible(
-                child: _HeroCopy(maxWidth: 560),
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF16200F),
+            Color(0xFF1D2717),
+            Color(0xFF26331F),
+          ],
+        ),
+      ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage('assets/images/hero.jpg'),
+            fit: BoxFit.cover,
+            opacity: 0.62,
+          ),
+        ),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0x9916200F),
+                Color(0x661D2717),
+                Color(0x8C26331F),
+              ],
+            ),
+          ),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [
+                  Color(0xB316200F),
+                  Color(0x5216200F),
+                  Color(0x0016200F),
+                ],
+                stops: [0.0, 0.55, 1.0],
               ),
-              const SizedBox(width: 40),
-              const _HeroVisual(),
-            ],
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: minHeight),
+              child: child,
+            ),
           ),
         ),
       ),
@@ -118,43 +152,88 @@ class _HeroBodyDesktop extends StatelessWidget {
   }
 }
 
-/// Tablet/phone hero: message stacked over a smaller product visual, sized to
-/// its content so no fixed-height void is left above or below.
-class _HeroBodyCompact extends StatelessWidget {
-  const _HeroBodyCompact();
+/// Desktop hero: the copy sits on the left and a framed product visual on the
+/// right, both vertically centred against the full first-viewport art so
+/// neither side reads as empty space.
+class _HeroBodyDesktop extends StatelessWidget {
+  const _HeroBodyDesktop({required this.minHeight});
+
+  final double minHeight;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 28, 20, 44),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
-          _HeroCopy(maxWidth: 560),
-          SizedBox(height: 30),
-          Center(child: _HeroVisual(compact: true)),
-        ],
+    final width = MediaQuery.of(context).size.width;
+    final hpad = width >= 1440 ? 88.0 : 56.0;
+    final avail = width - hpad * 2;
+    // The visual scales with the hero: as big as the remaining width allows
+    // (up to a sane cap), but never so tall it crowds the vertical rhythm.
+    final upper = math.min(760.0, math.max(340.0, minHeight - 150));
+    final side = math.min(math.max(avail * 0.46, 340.0), upper);
+    return _HeroShell(
+      minHeight: minHeight,
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: hpad, vertical: 36),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const Flexible(child: _HeroCopy()),
+            const SizedBox(width: 40),
+            _HeroVisual(side: side),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Tablet/phone hero: message and product visual stacked and centred against
+/// the first-viewport art, so the hero opens full-screen on phones.
+class _HeroBodyCompact extends StatelessWidget {
+  const _HeroBodyCompact({required this.minHeight});
+
+  final double minHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    return _HeroShell(
+      minHeight: minHeight,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 34, 20, 40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: const [
+            _HeroCopy(center: true),
+            SizedBox(height: 28),
+            _HeroVisual(compact: true),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _HeroCopy extends StatelessWidget {
-  const _HeroCopy({required this.maxWidth});
+  const _HeroCopy({this.center = false});
 
-  final double maxWidth;
+  /// Centres the message (phones/tablets); otherwise it sits on the start edge
+  /// (desktop) where the scrim is strongest.
+  final bool center;
 
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
     return ConstrainedBox(
-      constraints: BoxConstraints(maxWidth: maxWidth),
+      constraints: const BoxConstraints(maxWidth: 560),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment:
+            center ? CrossAxisAlignment.center : CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment:
+                center ? MainAxisAlignment.center : MainAxisAlignment.start,
             children: [
               Container(width: 34, height: 2, color: MxColors.glow),
               const SizedBox(width: 12),
@@ -167,17 +246,20 @@ class _HeroCopy extends StatelessWidget {
           const SizedBox(height: 18),
           Text(
             'GROWN\nDIFFERENT.',
+            textAlign: center ? TextAlign.center : TextAlign.start,
             style: MxType.display(width, color: Colors.white),
           ),
           const SizedBox(height: 16),
           Text(
             'Fresh by Us. Naturally Good.',
+            textAlign: center ? TextAlign.center : TextAlign.start,
             style: MxType.h3(color: MxColors.glowSoft),
           ),
           const SizedBox(height: 14),
           Text(
             'Six students growing more than mushrooms - building experience, '
             'learning, and a better future.',
+            textAlign: center ? TextAlign.center : TextAlign.start,
             style: MxType.body(
               width,
               color: Colors.white.withValues(alpha: 0.86),
@@ -185,6 +267,8 @@ class _HeroCopy extends StatelessWidget {
           ),
           const SizedBox(height: 28),
           Wrap(
+            alignment:
+                center ? WrapAlignment.center : WrapAlignment.start,
             spacing: 12,
             runSpacing: 12,
             children: [
@@ -208,25 +292,29 @@ class _HeroCopy extends StatelessWidget {
 }
 
 /// A rounded tile that frames the real mushroom cutout, giving the hero a
-/// composed focal point instead of an empty stretch of gradient.
+/// composed focal point instead of an empty stretch of art.
 class _HeroVisual extends StatelessWidget {
-  const _HeroVisual({this.compact = false});
+  const _HeroVisual({this.side, this.compact = false});
 
+  /// Explicit edge length on desktop (the caller sizes it to the hero);
+  /// otherwise a breakpoint-tuned size is chosen.
+  final double? side;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    final side = compact
-        ? (width < 430
-            ? 228.0
-            : (width >= 768 ? 320.0 : 284.0))
-        : (width >= 1440
-            ? 440.0
-            : (width >= 1280 ? 420.0 : 380.0));
+    final s = side ??
+        (compact
+            ? (width < 430
+                ? 236.0
+                : (width >= 768 ? 300.0 : 272.0))
+            : (width >= 1440
+                ? 440.0
+                : (width >= 1280 ? 420.0 : 380.0)));
     return Container(
-      width: side,
-      height: side,
+      width: s,
+      height: s,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(36),
         gradient: const RadialGradient(
@@ -259,8 +347,8 @@ class _HeroVisual extends StatelessWidget {
               top: -24,
               child: IgnorePointer(
                 child: Container(
-                  width: side * 0.62,
-                  height: side * 0.62,
+                  width: s * 0.62,
+                  height: s * 0.62,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: RadialGradient(
@@ -966,9 +1054,6 @@ class _TeamTeaserSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
-    final desktop = width >= 1024;
-
     return Container(
       color: MxColors.creamDeep.withValues(alpha: 0.45),
       child: MxPage(
@@ -983,17 +1068,20 @@ class _TeamTeaserSection extends StatelessWidget {
                   'six students, one grow room.',
             ),
             const SizedBox(height: 36),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
+            // A wrap so all six faces render on phones too (a fixed Row only
+            // fitted three on small screens).
+            Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 4,
+              runSpacing: 12,
+              children: const [
                 _Avatar(name: 'Chandan'),
                 _Avatar(name: 'Hruday'),
                 _Avatar(name: 'Preetham'),
-                if (desktop) ...[
-                  _Avatar(name: 'Jashwanth'),
-                  _Avatar(name: 'Neha'),
-                  _Avatar(name: 'Varshini'),
-                ],
+                _Avatar(name: 'Jashwanth'),
+                _Avatar(name: 'Neha'),
+                _Avatar(name: 'Varshini'),
               ],
             ),
             const SizedBox(height: 28),
