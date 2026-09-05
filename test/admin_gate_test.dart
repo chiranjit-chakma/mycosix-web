@@ -19,6 +19,10 @@ void main() {
     );
   }
 
+  // The owner phrase is intentionally never stored as a literal anywhere in
+  // the repository; the code points are the source of truth.
+  final secret = String.fromCharCodes(AdminAccessLock.secretCodePoints);
+
   group('AdminAccessLock', () {
     test('starts closed', () {
       final lock = AdminAccessLock();
@@ -31,18 +35,26 @@ void main() {
       expect(lock.isUnlocked, isFalse);
     });
 
-    test('accepts the access code and opens', () {
+    test('accepts the owner phrase and opens', () {
       final lock = AdminAccessLock();
-      expect(lock.tryUnlock(AdminAccessLock.accessCode), isTrue);
+      expect(lock.tryUnlock(secret), isTrue);
       expect(lock.isUnlocked, isTrue);
     });
 
     test('trims surrounding whitespace before comparing', () {
       final lock = AdminAccessLock();
+      expect(lock.tryUnlock('  $secret  '), isTrue);
+    });
+
+    test('matchesCode compares code points without a string literal', () {
+      expect(AdminAccessLock.matchesCode(secret), isTrue);
+      expect(AdminAccessLock.matchesCode('$secret '), isTrue);
+      expect(AdminAccessLock.matchesCode('$secret-x'), isFalse);
       expect(
-        lock.tryUnlock('  ${AdminAccessLock.accessCode}  '),
-        isTrue,
+        AdminAccessLock.matchesCode(secret.replaceFirst(secret[0], 'q')),
+        isFalse,
       );
+      expect(AdminAccessLock.matchesCode(secret.toUpperCase()), isFalse);
     });
   });
 

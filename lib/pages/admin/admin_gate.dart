@@ -4,16 +4,22 @@ import 'package:provider/provider.dart';
 import '../../config/mx_colors.dart';
 import '../../config/mx_type.dart';
 import '../../router/routes.dart';
+import '../../state/admin_reveal.dart';
 import '../../state/auth_controller.dart';
 import '../../widgets/brand.dart';
 import 'admin_access_lock.dart';
 import 'admin_scaffold.dart';
 
-/// Entry point for the admin area.
+/// Entry point for the hidden admin area.
 ///
-/// Behind the access-code door ([AdminAccessLock]) it decides - purely from
-/// [AuthController] state, never from a client flag - whether to show the
-/// sign-in form, an "account not authorised" notice, or the real dashboard.
+/// Nothing at /admin is visible until it is summoned: a signed-in
+/// administrator (persisted Firebase session) lands on the real gate body; a
+/// visitor who has long-pressed the wordmark sees the access-code door
+/// ([AdminAccessLock]); one who has typed the owner phrase goes straight to
+/// the sign-in page; and everyone else — including a direct /admin visit — is
+/// handed off to the public home route, so the admin page has no discoverable
+/// URL. All authorisation decisions come from [AuthController] state, never
+/// from a client flag.
 class AdminGate extends StatelessWidget {
   const AdminGate({super.key, this.lock});
 
@@ -23,11 +29,28 @@ class AdminGate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = lock ?? AdminAccessLock.shared;
-    return ValueListenableBuilder<bool>(
-      valueListenable: l.unlocked,
-      builder: (context, unlocked, _) {
-        if (!unlocked) return _AccessDoorView(lock: l);
-        return const _AdminGateBody();
+    final auth = context.watch<AuthController>();
+    return ListenableBuilder(
+      listenable: AdminReveal.shared,
+      builder: (context, _) {
+        // A persisted session always reaches the real gate body — an admin
+        // who is signed in never needs to summon anything.
+        if (auth.user != null) return const _AdminGateBody();
+        switch (AdminReveal.shared.stage) {
+          case AdminRevealStage.door:
+            return ValueListenableBuilder<bool>(
+              valueListenable: l.unlocked,
+              builder: (context, unlocked, _) =>
+                  unlocked ? const _AdminGateBody() : _AccessDoorView(lock: l),
+            );
+          case AdminRevealStage.signIn:
+            return const _AdminGateBody();
+          case AdminRevealStage.hidden:
+            // Not summoned: while auth is still restoring (persisted session
+            // check) show nothing; afterwards hand off to the public site.
+            if (auth.resolving) return const _CovertQuiet();
+            return const _CovertHandoff();
+        }
       },
     );
   }
@@ -579,6 +602,53 @@ class _LeaveButton extends StatelessWidget {
     return TextButton(
       onPressed: onPressed,
       child: const Text('Back to the site'),
+    );
+  }
+}
+
+/// Featureless cream page shown at /admin while a persisted session check is
+/// still running. Nothing advertises that a private area exists.
+class _CovertQuiet extends StatelessWidget {
+  const _CovertQuiet();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      backgroundColor: MxColors.cream,
+      body: SizedBox.shrink(),
+    );
+  }
+}
+
+/// Not summoned and not signed in: replace the /admin route with the public
+/// home route so a direct visit only ever lands on the normal site.
+class _CovertHandoff extends StatefulWidget {
+  const _CovertHandoff();
+
+  @override
+  State<_CovertHandoff> createState() => _CovertHandoffState();
+}
+
+class _CovertHandoffState extends State<_CovertHandoff> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _handoff());
+  }
+
+  void _handoff() {
+    if (!mounted) return;
+    // If the admin summoned the area in the same frame, let AdminGate rebuild
+    // into the door/sign-in instead of handing off.
+    if (AdminReveal.shared.stage != AdminRevealStage.hidden) return;
+    Navigator.of(context).pushNamedAndRemoveUntil(Routes.home, (_) => false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      backgroundColor: MxColors.cream,
+      body: SizedBox.shrink(),
     );
   }
 }

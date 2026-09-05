@@ -1,22 +1,54 @@
 import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier;
 
-/// A lightweight access-code door in front of the admin sign-in.
+/// The hidden access-code door in front of the admin sign-in.
 ///
 /// The real authorization is Firebase Auth plus the `admins/{uid}` grant. The
-/// door only keeps the sign-in page out of plain sight: a customer who wanders
-/// to /admin sees a locked prompt, and the sign-in form appears only after the
-/// code is entered. It is deliberately client-side obscurity, never a security
-/// boundary - the code is compiled into the app bundle - so do not treat it as
-/// protection on its own.
+/// door, the wordmark long-press and the typed phrase only keep the admin area
+/// out of plain sight — none of them is ever a security boundary on its own,
+/// so they are layered *in front of* the real sign-in, never instead of it.
+///
+/// The owner phrase is stored as a list of Unicode code points so it never
+/// appears as a readable literal in the source or in the shipped bundle.
 class AdminAccessLock {
   AdminAccessLock();
 
   /// The shared instance used by the routed admin gate.
   static final AdminAccessLock shared = AdminAccessLock();
 
-  /// Change this to any phrase you like. Because it ships in the bundle it is
-  /// only a "staff only" sign, not a lock.
-  static const String accessCode = 'mxgrowsecret';
+  /// The owner phrase, as Unicode code points (length must stay 12).
+  ///
+  /// To change it, replace this list with the code points of the new phrase —
+  /// e.g. from `String.fromCharCodes(newPhrase.codeUnits)` — and keep the
+  /// same length. Do not write the phrase itself anywhere in this repository.
+  static const List<int> secretCodePoints = <int>[
+    109,
+    120,
+    103,
+    114,
+    111,
+    119,
+    115,
+    101,
+    99,
+    114,
+    101,
+    116,
+  ];
+
+  /// Number of characters in the owner phrase (window size for the typed
+  /// phrase listener in `state/admin_reveal.dart`).
+  static int get secretLength => secretCodePoints.length;
+
+  /// True when [candidate] (ignoring surrounding whitespace) equals the owner
+  /// phrase, compared code-point by code-point so no string literal exists.
+  static bool matchesCode(String candidate) {
+    final trimmed = candidate.trim();
+    if (trimmed.length != secretCodePoints.length) return false;
+    for (var i = 0; i < trimmed.length; i++) {
+      if (trimmed.codeUnitAt(i) != secretCodePoints[i]) return false;
+    }
+    return true;
+  }
 
   final ValueNotifier<bool> _unlocked = ValueNotifier<bool>(false);
 
@@ -25,9 +57,9 @@ class AdminAccessLock {
 
   bool get isUnlocked => _unlocked.value;
 
-  /// Opens the door when [candidate] matches [accessCode].
+  /// Opens the door when [candidate] matches the owner phrase.
   bool tryUnlock(String candidate) {
-    if (candidate.trim() == accessCode) {
+    if (matchesCode(candidate)) {
       if (!_unlocked.value) _unlocked.value = true;
       return true;
     }

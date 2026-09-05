@@ -14,8 +14,10 @@ import 'repositories/firestore_order_repository.dart';
 import 'repositories/firestore_product_repository.dart';
 import 'repositories/order_repository.dart';
 import 'repositories/product_repository.dart';
+import 'router/app_navigator.dart';
 import 'router/app_router.dart';
 import 'router/routes.dart';
+import 'state/admin_reveal.dart';
 import 'state/auth_controller.dart';
 import 'services/geo_location_service.dart';
 import 'services/whatsapp_order_service.dart';
@@ -125,8 +127,29 @@ class MxApp extends StatelessWidget {
   }
 }
 
-class MxRoot extends StatelessWidget {
+class MxRoot extends StatefulWidget {
   const MxRoot({super.key});
+
+  @override
+  State<MxRoot> createState() => _MxRootState();
+}
+
+class _MxRootState extends State<MxRoot> {
+  @override
+  void initState() {
+    super.initState();
+    // Global listener for the covert "type the owner phrase" admin summon.
+    AdminReveal.shared.attach();
+    AdminReveal.shared.goToAdmin = () =>
+        appNavigatorKey.currentState?.pushNamed(Routes.admin);
+  }
+
+  @override
+  void dispose() {
+    AdminReveal.shared.goToAdmin = null;
+    AdminReveal.shared.detach();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -135,6 +158,8 @@ class MxRoot extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: MxTheme.light,
       initialRoute: Routes.home,
+      navigatorKey: appNavigatorKey,
+      navigatorObservers: <NavigatorObserver>[AdminReveal.shared.routeObserver],
       onGenerateRoute: AppRouter.generateRoute,
     );
   }

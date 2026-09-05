@@ -12,7 +12,7 @@ Premium e-commerce site for **MYCOSIX**, a student oyster-mushroom farm
 | Path | Purpose |
 | --- | --- |
 | `lib/` | Flutter app (customer storefront + admin area) |
-| `lib/pages/admin/` | Admin gate (access-code door + sign-in) and dashboard |
+| `lib/pages/admin/` | Hidden admin area (covert summon + gate/sign-in) and dashboard |
 | `firebase.json` / `.firebaserc` | Firebase project config (project: `mycosix`) |
 | `firestore.rules` / `firestore.indexes.json` / `storage.rules` | Real security rules + indexes (source of truth) |
 | `functions/` | Cloud Functions source (orders via trusted `createOrder`) |
@@ -73,16 +73,26 @@ node functions/scripts/seed_catalog.js --force   # overwrite image/gallery field
 
 ## Admin area
 
-The admin sign-in is not linked anywhere on the customer site.
+The admin sign-in has no discoverable URL and is not linked anywhere on the
+customer site. It exists only for the owner:
 
-1. Visit `https://mycosix.web.app/admin`
-2. Enter the access code (a "staff only" door), then sign in with the
-   Firebase account granted in Firestore `admins/{uid}`.
+- A visitor who opens `/admin` is handed straight to the normal public home
+  page — the admin area never renders for anyone who is not an owner.
+- The owner summons it from the site itself using a private gesture / phrase
+  (deliberately **not documented here**; the site owner knows it). Those
+  triggers live in `lib/widgets/brand.dart` (wordmark long-press) and
+  `lib/state/admin_reveal.dart` (typed-phrase listener, ignored while a text
+  field is focused).
+- Once summoned, access still passes through Firebase email/password sign-in
+  and the `admins/{uid}` grant.
 
-The access code is defined in `lib/pages/admin/admin_access_lock.dart`
-(`AdminAccessLock.accessCode`). To change it, edit that one string, rebuild,
-and redeploy. Anyone with the compiled bundle can read it, so it is only
-obscurity; the real boundary is Firebase Auth + the `admins/{uid}` grant + the
+The owner phrase is stored in `lib/pages/admin/admin_access_lock.dart` as a
+list of Unicode code points (never as a readable literal), so it cannot be
+found by searching the source or the shipped bundle. To change it, replace
+`AdminAccessLock.secretCodePoints` with the code points of a new phrase of the
+same length, rebuild, and redeploy. Anyone with the compiled bundle can
+eventually reconstruct it, so the phrase and the gesture are only obscurity in
+front of the real boundary: Firebase Auth + the `admins/{uid}` grant + the
 `firestore.rules` write guards.
 
 ## Security notes
