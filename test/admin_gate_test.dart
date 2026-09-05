@@ -24,37 +24,27 @@ void main() {
   final secret = String.fromCharCodes(AdminAccessLock.secretCodePoints);
 
   group('AdminAccessLock', () {
-    test('starts closed', () {
-      final lock = AdminAccessLock();
-      expect(lock.isUnlocked, isFalse);
-    });
-
-    test('rejects a wrong code and stays closed', () {
-      final lock = AdminAccessLock();
-      expect(lock.tryUnlock('nope'), isFalse);
-      expect(lock.isUnlocked, isFalse);
-    });
-
-    test('accepts the owner phrase and opens', () {
-      final lock = AdminAccessLock();
-      expect(lock.tryUnlock(secret), isTrue);
-      expect(lock.isUnlocked, isTrue);
-    });
-
-    test('trims surrounding whitespace before comparing', () {
-      final lock = AdminAccessLock();
-      expect(lock.tryUnlock('  $secret  '), isTrue);
-    });
-
-    test('matchesCode compares code points without a string literal', () {
+    test('the owner phrase is matched code-point by code-point', () {
       expect(AdminAccessLock.matchesCode(secret), isTrue);
-      expect(AdminAccessLock.matchesCode('$secret '), isTrue);
+      expect(AdminAccessLock.matchesCode('  $secret  '), isTrue);
+    });
+
+    test('any other text is rejected', () {
+      expect(AdminAccessLock.matchesCode(''), isFalse);
+      expect(AdminAccessLock.matchesCode('nope'), isFalse);
       expect(AdminAccessLock.matchesCode('$secret-x'), isFalse);
-      expect(
-        AdminAccessLock.matchesCode(secret.replaceFirst(secret[0], 'q')),
-        isFalse,
-      );
       expect(AdminAccessLock.matchesCode(secret.toUpperCase()), isFalse);
+    });
+
+    test('one character changed is rejected', () {
+      final wrong =
+          secret.replaceFirst(secret[0], String.fromCharCode(secret.codeUnitAt(0) + 1));
+      expect(wrong.length, secret.length);
+      expect(AdminAccessLock.matchesCode(wrong), isFalse);
+    });
+
+    test('the phrase length is stable (window/field contract)', () {
+      expect(AdminAccessLock.secretCodePoints.length, 12);
     });
   });
 

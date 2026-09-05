@@ -7,28 +7,22 @@ import '../../router/routes.dart';
 import '../../state/admin_reveal.dart';
 import '../../state/auth_controller.dart';
 import '../../widgets/brand.dart';
-import 'admin_access_lock.dart';
 import 'admin_scaffold.dart';
 
 /// Entry point for the hidden admin area.
 ///
 /// Nothing at /admin is visible until it is summoned: a signed-in
-/// administrator (persisted Firebase session) lands on the real gate body; a
-/// visitor who has long-pressed the wordmark sees the access-code door
-/// ([AdminAccessLock]); one who has typed the owner phrase goes straight to
-/// the sign-in page; and everyone else — including a direct /admin visit — is
-/// handed off to the public home route, so the admin page has no discoverable
-/// URL. All authorisation decisions come from [AuthController] state, never
-/// from a client flag.
+/// administrator (persisted Firebase session) lands on the real gate body; an
+/// owner who typed the summon phrase into the Shop search box goes straight
+/// to the sign-in page; and everyone else — including a direct /admin visit —
+/// is handed off to the public home route, so the admin page has no
+/// discoverable URL. All authorisation decisions come from [AuthController]
+/// state, never from a client flag.
 class AdminGate extends StatelessWidget {
-  const AdminGate({super.key, this.lock});
-
-  /// Overridable for tests; production uses [AdminAccessLock.shared].
-  final AdminAccessLock? lock;
+  const AdminGate({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final l = lock ?? AdminAccessLock.shared;
     final auth = context.watch<AuthController>();
     return ListenableBuilder(
       listenable: AdminReveal.shared,
@@ -37,12 +31,6 @@ class AdminGate extends StatelessWidget {
         // who is signed in never needs to summon anything.
         if (auth.user != null) return const _AdminGateBody();
         switch (AdminReveal.shared.stage) {
-          case AdminRevealStage.door:
-            return ValueListenableBuilder<bool>(
-              valueListenable: l.unlocked,
-              builder: (context, unlocked, _) =>
-                  unlocked ? const _AdminGateBody() : _AccessDoorView(lock: l),
-            );
           case AdminRevealStage.signIn:
             return const _AdminGateBody();
           case AdminRevealStage.hidden:
@@ -85,10 +73,9 @@ class _AdminGateBody extends StatelessWidget {
 
 /// Shared light frame (cream background + brand lockup + escape to the site).
 class _AdminChrome extends StatelessWidget {
-  const _AdminChrome({required this.child, this.tag = 'Admin'});
+  const _AdminChrome({required this.child});
 
   final Widget child;
-  final String tag;
 
   @override
   Widget build(BuildContext context) {
@@ -103,7 +90,7 @@ class _AdminChrome extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _BrandRow(tag: tag),
+                  const _BrandRow(),
                   const SizedBox(height: 28),
                   child,
                 ],
@@ -117,9 +104,7 @@ class _AdminChrome extends StatelessWidget {
 }
 
 class _BrandRow extends StatelessWidget {
-  const _BrandRow({this.tag = 'Admin'});
-
-  final String tag;
+  const _BrandRow();
 
   @override
   Widget build(BuildContext context) {
@@ -132,7 +117,7 @@ class _BrandRow extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('MYCOSIX', style: MxType.labelLg(color: MxColors.forest)),
-            Text(tag, style: MxType.bodyXs(color: MxColors.stone)),
+            Text('Admin', style: MxType.bodyXs(color: MxColors.stone)),
           ],
         ),
       ],
@@ -452,136 +437,6 @@ class _AdminSignInViewState extends State<AdminSignInView> {
                 child: TextButton(
                   onPressed: _busy ? null : _reset,
                   child: const Text('Forgot password?'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Locked prompt shown until the access code opens the sign-in page.
-class _AccessDoorView extends StatefulWidget {
-  const _AccessDoorView({required this.lock});
-
-  final AdminAccessLock lock;
-
-  @override
-  State<_AccessDoorView> createState() => _AccessDoorViewState();
-}
-
-class _AccessDoorViewState extends State<_AccessDoorView> {
-  final _formKey = GlobalKey<FormState>();
-  final _code = TextEditingController();
-  bool _obscure = true;
-  bool _busy = false;
-  String? _error;
-
-  @override
-  void dispose() {
-    _code.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    if (_busy) return;
-    if (!(_formKey.currentState?.validate() ?? false)) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    final ok = widget.lock.tryUnlock(_code.text);
-    if (!mounted) return;
-    // On success AdminGate's listener swaps this view for the real admin body;
-    // on a wrong code, surface the error and let the admin try again.
-    if (!ok) {
-      setState(() {
-        _busy = false;
-        _error = 'That code is not recognised.';
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return _AdminChrome(
-      tag: 'Private',
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: MxColors.creamSoft,
-          borderRadius: BorderRadius.circular(MxRadius.lg),
-          border: Border.all(color: MxColors.line),
-        ),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Icon(
-                Icons.lock_outline_rounded,
-                color: MxColors.earth,
-                size: 28,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Restricted area',
-                textAlign: TextAlign.center,
-                style: MxType.h3(color: MxColors.charcoal),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'This page is private. Enter the access code to continue.',
-                textAlign: TextAlign.center,
-                style: MxType.bodySm(color: MxColors.stone),
-              ),
-              const SizedBox(height: 18),
-              TextFormField(
-                controller: _code,
-                autofocus: true,
-                obscureText: _obscure,
-                autocorrect: false,
-                enableSuggestions: false,
-                onFieldSubmitted: (_) => _submit(),
-                decoration: InputDecoration(
-                  labelText: 'Access code',
-                  prefixIcon: const Icon(Icons.key_rounded),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscure
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined,
-                    ),
-                    onPressed: () => setState(() => _obscure = !_obscure),
-                  ),
-                ),
-                validator: (v) =>
-                    (v ?? '').trim().isEmpty ? 'Enter the access code' : null,
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(
-                  _error!,
-                  textAlign: TextAlign.center,
-                  style: MxType.bodyXs(color: MxColors.danger),
-                ),
-              ],
-              const SizedBox(height: 18),
-              FilledButton(
-                onPressed: _busy ? null : _submit,
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-                child: const Text('Continue'),
-              ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.center,
-                child: TextButton(
-                  onPressed: () => _goHome(context),
-                  child: const Text('Back to the site'),
                 ),
               ),
             ],

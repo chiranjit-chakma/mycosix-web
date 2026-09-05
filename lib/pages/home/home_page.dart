@@ -47,7 +47,7 @@ class _HeroSection extends StatelessWidget {
 
   /// Clearance for the floating top bar: a short cream band sits behind the
   /// (transparent-at-rest) bar so the wordmark/nav stay readable, then the
-  /// dark hero starts below it - same convention as every interior page.
+  /// light hero starts below it - same convention as every interior page.
   double _topClearance(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
     if (width >= 1024) return 92.0;
@@ -62,8 +62,8 @@ class _HeroSection extends StatelessWidget {
     final clearance = _topClearance(context);
     final vh = MediaQuery.of(context).size.height;
 
-    // The hero art fills the first viewport (clearance + hero >= viewport), so
-    // the section below it never peeks in at load on desktop or tall tablets.
+    // The hero fills the first viewport (clearance + hero body), so the
+    // section below it never peeks in at load on desktop or tall tablets.
     // The generous cap only guards against pathological fullscreen heights.
     final minH = desktop
         ? math.min(math.max(600.0, vh - clearance), 1700.0)
@@ -84,77 +84,10 @@ class _HeroSection extends StatelessWidget {
   }
 }
 
-/// The dark hero art stack, shared by every breakpoint: the real grow-room
-/// photograph sits under a forest veil (so it reads as brand, not stock) with
-/// a stronger scrim on the copy side. The shell stretches to at least
-/// [minHeight] so the hero fills the first viewport.
-class _HeroShell extends StatelessWidget {
-  const _HeroShell({required this.minHeight, required this.child});
-
-  final double minHeight;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF16200F),
-            Color(0xFF1D2717),
-            Color(0xFF26331F),
-          ],
-        ),
-      ),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          image: DecorationImage(
-            image: AssetImage('assets/images/hero.jpg'),
-            fit: BoxFit.cover,
-            opacity: 0.62,
-          ),
-        ),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Color(0x9916200F),
-                Color(0x661D2717),
-                Color(0x8C26331F),
-              ],
-            ),
-          ),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-                colors: [
-                  Color(0xB316200F),
-                  Color(0x5216200F),
-                  Color(0x0016200F),
-                ],
-                stops: [0.0, 0.55, 1.0],
-              ),
-            ),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: minHeight),
-              child: child,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Desktop hero: the copy sits on the left and a framed product visual on the
-/// right, both vertically centred against the full first-viewport art so
-/// neither side reads as empty space.
+/// The warm-parchment hero art shared by every breakpoint. On desktop the
+/// forest-green message sits on the start edge and the real grow-room
+/// photograph fills one large rounded card on the other side, both vertically
+/// centred against the full first-viewport band.
 class _HeroBodyDesktop extends StatelessWidget {
   const _HeroBodyDesktop({required this.minHeight});
 
@@ -165,29 +98,37 @@ class _HeroBodyDesktop extends StatelessWidget {
     final width = MediaQuery.of(context).size.width;
     final hpad = width >= 1440 ? 88.0 : 56.0;
     final avail = width - hpad * 2;
-    // The visual scales with the hero: as big as the remaining width allows
-    // (up to a sane cap), but never so tall it crowds the vertical rhythm.
-    final upper = math.min(760.0, math.max(340.0, minHeight - 150));
-    final side = math.min(math.max(avail * 0.46, 340.0), upper);
-    return _HeroShell(
-      minHeight: minHeight,
+    // The card scales with the hero: as large as the remaining width allows
+    // (up to a sane cap), but never so wide it crowds the copy.
+    final cardWidth = math.min(math.max(avail * 0.46, 360.0), 720.0);
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [MxColors.cream, MxColors.parchment],
+        ),
+      ),
       child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: hpad, vertical: 36),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const Flexible(child: _HeroCopy()),
-            const SizedBox(width: 40),
-            _HeroVisual(side: side),
-          ],
+        padding: EdgeInsets.symmetric(horizontal: hpad),
+        child: SizedBox(
+          height: minHeight,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const Expanded(child: _HeroCopy()),
+              const SizedBox(width: 56),
+              _HeroVisual(width: cardWidth),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// Tablet/phone hero: message and product visual stacked and centred against
-/// the first-viewport art, so the hero opens full-screen on phones.
+/// Phone/tablet hero: message and photograph stacked and centred, so the hero
+/// opens full-screen on phones and the photograph reads as one clean card.
 class _HeroBodyCompact extends StatelessWidget {
   const _HeroBodyCompact({required this.minHeight});
 
@@ -195,18 +136,31 @@ class _HeroBodyCompact extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _HeroShell(
-      minHeight: minHeight,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 34, 20, 40),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: const [
-            _HeroCopy(center: true),
-            SizedBox(height: 28),
-            _HeroVisual(compact: true),
-          ],
+    final width = MediaQuery.of(context).size.width;
+    final contentW = math.min(width - 40, 620.0);
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [MxColors.cream, MxColors.parchment],
+        ),
+      ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: minHeight),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 30, 20, 40),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const _HeroCopy(center: true),
+              const SizedBox(height: 30),
+              SizedBox(
+                width: contentW,
+                child: _HeroVisual(width: contentW),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -217,7 +171,7 @@ class _HeroCopy extends StatelessWidget {
   const _HeroCopy({this.center = false});
 
   /// Centres the message (phones/tablets); otherwise it sits on the start edge
-  /// (desktop) where the scrim is strongest.
+  /// (desktop).
   final bool center;
 
   @override
@@ -235,11 +189,11 @@ class _HeroCopy extends StatelessWidget {
             mainAxisAlignment:
                 center ? MainAxisAlignment.center : MainAxisAlignment.start,
             children: [
-              Container(width: 34, height: 2, color: MxColors.glow),
+              Container(width: 34, height: 2, color: MxColors.moss),
               const SizedBox(width: 12),
               Text(
                 'FRESH OYSTER MUSHROOMS',
-                style: MxType.overline(color: MxColors.glow),
+                style: MxType.overline(color: MxColors.earth),
               ),
             ],
           ),
@@ -247,40 +201,36 @@ class _HeroCopy extends StatelessWidget {
           Text(
             'GROWN\nDIFFERENT.',
             textAlign: center ? TextAlign.center : TextAlign.start,
-            style: MxType.display(width, color: Colors.white),
+            style: MxType.display(width, color: MxColors.forest),
           ),
           const SizedBox(height: 16),
           Text(
             'Fresh by Us. Naturally Good.',
             textAlign: center ? TextAlign.center : TextAlign.start,
-            style: MxType.h3(color: MxColors.glowSoft),
+            style: MxType.h3(color: MxColors.mossDeep),
           ),
           const SizedBox(height: 14),
           Text(
             'Six students growing more than mushrooms - building experience, '
             'learning, and a better future.',
             textAlign: center ? TextAlign.center : TextAlign.start,
-            style: MxType.body(
-              width,
-              color: Colors.white.withValues(alpha: 0.86),
-            ),
+            style: MxType.body(width, color: MxColors.charcoalSoft),
           ),
           const SizedBox(height: 28),
           Wrap(
-            alignment:
-                center ? WrapAlignment.center : WrapAlignment.start,
+            alignment: center ? WrapAlignment.center : WrapAlignment.start,
             spacing: 12,
             runSpacing: 12,
             children: [
               MxCta(
                 label: 'Shop Fresh Mushrooms',
-                tone: 'light',
+                tone: 'primary',
                 icon: Icons.shopping_bag_outlined,
                 onTap: () => Navigator.of(context).pushNamed(Routes.shop),
               ),
               MxCta(
                 label: 'Our Farm',
-                tone: 'dark',
+                tone: 'ghost',
                 onTap: () => Navigator.of(context).pushNamed(Routes.farm),
               ),
             ],
@@ -291,93 +241,50 @@ class _HeroCopy extends StatelessWidget {
   }
 }
 
-/// A rounded tile that frames the real mushroom cutout, giving the hero a
-/// composed focal point instead of an empty stretch of art.
+/// The real grow-room photograph as one large rounded card. It keeps the
+/// photograph at its natural aspect (a gentle 7:5), so the frame is never
+/// awkwardly cropped and nothing reads as empty space.
 class _HeroVisual extends StatelessWidget {
-  const _HeroVisual({this.side, this.compact = false});
+  const _HeroVisual({required this.width});
 
-  /// Explicit edge length on desktop (the caller sizes it to the hero);
-  /// otherwise a breakpoint-tuned size is chosen.
-  final double? side;
-  final bool compact;
+  final double width;
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
-    final s = side ??
-        (compact
-            ? (width < 430
-                ? 236.0
-                : (width >= 768 ? 300.0 : 272.0))
-            : (width >= 1440
-                ? 440.0
-                : (width >= 1280 ? 420.0 : 380.0)));
-    return Container(
-      width: s,
-      height: s,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(36),
-        gradient: const RadialGradient(
-          center: Alignment(-0.25, -0.3),
-          radius: 1.1,
-          colors: [
-            Color(0xFF33461F),
-            Color(0xFF1A2512),
-          ],
-        ),
-        border: Border.all(
-          color: MxColors.lineDark.withValues(alpha: 0.6),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: MxColors.charcoal.withValues(alpha: 0.28),
-            blurRadius: 34,
-            offset: const Offset(0, 16),
+    // The card is bound to [width]; the rounded frame keeps the photograph at
+    // its natural aspect below it, so the card never steals the Row and the
+    // copy keeps its share.
+    return SizedBox(
+      width: width,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(36),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.95),
+            width: 1.6,
           ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(35),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Soft glow in the top-right of the tile.
-            Positioned(
-              right: -20,
-              top: -24,
-              child: IgnorePointer(
-                child: Container(
-                  width: s * 0.62,
-                  height: s * 0.62,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [
-                        MxColors.glow.withValues(alpha: 0.16),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(26),
-              child: MxImage(
-                asset: 'assets/brand/mushroom-1.webp',
-                fit: BoxFit.contain,
-              ),
+          boxShadow: [
+            BoxShadow(
+              color: MxColors.forest.withValues(alpha: 0.12),
+              blurRadius: 44,
+              offset: const Offset(0, 20),
             ),
           ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(34),
+          child: AspectRatio(
+            aspectRatio: 7 / 5,
+            child: MxImage(
+              asset: 'assets/images/hero.jpg',
+              fit: BoxFit.cover,
+            ),
+          ),
         ),
       ),
     );
   }
 }
-
-// ---------------------------------------------------------------------------
-// Featured mushrooms
-// ---------------------------------------------------------------------------
 
 class _FeaturedSection extends StatelessWidget {
   const _FeaturedSection();
@@ -455,7 +362,7 @@ class _StorySection extends StatelessWidget {
                 ],
               )
             : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(MxRadius.lg),
@@ -911,7 +818,7 @@ class _ResponsibleSection extends StatelessWidget {
                 ],
               )
             : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(MxRadius.lg),

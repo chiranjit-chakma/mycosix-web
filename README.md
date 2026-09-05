@@ -131,19 +131,19 @@ customer site. It exists only for the owner:
 
 - A visitor who opens `/admin` is handed straight to the normal public home
   page — the admin area never renders for anyone who is not an owner.
-- The owner summons it from the site itself using a private gesture / phrase
-  (deliberately **not documented here**; the site owner knows it). Those
-  triggers live in `lib/widgets/brand.dart` (wordmark long-press) and
-  `lib/state/admin_reveal.dart` (typed-phrase listener, ignored while a text
-  field is focused).
+- The owner summons it from the Shop page: typing the owner phrase into the
+  product search box reveals the admin sign-in instead of filtering products
+  (deliberately **not documented further here**; the site owner knows it). The
+  trigger lives in `lib/state/admin_reveal.dart`, wired to the search field in
+  `lib/pages/shop/shop_page.dart`. The brand wordmark has no hidden gesture,
+  and there is no keyboard listener anywhere.
 - Once summoned, access still passes through Firebase email/password sign-in
   and the `admins/{uid}` grant.
 
 The owner phrase is stored as a list of Unicode code points (never as a
 readable literal), so it cannot be found by searching the source or the shipped
-bundle. The phrase and the gesture are only obscurity in front of the real
-boundary: Firebase Auth + the `admins/{uid}` grant + the `firestore.rules`
-write guards.
+bundle. The phrase is only obscurity in front of the real boundary: Firebase
+Auth + the `admins/{uid}` grant + the `firestore.rules` write guards.
 
 ## Security notes
 

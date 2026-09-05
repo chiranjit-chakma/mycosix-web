@@ -60,7 +60,11 @@ class MxPageHero extends StatelessWidget {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Container(width: 30, height: 1.5, color: MxColors.mossSoft),
+                      Container(
+                        width: 30,
+                        height: 1.5,
+                        color: MxColors.mossSoft,
+                      ),
                       const SizedBox(width: 12),
                       Text(
                         overline.toUpperCase(),
@@ -71,14 +75,20 @@ class MxPageHero extends StatelessWidget {
                   const SizedBox(height: 16),
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 720),
-                    child: Text(title, style: MxType.h1(width, color: Colors.white)),
+                    child: Text(
+                      title,
+                      style: MxType.h1(width, color: Colors.white),
+                    ),
                   ),
                   const SizedBox(height: 14),
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 620),
                     child: Text(
                       body,
-                      style: MxType.body(width, color: Colors.white.withValues(alpha: 0.88)),
+                      style: MxType.body(
+                        width,
+                        color: Colors.white.withValues(alpha: 0.88),
+                      ),
                     ),
                   ),
                 ],
@@ -119,15 +129,11 @@ class MxFeature extends StatelessWidget {
     final width = MediaQuery.of(context).size.width;
 
     final media = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(MxRadius.lg),
-          child: MxImage(
-            asset: image,
-            fit: BoxFit.cover,
-            height: imageHeight,
-          ),
+          child: MxImage(asset: image, fit: BoxFit.cover, height: imageHeight),
         ),
       ],
     );
@@ -152,11 +158,7 @@ class MxFeature extends StatelessWidget {
         if (constraints.maxWidth < 900) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              media,
-              const SizedBox(height: 28),
-              copy,
-            ],
+            children: [media, const SizedBox(height: 28), copy],
           );
         }
         return Row(
@@ -194,8 +196,8 @@ class MxBand extends StatelessWidget {
     final bg = isDark
         ? MxColors.forest
         : (tone == 'cream'
-            ? MxColors.creamDeep.withValues(alpha: 0.5)
-            : MxColors.mossTint);
+              ? MxColors.creamDeep.withValues(alpha: 0.5)
+              : MxColors.mossTint);
     final overlineColor = isDark ? MxColors.mossSoft : MxColors.earth;
     final titleColor = isDark ? MxColors.cream : MxColors.charcoal;
     final bodyColor = isDark
@@ -209,7 +211,10 @@ class MxBand extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(overline.toUpperCase(), style: MxType.overline(color: overlineColor)),
+            Text(
+              overline.toUpperCase(),
+              style: MxType.overline(color: overlineColor),
+            ),
             const SizedBox(height: 14),
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 820),

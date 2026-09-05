@@ -1,14 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../config/mx_colors.dart';
-import '../state/admin_reveal.dart';
 
-/// The MYCOSIX wordmark.
-///
-/// A deliberate long-press anywhere on the wordmark is one of the two covert
-/// ways an owner summons the hidden admin area (the other is typing the owner
-/// phrase — see [AdminReveal]). The gesture is invisible: no ripple, no label,
-/// nothing on screen changes until the summon navigates.
+/// The MYCOSIX wordmark. A plain brand lockup with no hidden gestures.
 class MxLogo extends StatelessWidget {
   const MxLogo({
     super.key,
@@ -24,48 +18,45 @@ class MxLogo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = dark ? MxColors.cream : MxColors.forest;
-    return GestureDetector(
-      onLongPress: () => AdminReveal.shared.armDoor(),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _Mark(size: size * 0.9, dark: dark),
-          SizedBox(width: size * 0.5),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _Mark(size: size * 0.9, dark: dark),
+        SizedBox(width: size * 0.5),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'MYCOSIX',
+              style: TextStyle(
+                fontFamily: 'Fraunces',
+                fontSize: size,
+                height: 1,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.08,
+                color: color,
+              ),
+            ),
+            if (showFull) ...[
+              const SizedBox(height: 2),
               Text(
-                'MYCOSIX',
+                'MUSHROOMS',
                 style: TextStyle(
-                  fontFamily: 'Fraunces',
-                  fontSize: size,
+                  fontFamily: 'Manrope',
+                  fontSize: size * 0.42,
                   height: 1,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.08,
-                  color: color,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.44,
+                  color: dark
+                      ? MxColors.cream.withValues(alpha: 0.72)
+                      : MxColors.earth,
                 ),
               ),
-              if (showFull) ...[
-                const SizedBox(height: 2),
-                Text(
-                  'MUSHROOMS',
-                  style: TextStyle(
-                    fontFamily: 'Manrope',
-                    fontSize: size * 0.42,
-                    height: 1,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.44,
-                    color: dark
-                        ? MxColors.cream.withValues(alpha: 0.72)
-                        : MxColors.earth,
-                  ),
-                ),
-              ],
             ],
-          ),
-        ],
-      ),
+          ],
+        ),
+      ],
     );
   }
 }

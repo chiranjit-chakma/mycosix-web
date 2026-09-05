@@ -148,8 +148,10 @@ class JourneyPage extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('WHAT DRIVES US'.toUpperCase(),
-                                style: MxType.overline()),
+                            Text(
+                              'WHAT DRIVES US'.toUpperCase(),
+                              style: MxType.overline(),
+                            ),
                             const SizedBox(height: 14),
                             Text(
                               'More than mushrooms',
@@ -167,7 +169,8 @@ class JourneyPage extends StatelessWidget {
                             MxCta(
                               label: 'Meet the Team',
                               tone: 'ghost',
-                              onTap: () => Navigator.of(context).pushNamed(Routes.team),
+                              onTap: () =>
+                                  Navigator.of(context).pushNamed(Routes.team),
                             ),
                           ],
                         ),
@@ -189,16 +192,22 @@ class JourneyPage extends StatelessWidget {
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(MxRadius.lg),
-                        child: const MxImage(
-                          asset: 'assets/images/dark_portrait.jpg',
-                          fit: BoxFit.cover,
-                          height: 240,
+                      SizedBox(
+                        width: double.infinity,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(MxRadius.lg),
+                          child: const MxImage(
+                            asset: 'assets/images/dark_portrait.jpg',
+                            fit: BoxFit.cover,
+                            height: 240,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 24),
-                      Text('WHAT DRIVES US'.toUpperCase(), style: MxType.overline()),
+                      Text(
+                        'WHAT DRIVES US'.toUpperCase(),
+                        style: MxType.overline(),
+                      ),
                       const SizedBox(height: 14),
                       Text('More than mushrooms', style: MxType.h1(width)),
                       const SizedBox(height: 18),
@@ -213,7 +222,8 @@ class JourneyPage extends StatelessWidget {
                       MxCta(
                         label: 'Meet the Team',
                         tone: 'ghost',
-                        onTap: () => Navigator.of(context).pushNamed(Routes.team),
+                        onTap: () =>
+                            Navigator.of(context).pushNamed(Routes.team),
                       ),
                     ],
                   ),

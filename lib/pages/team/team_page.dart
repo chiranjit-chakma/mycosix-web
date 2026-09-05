@@ -205,6 +205,7 @@ class TeamPage extends StatelessWidget {
                             ],
                           )
                         : Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               imgs[0],
                               const SizedBox(height: 14),

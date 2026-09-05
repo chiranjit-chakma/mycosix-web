@@ -138,8 +138,6 @@ class _MxRootState extends State<MxRoot> {
   @override
   void initState() {
     super.initState();
-    // Global listener for the covert "type the owner phrase" admin summon.
-    AdminReveal.shared.attach();
     AdminReveal.shared.goToAdmin = () =>
         appNavigatorKey.currentState?.pushNamed(Routes.admin);
   }
@@ -147,7 +145,6 @@ class _MxRootState extends State<MxRoot> {
   @override
   void dispose() {
     AdminReveal.shared.goToAdmin = null;
-    AdminReveal.shared.detach();
     super.dispose();
   }
 

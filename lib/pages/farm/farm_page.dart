@@ -61,7 +61,10 @@ class FarmPage extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('A WEEK AT THE FARM'.toUpperCase(), style: MxType.overline()),
+                Text(
+                  'A WEEK AT THE FARM'.toUpperCase(),
+                  style: MxType.overline(),
+                ),
                 const SizedBox(height: 14),
                 Text('Small daily rituals', style: MxType.h1(width)),
                 const SizedBox(height: 18),
@@ -134,14 +137,12 @@ class FarmPage extends StatelessWidget {
                 ];
                 final children = <Widget>[
                   for (final a in imgs)
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(MxRadius.lg),
-                        child: MxImage(
-                          asset: a,
-                          fit: BoxFit.cover,
-                          height: desktop ? 280 : 200,
-                        ),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(MxRadius.lg),
+                      child: MxImage(
+                        asset: a,
+                        fit: BoxFit.cover,
+                        height: desktop ? 280 : 200,
                       ),
                     ),
                 ];
@@ -149,13 +150,14 @@ class FarmPage extends StatelessWidget {
                     ? Row(
                         children: [
                           for (var i = 0; i < children.length; i++) ...[
-                            children[i],
+                            Expanded(child: children[i]),
                             if (i < children.length - 1)
                               const SizedBox(width: 18),
                           ],
                         ],
                       )
                     : Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           for (var i = 0; i < children.length; i++) ...[
                             children[i],
@@ -188,7 +190,10 @@ class FarmPage extends StatelessWidget {
                     'Fresh harvests go into the shop each week. Order yours '
                     'before it is gone.',
                     textAlign: TextAlign.center,
-                    style: MxType.body(width, color: Colors.white.withValues(alpha: 0.85)),
+                    style: MxType.body(
+                      width,
+                      color: Colors.white.withValues(alpha: 0.85),
+                    ),
                   ),
                   const SizedBox(height: 26),
                   MxCta(
@@ -208,7 +213,11 @@ class FarmPage extends StatelessWidget {
 }
 
 class _FarmStep extends StatelessWidget {
-  const _FarmStep({required this.icon, required this.title, required this.body});
+  const _FarmStep({
+    required this.icon,
+    required this.title,
+    required this.body,
+  });
 
   final IconData icon;
   final String title;
