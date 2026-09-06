@@ -20,16 +20,7 @@
     ],
     "headers": [
       {
-        "source": "**/*.@(js|wasm|html|json|webmanifest|map|symbols|txt)",
-        "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "no-cache"
-          }
-        ]
-      },
-      {
-        "source": "**/*.@(png|jpg|jpeg|webp|gif|svg|ico|woff|woff2|ttf|otf)",
+        "source": "**",
         "headers": [
           {
             "key": "Cache-Control",
