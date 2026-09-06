@@ -11,6 +11,18 @@ abstract class ProductRepository {
   Future<List<Product>> fetchByCategory(String category);
 }
 
+/// Optional capability for repositories that can PUSH catalogue changes.
+///
+/// A repository that only supports one-shot reads (e.g. the bundled local
+/// catalogue) does not implement this, and the [ProductsController] simply
+/// falls back to its load-once behaviour. Kept off [ProductRepository] so the
+/// interface stays closed and fakes/implementers are not forced to change.
+abstract class ProductStreamSource {
+  /// Live stream of the whole catalogue. Emits a fresh snapshot whenever any
+  /// product document changes in the backing store (add / edit / delete).
+  Stream<List<Product>> watchAll();
+}
+
 /// Local product data — the catalog shipped with the site.
 class LocalProductRepository implements ProductRepository {
   LocalProductRepository();

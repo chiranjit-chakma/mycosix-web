@@ -1,13 +1,14 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../config/mx_colors.dart';
 import '../../config/mx_config.dart';
 import '../../config/mx_type.dart';
-import '../../models/product.dart';
 import '../../router/routes.dart';
 import '../../services/url_launcher.dart';
+import '../../state/products_controller.dart';
 import '../../widgets/mx_cta.dart';
 import '../../widgets/mx_image.dart';
 import '../../widgets/page.dart';
@@ -301,22 +302,53 @@ class _FeaturedSection extends StatelessWidget {
             body: 'Hand-picked at peak freshness, delivered to your door.',
           ),
           const SizedBox(height: 44),
-          FutureBuilder<List<Product>>(
-            future: context.products()!.fetchAll(),
-            builder: (context, snap) {
-              if (snap.hasError) {
-                return Text('Could not load products', style: MxType.bodySm());
-              }
-              final items = (snap.data ?? const <Product>[])
-                  .where((p) => p.available)
-                  .take(4)
-                  .toList();
-              return ProductGrid(products: items);
-            },
-          ),
+          const _FeaturedGrid(),
         ],
       ),
     );
+  }
+}
+
+/// Featured packs. Kicks the catalog load after the first frame and rebuilds
+/// whenever [ProductsController] changes — so an admin adding or editing a
+/// product updates this section live, with no refresh needed.
+class _FeaturedGrid extends StatefulWidget {
+  const _FeaturedGrid();
+
+  @override
+  State<_FeaturedGrid> createState() => _FeaturedGridState();
+}
+
+class _FeaturedGridState extends State<_FeaturedGrid> {
+  @override
+  void initState() {
+    super.initState();
+    // First paint is the hero; fetch right after so the section is populated
+    // by the time the user scrolls to it.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.products()?.fetchAll();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final products = context.watch<ProductsController>();
+    if (!products.loaded) {
+      if (products.error != null) {
+        return Text('Could not load products', style: MxType.bodySm());
+      }
+      return const SizedBox(
+        height: 220,
+        child: Center(
+          child: CircularProgressIndicator(
+            color: MxColors.moss,
+            strokeWidth: 2.5,
+          ),
+        ),
+      );
+    }
+    final items = products.products.where((p) => p.available).take(4).toList();
+    return ProductGrid(products: items);
   }
 }
 

@@ -10,21 +10,12 @@ import 'product_repository.dart';
 /// Product documents are ordered by `sortKey`. `stock`, `available`, prices
 /// and descriptions all come from here, so admin edits reach the shop without
 /// any source-code change.
-class FirestoreProductRepository implements ProductRepository {
+class FirestoreProductRepository
+    implements ProductRepository, ProductStreamSource {
   @override
   Future<List<Product>> fetchAll() async {
     final snap = await Fb.products.orderBy('sortKey').get();
-    final list = <Product>[];
-    for (final d in snap.docs) {
-      final m = d.data();
-      list.add(
-        Product.fromFirestoreMap(m).copyWith(
-          createdAt: _date(m['createdAt']),
-          updatedAt: _date(m['updatedAt']),
-        ),
-      );
-    }
-    return list;
+    return _docsToProducts(snap.docs);
   }
 
   @override
@@ -44,8 +35,24 @@ class FirestoreProductRepository implements ProductRepository {
         .where('category', isEqualTo: category)
         .orderBy('sortKey')
         .get();
+    return _docsToProducts(snap.docs);
+  }
+
+  @override
+  Stream<List<Product>> watchAll() {
+    // Live mirror of the catalogue. The admin section writes to this same
+    // collection, so an add / edit / delete is pushed to every open customer
+    // page the moment it lands in Firestore — no refresh required.
+    return Fb.products.orderBy('sortKey').snapshots().map((snap) {
+      return _docsToProducts(snap.docs);
+    });
+  }
+
+  static List<Product> _docsToProducts(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
     final list = <Product>[];
-    for (final d in snap.docs) {
+    for (final d in docs) {
       final m = d.data();
       list.add(
         Product.fromFirestoreMap(m).copyWith(
@@ -73,7 +80,8 @@ enum CatalogSource { firestore, localFallback }
 /// EMPTY Firestore result is treated as truth (not a failure), so an
 /// unseeded-but-reachable catalogue shows its proper empty state rather than
 /// silently substituting local data.
-class ResilientProductRepository implements ProductRepository {
+class ResilientProductRepository
+    implements ProductRepository, ProductStreamSource {
   ResilientProductRepository(
     this._primary, {
     LocalProductRepository? fallback,
@@ -126,6 +134,14 @@ class ResilientProductRepository implements ProductRepository {
       _logFallback(e);
       return _fallback.fetchByCategory(category);
     }
+  }
+
+  @override
+  Stream<List<Product>> watchAll() {
+    // Delegate to the Firestore listener. Firestore's persistent listeners
+    // reconnect on their own when the network returns, so this stays live even
+    // if the initial one-shot read fell back to the bundled catalogue.
+    return _primary.watchAll();
   }
 
   static const _timeout = Duration(seconds: 10);

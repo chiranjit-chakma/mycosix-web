@@ -20,11 +20,11 @@
     ],
     "headers": [
       {
-        "source": "**/*.@(js|wasm)",
+        "source": "**/*.@(js|wasm|html|json|webmanifest|map|symbols|txt)",
         "headers": [
           {
             "key": "Cache-Control",
-            "value": "public, max-age=31536000, immutable"
+            "value": "no-cache"
           }
         ]
       },
@@ -33,7 +33,7 @@
         "headers": [
           {
             "key": "Cache-Control",
-            "value": "public, max-age=86400"
+            "value": "no-cache"
           }
         ]
       }

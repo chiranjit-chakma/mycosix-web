@@ -35,7 +35,47 @@ class _ProductPageState extends State<ProductPage> {
   @override
   void initState() {
     super.initState();
+    // Stay in step with the live catalog: if the owner edits a product while a
+    // customer is viewing it, the page updates in place (price, stock, etc.).
+    context.read<ProductsController>().addListener(_refreshFromCatalog);
     _load();
+  }
+
+  void _refreshFromCatalog() {
+    if (!mounted) return;
+    final catalog = context.read<ProductsController>().products;
+    Product? fresh;
+    for (final p in catalog) {
+      if (p.id == widget.productId) {
+        fresh = p;
+        break;
+      }
+    }
+    if (fresh == null) return; // no longer in the catalogue — keep last view
+    final p = fresh; // non-null local: promotions do not reach closures
+    final cur = _product;
+    final same = cur != null &&
+        cur.id == p.id &&
+        cur.price == p.price &&
+        cur.stock == p.stock &&
+        cur.available == p.available &&
+        cur.name == p.name &&
+        cur.weight == p.weight &&
+        cur.image == p.image &&
+        cur.description == p.description;
+    if (same) return;
+    setState(() {
+      _product = p;
+      if (_quantity > math.max(1, p.stock)) {
+        _quantity = math.max(1, p.stock);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    context.read<ProductsController>().removeListener(_refreshFromCatalog);
+    super.dispose();
   }
 
   Future<void> _load() async {

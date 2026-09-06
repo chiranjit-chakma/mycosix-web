@@ -30,6 +30,16 @@ class _ShopPageState extends State<ShopPage> {
   static const _categories = ['All', 'Fresh', 'Dried', 'Preserved'];
 
   @override
+  void initState() {
+    super.initState();
+    // A cold /shop visit (deep link, or a refresh while on the shop) must load
+    // the catalog itself — home usually starts it, but the shop works alone.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<ProductsController>().fetchAll();
+    });
+  }
+
+  @override
   void dispose() {
     _search.dispose();
     super.dispose();
