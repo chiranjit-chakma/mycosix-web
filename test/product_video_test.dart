@@ -18,32 +18,83 @@ Product productWith({String? videoUrl}) => Product(
     );
 
 /// A product without a video must look exactly like one (no dangling control);
-/// a product with a playable video gains the "Watch product video" button.
+/// a product with a playable video — direct .mp4/.webm link OR a YouTube
+/// link — gains the "Watch product video" button.
 void main() {
-  group('cleanProductVideo / hasProductVideo', () {
+  group('resolveProductVideo / hasProductVideo', () {
     test('blank or null means no video', () {
-      expect(cleanProductVideo(null), isNull);
-      expect(cleanProductVideo(''), isNull);
-      expect(cleanProductVideo('   '), isNull);
+      expect(resolveProductVideo(null), isNull);
+      expect(resolveProductVideo(''), isNull);
+      expect(resolveProductVideo('   '), isNull);
       expect(hasProductVideo(null), isFalse);
       expect(hasProductVideo(''), isFalse);
     });
 
     test('only real http(s) web links count as a video', () {
-      expect(cleanProductVideo('https://example.com/clip.mp4'),
-          'https://example.com/clip.mp4');
-      expect(cleanProductVideo('http://cdn.example.com/v.webm'),
-          isNotNull);
+      expect(hasProductVideo('https://example.com/clip.mp4'), isTrue);
+      expect(hasProductVideo('http://cdn.example.com/v.webm'), isTrue);
       // Garbage, non-web schemes and local paths never count.
-      expect(cleanProductVideo('watch?v=abc'), isNull);
-      expect(cleanProductVideo('javascript:alert(1)'), isNull);
-      expect(cleanProductVideo('file:///C:/video.mp4'), isNull);
       expect(hasProductVideo('watch?v=abc'), isFalse);
+      expect(hasProductVideo('javascript:alert(1)'), isFalse);
+      expect(hasProductVideo('file:///C:/video.mp4'), isFalse);
+      expect(hasProductVideo('not-a-url'), isFalse);
     });
 
     test('surrounding whitespace is trimmed before matching', () {
-      expect(cleanProductVideo('  https://example.com/v.mp4  '),
-          'https://example.com/v.mp4');
+      final ref = resolveProductVideo('  https://example.com/v.mp4  ');
+      expect(ref, isNotNull);
+      expect(ref!.kind, ProductVideoKind.direct);
+      expect(ref.url, 'https://example.com/v.mp4');
+    });
+
+    test('a plain http(s) link is a direct media file', () {
+      final ref = resolveProductVideo('https://cdn.example.com/grow.mp4');
+      expect(ref, isNotNull);
+      expect(ref!.kind, ProductVideoKind.direct);
+      expect(ref.url, 'https://cdn.example.com/grow.mp4');
+    });
+
+    test('YouTube links are recognised and embedded (no-autoplay controls)',
+        () {
+      const id = 'dQw4w9WgXcQ';
+      const expected =
+          'https://www.youtube-nocookie.com/embed/$id?playsinline=1&rel=0';
+      final forms = <String>[
+        'https://www.youtube.com/watch?v=$id',
+        'https://youtu.be/$id',
+        'https://www.youtube.com/shorts/$id',
+        'https://youtube.com/embed/$id',
+        'https://www.youtube.com/live/$id',
+        'https://music.youtube.com/watch?v=$id',
+      ];
+      for (final form in forms) {
+        final ref = resolveProductVideo(form);
+        expect(ref, isNotNull, reason: 'should resolve: $form');
+        expect(ref!.kind, ProductVideoKind.youtube, reason: form);
+        expect(ref.url, expected, reason: form);
+      }
+    });
+
+    test('a YouTube page without a real video id is not playable', () {
+      expect(resolveProductVideo('https://www.youtube.com/@mycosix'), isNull);
+      expect(
+          resolveProductVideo('https://youtu.be/abc'), isNull); // too short
+      expect(
+          resolveProductVideo('https://www.youtube.com/watch?v='), isNull);
+    });
+  });
+
+  group('videoLinkFieldError (admin field validator)', () {
+    test('empty is allowed (no video); bad links are rejected', () {
+      expect(videoLinkFieldError(''), isNull);
+      expect(videoLinkFieldError('   '), isNull);
+      expect(videoLinkFieldError('not-a-link'), isNotNull);
+      expect(videoLinkFieldError('file:///C:/v.mp4'), isNotNull);
+    });
+
+    test('a YouTube link or a direct media link is accepted', () {
+      expect(videoLinkFieldError('https://youtu.be/dQw4w9WgXcQ'), isNull);
+      expect(videoLinkFieldError('https://cdn.example.com/grow.mp4'), isNull);
     });
   });
 
@@ -70,11 +121,19 @@ void main() {
       expect(find.text('Watch product video'), findsNothing);
     });
 
-    testWidgets('shows the control only when a playable video exists',
-        (tester) async {
+    testWidgets('shows the control for a direct video link', (tester) async {
       await tester.pumpWidget(
         wrap(ProductVideoButton(
           product: productWith(videoUrl: 'https://example.com/cook.mp4'),
+        )),
+      );
+      expect(find.text('Watch product video'), findsOneWidget);
+    });
+
+    testWidgets('shows the control for a YouTube link too', (tester) async {
+      await tester.pumpWidget(
+        wrap(ProductVideoButton(
+          product: productWith(videoUrl: 'https://youtu.be/dQw4w9WgXcQ'),
         )),
       );
       expect(find.text('Watch product video'), findsOneWidget);

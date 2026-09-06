@@ -12,6 +12,7 @@ import '../../../models/product.dart';
 import '../../../state/auth_controller.dart';
 import '../../../util/product_image.dart';
 import '../../../widgets/mx_image.dart';
+import '../../../widgets/product_video.dart';
 import '../admin_widgets.dart';
 
 /// Catalogue management. Every change is written straight to Firestore and is
@@ -207,6 +208,7 @@ class _ProductsSectionState extends State<ProductsSection> {
                 const SizedBox(height: 1),
                 Text(
                   '${p.category}  |  ${rupees(p.price)}  |  stock ${p.stock}'
+                  '${hasProductVideo(p.videoUrl) ? '  |  video' : ''}'
                   '${low ? '  - low!' : ''}',
                   style: MxType.bodyXs(
                     color: low ? MxColors.warn : MxColors.stone,
@@ -327,6 +329,9 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
   late final _sortKey = TextEditingController(
     text: _num(widget.product?.sortKey),
   );
+  late final _videoUrl = TextEditingController(
+    text: widget.product?.videoUrl ?? '',
+  );
   late bool _available = widget.product?.available ?? true;
   late bool _busy = false;
   String? _error;
@@ -409,6 +414,7 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
       _price,
       _stock,
       _sortKey,
+      _videoUrl,
     ]) {
       c.dispose();
     }
@@ -437,6 +443,7 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
         'sortKey': sortKey,
         'available': _available,
         'image': _imageToSave,
+        'videoUrl': _videoUrl.text.trim(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
       final existing = widget.product;
@@ -549,6 +556,16 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
                 ),
                 const SizedBox(height: 10),
                 _field(_description, 'Description', null, maxLines: 3),
+                const SizedBox(height: 10),
+                _field(
+                  _videoUrl,
+                  'Video link (optional)',
+                  videoLinkFieldError,
+                  helper: 'Paste a YouTube link (in the app: Share > Copy '
+                      'link) or a direct .mp4/.webm web link. When set, '
+                      'customers see a "Watch product video" button on the '
+                      'product. Leave empty for no video.',
+                ),
                 const SizedBox(height: 12),
                 _photoTile(),
                 const SizedBox(height: 10),
@@ -708,12 +725,14 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
     String label,
     String? Function(String?)? validator, {
     int maxLines = 1,
+    String? helper,
   }) {
     return TextFormField(
       controller: c,
       maxLines: maxLines,
       decoration: InputDecoration(
         labelText: label,
+        helperText: helper,
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 12,

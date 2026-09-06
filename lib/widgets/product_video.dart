@@ -4,25 +4,101 @@ import 'package:video_player/video_player.dart';
 import '../config/mx_colors.dart';
 import '../config/mx_type.dart';
 import '../models/product.dart';
+import 'youtube_embed_view.dart';
 
-/// Normalises an optional product video link: trims it and only keeps it when
-/// it is a real http(s) web URL. Blank/garbage values are treated as "no
-/// video", so the UI hides the video control when there is nothing playable.
-String? cleanProductVideo(String? videoUrl) {
+/// How a product's video link is played.
+enum ProductVideoKind {
+  /// A direct media-file web link (.mp4/.webm) played by the in-app player.
+  direct,
+
+  /// A YouTube link, embedded as a privacy-friendly youtube-nocookie iframe
+  /// with YouTube's own controls.
+  youtube,
+}
+
+/// A resolved, playable video reference for a product's [Product.videoUrl].
+class ProductVideoRef {
+  const ProductVideoRef({required this.kind, required this.url});
+
+  /// [kind] says which player to use, and [url] is the concrete playable
+  /// address: the media-file link for [ProductVideoKind.direct], or the
+  /// youtube-nocookie embed address for [ProductVideoKind.youtube].
+  final ProductVideoKind kind;
+  final String url;
+
+  bool get isYoutube => kind == ProductVideoKind.youtube;
+}
+
+final RegExp _youtubeIdPattern = RegExp(r'^[A-Za-z0-9_-]{11}$');
+
+/// Resolves an optional product video link to something playable.
+///
+/// Trims it and accepts only real http(s) web links. A YouTube watch / shorts /
+/// youtu.be / embed link becomes its embed reference; any other http(s) link
+/// is treated as a direct media-file link. Blank, non-web, local or garbage
+/// values are treated as "no video", so the UI hides the video control when
+/// there is nothing playable.
+ProductVideoRef? resolveProductVideo(String? videoUrl) {
   final v = videoUrl?.trim() ?? '';
   if (v.isEmpty) return null;
   final uri = Uri.tryParse(v);
   if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
     return null;
   }
-  return uri.toString();
+  final host = uri.host.toLowerCase();
+  final isYouTubeHost = host == 'youtu.be' ||
+      host == 'youtube.com' ||
+      host.endsWith('.youtube.com');
+  if (isYouTubeHost) {
+    final id = _youtubeVideoId(uri);
+    if (id == null) return null; // a YouTube page without a real video id
+    return ProductVideoRef(
+      kind: ProductVideoKind.youtube,
+      url: 'https://www.youtube-nocookie.com/embed/$id?playsinline=1&rel=0',
+    );
+  }
+  return ProductVideoRef(kind: ProductVideoKind.direct, url: uri.toString());
 }
 
-/// True when [videoUrl] is a playable web link.
-bool hasProductVideo(String? videoUrl) => cleanProductVideo(videoUrl) != null;
+/// True when [videoUrl] carries a playable web video.
+bool hasProductVideo(String? videoUrl) =>
+    resolveProductVideo(videoUrl) != null;
+
+/// Validation message for the admin "Video link (optional)" field: empty is
+/// fine (no video), anything else must resolve to a playable web link.
+String? videoLinkFieldError(String? value) {
+  final t = value?.trim() ?? '';
+  if (t.isEmpty) return null;
+  return resolveProductVideo(t) == null
+      ? 'Paste a YouTube link or a direct .mp4/.webm web link.'
+      : null;
+}
+
+String? _validId(String? raw) =>
+    (raw != null && _youtubeIdPattern.hasMatch(raw)) ? raw : null;
+
+/// Pulls an 11-character YouTube video id out of the supported URL shapes.
+String? _youtubeVideoId(Uri uri) {
+  final host = uri.host.toLowerCase();
+  final segs = uri.pathSegments;
+  if (host == 'youtu.be') {
+    return segs.isEmpty ? null : _validId(segs.first);
+  }
+  if (segs.isNotEmpty && segs.first == 'watch') {
+    return _validId(uri.queryParameters['v']);
+  }
+  const shortHosts = {'shorts', 'embed', 'live', 'v'};
+  if (segs.isNotEmpty &&
+      shortHosts.contains(segs.first) &&
+      segs.length > 1) {
+    return _validId(segs[1]);
+  }
+  return null;
+}
 
 /// "Watch product video" button that appears ONLY when the product carries a
-/// playable video link, and otherwise renders nothing (hidden when none).
+/// playable video link (a direct .mp4/.webm link or a YouTube link), and
+/// otherwise renders nothing (hidden when none).
 class ProductVideoButton extends StatelessWidget {
   const ProductVideoButton({super.key, required this.product});
 
@@ -30,8 +106,8 @@ class ProductVideoButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final url = cleanProductVideo(product.videoUrl);
-    if (url == null) return const SizedBox.shrink();
+    final ref = resolveProductVideo(product.videoUrl);
+    if (ref == null) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: 22),
       child: Align(
@@ -39,7 +115,7 @@ class ProductVideoButton extends StatelessWidget {
         child: OutlinedButton.icon(
           onPressed: () => showDialog<void>(
             context: context,
-            builder: (_) => ProductVideoDialog(url: url),
+            builder: (_) => ProductVideoDialog(ref: ref),
           ),
           icon: const Icon(Icons.play_circle_outline_rounded, size: 20),
           label: const Text('Watch product video'),
@@ -49,13 +125,15 @@ class ProductVideoButton extends StatelessWidget {
   }
 }
 
-/// Full-screen dialog that plays a product's video. The video is loaded but
-/// never auto-plays (no autoplay); the customer presses play. Controls are
-/// provided, and the dialog is fully dismissible.
+/// Full-screen dialog that plays a product's video. A direct media file is
+/// loaded into the in-app player; a YouTube link is embedded. Nothing
+/// auto-plays (no autoplay); the customer presses play. Controls are provided
+/// (in-app for direct files, YouTube's own for embeds), and the dialog is
+/// fully dismissible.
 class ProductVideoDialog extends StatefulWidget {
-  const ProductVideoDialog({super.key, required this.url});
+  const ProductVideoDialog({super.key, required this.ref});
 
-  final String url;
+  final ProductVideoRef ref;
 
   @override
   State<ProductVideoDialog> createState() => _ProductVideoDialogState();
@@ -68,7 +146,9 @@ class _ProductVideoDialogState extends State<ProductVideoDialog> {
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+    if (widget.ref.isYoutube) return; // embeds carry their own player
+    _controller =
+        VideoPlayerController.networkUrl(Uri.parse(widget.ref.url));
     _controller!.initialize().then((_) {
       if (mounted) setState(() {});
     }).catchError((Object _) {
@@ -91,8 +171,10 @@ class _ProductVideoDialogState extends State<ProductVideoDialog> {
   @override
   Widget build(BuildContext context) {
     final mq = MediaQuery.of(context).size;
+    final isYoutube = widget.ref.isYoutube;
     final c = _controller;
-    final init = c != null && c.value.isInitialized && !_failed;
+    final init =
+        !isYoutube && c != null && c.value.isInitialized && !_failed;
 
     return Dialog(
       insetPadding: const EdgeInsets.all(20),
@@ -133,51 +215,65 @@ class _ProductVideoDialogState extends State<ProductVideoDialog> {
                 ],
               ),
             ),
-            Flexible(
-              child: _failed
-                  ? _Message(
-                      icon: Icons.error_outline_rounded,
-                      label: 'The video could not be loaded.',
-                    )
-                  : !init
-                      ? const SizedBox(
-                          height: 360,
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              color: MxColors.mossSoft,
+            if (isYoutube)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 2, 14, 14),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: YoutubeEmbedView(
+                      embedUrl: widget.ref.url,
+                    ),
+                  ),
+                ),
+              )
+            else
+              Flexible(
+                child: _failed
+                    ? const _Message(
+                        icon: Icons.error_outline_rounded,
+                        label: 'The video could not be loaded.',
+                      )
+                    : !init
+                        ? const SizedBox(
+                            height: 360,
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: MxColors.mossSoft,
+                              ),
+                            ),
+                          )
+                        : GestureDetector(
+                            onTap: _togglePlay,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                AspectRatio(
+                                  aspectRatio: c.value.aspectRatio,
+                                  child: VideoPlayer(c),
+                                ),
+                                if (!c.value.isPlaying)
+                                  Container(
+                                    width: 64,
+                                    height: 64,
+                                    decoration: BoxDecoration(
+                                      color: MxColors.forest.withValues(
+                                        alpha: 0.55,
+                                      ),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.play_arrow_rounded,
+                                      size: 36,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
-                        )
-                      : GestureDetector(
-                          onTap: _togglePlay,
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              AspectRatio(
-                                aspectRatio: c.value.aspectRatio,
-                                child: VideoPlayer(c),
-                              ),
-                              if (!c.value.isPlaying)
-                                Container(
-                                  width: 64,
-                                  height: 64,
-                                  decoration: BoxDecoration(
-                                    color: MxColors.forest.withValues(
-                                      alpha: 0.55,
-                                    ),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.play_arrow_rounded,
-                                    size: 36,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-            ),
+              ),
             if (init) ...[
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
