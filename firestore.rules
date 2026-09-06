@@ -231,7 +231,7 @@ service cloud.firestore {
         ])
         && isRequestStatus(request.resource.data.status)
         // Terminal statuses are immutable once reached.
-        && resource.data.status not in ['Resolved', 'Rejected', 'Expired']
+        && !(resource.data.status in ['Resolved', 'Rejected', 'Expired'])
         // A recorded decision is stamped by the server at that moment.
         && (!('decisionAt' in request.resource.data)
             || request.resource.data.decisionAt is timestamp)
