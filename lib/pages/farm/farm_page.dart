@@ -32,7 +32,7 @@ class FarmPage extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 84),
             child: const MxFeature(
               mediaFirst: true,
-              image: 'assets/images/moss_close.jpg',
+              image: 'assets/images/grow_room.jpg',
               overline: 'The Grow Room',
               title: 'Indoors, on purpose',
               body:
