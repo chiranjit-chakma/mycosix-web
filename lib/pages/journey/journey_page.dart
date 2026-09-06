@@ -27,7 +27,7 @@ class JourneyPage extends StatelessWidget {
             body:
                 'How a college idea about mushrooms became a real harvest, a '
                 'real business and a reason to show up early every morning.',
-            image: 'assets/images/harvest_hands.jpg',
+            image: 'assets/images/journey_new.jpg',
           ),
           MxPage(
             padding: const EdgeInsets.symmetric(vertical: 84),

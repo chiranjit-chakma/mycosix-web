@@ -277,7 +277,7 @@ class _HeroVisual extends StatelessWidget {
           child: AspectRatio(
             aspectRatio: 7 / 5,
             child: MxImage(
-              asset: 'assets/images/hero.jpg',
+              asset: 'assets/images/hero_new.jpg',
               fit: BoxFit.cover,
             ),
           ),
@@ -377,7 +377,7 @@ class _StorySection extends StatelessWidget {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(MxRadius.lg),
                       child: const MxImage(
-                        asset: 'assets/images/moss_close.jpg',
+                        asset: 'assets/images/story_new.jpg',
                         fit: BoxFit.cover,
                         height: 420,
                       ),
@@ -399,7 +399,7 @@ class _StorySection extends StatelessWidget {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(MxRadius.lg),
                     child: const MxImage(
-                      asset: 'assets/images/moss_close.jpg',
+                      asset: 'assets/images/story_new.jpg',
                       fit: BoxFit.cover,
                       height: 240,
                     ),
@@ -841,7 +841,7 @@ class _ResponsibleSection extends StatelessWidget {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(MxRadius.lg),
                       child: const MxImage(
-                        asset: 'assets/images/shelf.jpg',
+                        asset: 'assets/images/cultivation_new.jpg',
                         fit: BoxFit.cover,
                         height: 380,
                       ),
@@ -855,7 +855,7 @@ class _ResponsibleSection extends StatelessWidget {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(MxRadius.lg),
                     child: const MxImage(
-                      asset: 'assets/images/shelf.jpg',
+                      asset: 'assets/images/cultivation_new.jpg',
                       fit: BoxFit.cover,
                       height: 220,
                     ),
@@ -959,7 +959,7 @@ class _JourneyTeaserSection extends StatelessWidget {
           final img = ClipRRect(
             borderRadius: BorderRadius.circular(MxRadius.lg),
             child: const MxImage(
-              asset: 'assets/images/harvest_hands.jpg',
+              asset: 'assets/images/journey_new.jpg',
               fit: BoxFit.cover,
               height: 240,
             ),
