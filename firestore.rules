@@ -13,6 +13,17 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
+    // The canonical statuses an order document may hold. Mirrors
+    // OrderStatus.label / orderStatusLabels in the app and the constants in the
+    // trusted order backend. A stored status is always one of these exact
+    // strings - never a Dart enum name or a free-form value.
+    function isOrderStatus(status) {
+      return status in [
+        'New', 'Contacted', 'Confirmed', 'Preparing',
+        'Out for Delivery', 'Delivered', 'Cancelled'
+      ];
+    }
+
     // Live site configuration (the single siteConfig/public document). The
     // customer site reads it at startup for delivery settings; only admins
     // (and the console / admin SDK) may change it.
@@ -30,11 +41,44 @@ service cloud.firestore {
 
     // Orders are created ONLY by the trusted Cloud Function (admin SDK, which
     // bypasses these rules). The browser cannot create, read, or delete an
-    // order; authorised admins may read orders and move them between statuses.
+    // order; authorised admins may read orders and move them between the
+    // canonical statuses.
+    //
+    // An order's economics and customer details (prices, totals, stock, items,
+    // name, phone, address, coordinates, maps link) are immutable once the
+    // trusted backend has written it. An admin may change ONLY the status and
+    // the change timestamps, and only to a canonical status.
     match /orders/{orderId} {
-      allow read, update: if isAdmin();
+      allow read: if isAdmin();
       allow create: if false;
       allow delete: if false;
+
+      allow update: if isAdmin()
+        // Only the status and its timestamps may ever differ after creation.
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'updatedAt', 'deliveredAt'])
+        // Status must be one of the canonical labels (never a free string).
+        && isOrderStatus(request.resource.data.status)
+        // Delivered and Cancelled are terminal states - an order cannot be
+        // moved back to an earlier status once finished.
+        && (resource.data.status != 'Delivered'
+            || request.resource.data.status == 'Delivered')
+        && (resource.data.status != 'Cancelled'
+            || request.resource.data.status == 'Cancelled')
+        // Entering Delivered (from any other state) must stamp a fresh
+        // deliveredAt timestamp at that moment - it cannot be back-dated by
+        // first writing a value while still in an earlier status.
+        && (resource.data.status == 'Delivered'
+            || request.resource.data.status != 'Delivered'
+            || (request.resource.data.deliveredAt is timestamp
+                && !('deliveredAt' in resource.data)))
+        // Once Delivered, deliveredAt is immutable - the recorded delivery
+        // time may never be re-stamped or rewritten.
+        && (resource.data.status != 'Delivered'
+            || request.resource.data.deliveredAt == resource.data.deliveredAt)
+        // deliveredAt may only ever exist on a Delivered order.
+        && (request.resource.data.status == 'Delivered'
+            || !('deliveredAt' in request.resource.data));
     }
 
     // Admin grants. A signed-in user may read their own grant (so the app can

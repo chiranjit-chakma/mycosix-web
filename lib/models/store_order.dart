@@ -70,6 +70,7 @@ class StoreOrder {
     this.instructions,
     this.createdAt,
     this.updatedAt,
+    this.deliveredAt,
   });
 
   /// Firestore document id (stable, set by the backend). Null before the
@@ -101,6 +102,10 @@ class StoreOrder {
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
+  /// Trusted server timestamp of when the order was marked Delivered. Set by
+  /// the admin status control (server timestamp) and never by a customer.
+  final DateTime? deliveredAt;
+
   int get totalQuantity => items.fold(0, (sum, l) => sum + l.quantity);
 
   StoreOrder copyWith({OrderStatus? status, DateTime? updatedAt}) {
@@ -125,6 +130,7 @@ class StoreOrder {
       status: status ?? this.status,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      deliveredAt: deliveredAt,
     );
   }
 
@@ -154,6 +160,7 @@ class StoreOrder {
     String? id,
     DateTime? createdAt,
     DateTime? updatedAt,
+    DateTime? deliveredAt,
   }) {
     final items = <StoreOrderLine>[];
     for (final raw in (map['items'] as List<dynamic>? ?? const [])) {
@@ -182,6 +189,7 @@ class StoreOrder {
       // objects, which must not be cast straight to DateTime here).
       createdAt: createdAt,
       updatedAt: updatedAt,
+      deliveredAt: deliveredAt,
     );
   }
 }

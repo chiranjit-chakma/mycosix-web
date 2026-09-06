@@ -1,15 +1,22 @@
 import 'package:flutter/foundation.dart';
 
-import '../config/mx_config.dart';
 import '../models/cart_item.dart';
 import '../models/product.dart';
 import '../repositories/cart_repository.dart';
 
 /// Application state for the shopping cart.
 class CartController extends ChangeNotifier {
-  CartController(this._repo);
+  /// The delivery fee this cart quotes, taken from the runtime site config
+  /// (the `siteConfig/public` document the trusted backend also reads when it
+  /// prices a real order). 0 means free delivery. The app shell supplies it so
+  /// the fee a customer sees can never drift from the fee the backend will
+  /// actually charge for the order.
+  CartController(this._repo, {required this.siteDeliveryFee});
 
   final CartRepository _repo;
+
+  /// The business delivery fee for the current site configuration.
+  final double siteDeliveryFee;
 
   List<CartItem> get lines => _repo.lines;
 
@@ -19,7 +26,8 @@ class CartController extends ChangeNotifier {
 
   double get subtotal => lines.fold(0, (a, l) => a + l.lineTotal);
 
-  double get deliveryFee => subtotal > 0 ? MxConfig.deliveryFee : 0;
+  /// Charged only on a non-empty cart; an empty cart is never charged.
+  double get deliveryFee => subtotal > 0 ? siteDeliveryFee : 0;
 
   double get total => subtotal + deliveryFee;
 

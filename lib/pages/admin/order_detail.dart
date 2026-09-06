@@ -5,6 +5,7 @@ import '../../config/mx_colors.dart';
 import '../../config/mx_type.dart';
 import '../../firebase/fb.dart';
 import '../../models/order_status.dart';
+import '../../models/order_status_update.dart';
 import '../../models/store_order.dart';
 import '../../services/url_launcher.dart';
 import '../../utils/money.dart';
@@ -44,10 +45,14 @@ class _OrderSheetState extends State<_OrderSheet> {
       _status = next;
     });
     try {
-      await Fb.orders.doc(widget.order.id).update({
-        'status': next.name,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      // status is stored as the canonical label (never the Dart enum name) and
+      // Delivered additionally stamps a trusted deliveredAt. The write is
+      // authorised by security rules and restricted to those fields.
+      final patch = orderStatusUpdateFields(
+        next,
+        FieldValue.serverTimestamp(),
+      );
+      await Fb.orders.doc(widget.order.id).update(patch);
       if (!mounted) return;
       setState(() => _saving = false);
       ScaffoldMessenger.of(context)
@@ -186,6 +191,28 @@ class _OrderSheetState extends State<_OrderSheet> {
                     ? null
                     : (s) => s == null ? null : _updateStatus(s),
               ),
+              if (_status == OrderStatus.delivered ||
+                  _status == OrderStatus.cancelled) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _status == OrderStatus.delivered
+                      ? 'Delivered and Cancelled are final — this order cannot be '
+                          'moved back to an earlier status.'
+                      : 'Cancelled is final — this order cannot be reopened. '
+                          'Restock any items manually in Inventory if needed.',
+                  style: MxType.bodyXs(color: MxColors.stone),
+                ),
+              ],
+              if (widget.order.deliveredAt != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Delivered at ${_stamp(widget.order.deliveredAt!)}',
+                  style: MxType.bodyXs(
+                    color: MxColors.ok,
+                    weight: FontWeight.w700,
+                  ),
+                ),
+              ],
               if (_saveError != null) ...[
                 const SizedBox(height: 8),
                 Text(_saveError!, style: MxType.bodyXs(color: MxColors.danger)),
@@ -196,6 +223,17 @@ class _OrderSheetState extends State<_OrderSheet> {
       ),
     );
   }
+}
+
+/// Absolute local timestamp, e.g. "5 Sep 2026, 09:14".
+String _stamp(DateTime t) {
+  const months = <String>[
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  String two(int v) => v.toString().padLeft(2, '0');
+  final l = t.toLocal();
+  return '${l.day} ${months[l.month - 1]} ${l.year}, ${two(l.hour)}:${two(l.minute)}';
 }
 
 Widget _row(

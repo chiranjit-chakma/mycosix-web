@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:mycosix/config/mx_config.dart';
 import 'package:mycosix/pages/home/home_page.dart';
 import 'package:mycosix/repositories/cart_repository.dart';
 import 'package:mycosix/repositories/product_repository.dart';
@@ -38,7 +39,12 @@ Future<void> _pumpHome(WidgetTester tester, double w, double h) async {
         ChangeNotifierProvider(
           create: (_) => ProductsController(productsRepo),
         ),
-        ChangeNotifierProvider(create: (_) => CartController(cartRepo)),
+        ChangeNotifierProvider(
+          create: (_) => CartController(
+            cartRepo,
+            siteDeliveryFee: MxConfig.deliveryFee,
+          ),
+        ),
       ],
       child: const MaterialApp(
         debugShowCheckedModeBanner: false,

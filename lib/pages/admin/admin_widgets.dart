@@ -256,6 +256,7 @@ StoreOrder orderFromDoc(DocumentSnapshot<Map<String, dynamic>> d) {
     id: d.id,
     createdAt: fireTs(m['createdAt']),
     updatedAt: fireTs(m['updatedAt']),
+    deliveredAt: fireTs(m['deliveredAt']),
   );
 }
 

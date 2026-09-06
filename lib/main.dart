@@ -103,7 +103,12 @@ class MxApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (_) => ProductsController(productsRepository),
         ),
-        ChangeNotifierProvider(create: (_) => CartController(cartRepository)),
+        ChangeNotifierProvider(
+          create: (_) => CartController(
+            cartRepository,
+            siteDeliveryFee: configRepository.deliveryFee,
+          ),
+        ),
         ChangeNotifierProvider(
           create: (_) =>
               LocationController(cartRepository, BrowserGeoLocationService()),

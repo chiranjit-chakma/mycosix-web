@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:mycosix/config/mx_config.dart';
 import 'package:mycosix/pages/admin/admin_access_lock.dart';
 import 'package:mycosix/pages/shop/shop_page.dart';
 import 'package:mycosix/repositories/cart_repository.dart';
@@ -53,7 +54,12 @@ void main() {
       MultiProvider(
         providers: [
           ChangeNotifierProvider.value(value: products),
-          ChangeNotifierProvider(create: (_) => CartController(cartRepo)),
+          ChangeNotifierProvider(
+            create: (_) => CartController(
+              cartRepo,
+              siteDeliveryFee: MxConfig.deliveryFee,
+            ),
+          ),
         ],
         child: const MaterialApp(home: ShopPage()),
       ),
