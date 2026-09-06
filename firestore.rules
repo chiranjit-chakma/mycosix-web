@@ -24,6 +24,40 @@ service cloud.firestore {
       ];
     }
 
+    // Canonical labels for the admin-only production-data collections. They
+    // mirror the Dart label allowlists in the models (batch.dart,
+    // order_request.dart, inventory_movement.dart). A stored value is always
+    // one of these exact strings - never a Dart enum name or free-form text.
+    function isBatchStatus(status) {
+      return status in [
+        'Planned', 'In Production', 'Harvested', 'Closed'
+      ];
+    }
+    function isRequestType(type) {
+      return type in [
+        'Cancellation', 'Quantity Change', 'Product Change',
+        'Delivery Correction', 'Assistance'
+      ];
+    }
+    function isRequestStatus(status) {
+      return status in [
+        'Pending', 'Approved', 'Rejected', 'Resolved', 'Expired'
+      ];
+    }
+    function isMovementType(type) {
+      return type in ['Adjustment', 'Sale'];
+    }
+
+    // Batch quantities must stay sane server-side: nothing negative and never
+    // more sold + waste than produced (a produced=0 batch therefore can have
+    // no sales or waste at all).
+    function batchNumbersOk(res) {
+      return res.data.producedQty is int && res.data.producedQty >= 0
+        && res.data.soldQty is int && res.data.soldQty >= 0
+        && res.data.wasteQty is int && res.data.wasteQty >= 0
+        && res.data.soldQty + res.data.wasteQty <= res.data.producedQty;
+    }
+
     // Live site configuration (the single siteConfig/public document). The
     // customer site reads it at startup for delivery settings; only admins
     // (and the console / admin SDK) may change it.
@@ -97,6 +131,114 @@ service cloud.firestore {
     }
     match /content/{docId} {
       allow read, create, update, delete: if isAdmin();
+    }
+
+    // -----------------------------------------------------------------------
+    // Zero-budget admin production data (batches, movements, requests).
+    // Every one is admin-only: the public customer site can never read or
+    // write them, and no `allow read, write` here is ever open to the world.
+    // -----------------------------------------------------------------------
+
+    // Grow batches (MYCO-BATCH-<year>-<seq>). Farm records only, written by
+    // the admin Batches section. Never deleted - a batch is a record.
+    match /batches/{docId} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin()
+        // Only the modelled fields may be written, in one allowlist.
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'batchId', 'variety', 'productionDate', 'expectedHarvestDate',
+          'actualHarvestDate', 'producedQty', 'soldQty', 'wasteQty',
+          'grade', 'notes', 'status', 'year', 'createdAt', 'updatedAt'
+        ])
+        && isBatchStatus(request.resource.data.status)
+        && batchNumbersOk(request.resource)
+        // A "Harvested" batch must actually have produced something.
+        && (request.resource.data.status != 'Harvested'
+            || request.resource.data.producedQty > 0)
+        && request.resource.data.batchId is string
+        && request.resource.data.batchId.matches('^MYCO-BATCH-\\d{4}-\\d{3,}$')
+        && request.resource.data.variety is string
+        && request.resource.data.variety.size() > 0
+        && request.resource.data.variety.size() <= 60
+        && request.resource.data.productionDate is string
+        && request.resource.data.productionDate.size() <= 10
+        && request.resource.data.expectedHarvestDate is string
+        && request.resource.data.expectedHarvestDate.size() <= 10
+        && (!('actualHarvestDate' in request.resource.data)
+            || (request.resource.data.actualHarvestDate is string
+                && request.resource.data.actualHarvestDate.size() <= 10))
+        && (!('notes' in request.resource.data)
+            || (request.resource.data.notes is string
+                && request.resource.data.notes.size() <= 500));
+      allow delete: if false;
+    }
+
+    // Inventory movement audit trail. Append-only: admins create movements
+    // from the Inventory/Products sections; nobody edits or deletes them.
+    match /inventoryMovements/{docId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'productId', 'productName', 'movementType', 'previousStock',
+          'newStock', 'note', 'linkedOrderId', 'recordedByEmail', 'recordedAt'
+        ])
+        && isMovementType(request.resource.data.movementType)
+        && request.resource.data.previousStock is int
+        && request.resource.data.previousStock >= 0
+        && request.resource.data.newStock is int
+        && request.resource.data.newStock >= 0
+        && request.resource.data.recordedAt is timestamp
+        && request.resource.data.productId is string
+        && request.resource.data.productId.size() <= 80
+        && request.resource.data.productName is string
+        && request.resource.data.productName.size() <= 120;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // Customer requests (cancellation / order change / assistance) recorded by
+    // the team. Decisions change ONLY the request's own status + decision
+    // fields; they never mutate the linked order (that stays a manual admin
+    // step in Orders, mirrored by the rules on /orders).
+    match /orderRequests/{docId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'requestType', 'requestDetail', 'status', 'orderId',
+          'orderStatusLabel', 'customerName', 'phone', 'recordedByEmail',
+          'recordedAt'
+        ])
+        && isRequestType(request.resource.data.requestType)
+        && isRequestStatus(request.resource.data.status)
+        && (!('orderStatusLabel' in request.resource.data)
+            || isOrderStatus(request.resource.data.orderStatusLabel))
+        && request.resource.data.recordedAt is timestamp
+        && request.resource.data.requestDetail is string
+        && request.resource.data.requestDetail.size() > 0
+        && request.resource.data.requestDetail.size() <= 600
+        // Customer identity is optional only because a request may be general
+        // assistance with no linked order; when present it is plain, bounded text.
+        && (!('customerName' in request.resource.data)
+            || (request.resource.data.customerName is string
+                && request.resource.data.customerName.size() <= 120))
+        && (!('phone' in request.resource.data)
+            || (request.resource.data.phone is string
+                && request.resource.data.phone.size() <= 30));
+      allow update: if isAdmin()
+        // Only the decision fields may differ after creation.
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'decisionAt', 'decidedByEmail', 'decisionNote', 'updatedAt'
+        ])
+        && isRequestStatus(request.resource.data.status)
+        // Terminal statuses are immutable once reached.
+        && resource.data.status not in ['Resolved', 'Rejected', 'Expired']
+        // A recorded decision is stamped by the server at that moment.
+        && (!('decisionAt' in request.resource.data)
+            || request.resource.data.decisionAt is timestamp)
+        && (!('decisionNote' in request.resource.data)
+            || (request.resource.data.decisionNote is string
+                && request.resource.data.decisionNote.size() <= 600));
+      allow delete: if false;
     }
   }
 }

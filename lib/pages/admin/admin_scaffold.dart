@@ -5,14 +5,27 @@ import '../../config/mx_colors.dart';
 import '../../config/mx_type.dart';
 import '../../state/auth_controller.dart';
 import '../../widgets/brand.dart';
+import 'sections/analytics_section.dart';
+import 'sections/batches_section.dart';
 import 'sections/content_team_section.dart';
 import 'sections/dashboard_section.dart';
 import 'sections/inventory_section.dart';
 import 'sections/orders_section.dart';
 import 'sections/products_section.dart';
+import 'sections/requests_section.dart';
 import 'sections/settings_section.dart';
 
-enum _Area { dashboard, orders, products, inventory, contentTeam, settings }
+enum _Area {
+  dashboard,
+  orders,
+  analytics,
+  inventory,
+  batches,
+  requests,
+  products,
+  contentTeam,
+  settings,
+}
 
 /// The real admin dashboard shell. Only reached when the gate has confirmed a
 /// signed-in, authorised administrator - every section reads/writes Firestore
@@ -30,8 +43,11 @@ class _AdminScaffoldState extends State<AdminScaffold> {
   static const _nav = <(_Area, String, IconData)>[
     (_Area.dashboard, 'Overview', Icons.space_dashboard_outlined),
     (_Area.orders, 'Orders', Icons.receipt_long_outlined),
-    (_Area.products, 'Products', Icons.inventory_2_outlined),
+    (_Area.analytics, 'Analytics', Icons.bar_chart_rounded),
     (_Area.inventory, 'Inventory', Icons.warehouse_outlined),
+    (_Area.batches, 'Batches', Icons.agriculture_outlined),
+    (_Area.requests, 'Requests', Icons.forum_outlined),
+    (_Area.products, 'Products', Icons.inventory_2_outlined),
     (_Area.contentTeam, 'Content & team', Icons.groups_outlined),
     (_Area.settings, 'Settings', Icons.settings_outlined),
   ];
@@ -63,14 +79,22 @@ class _AdminScaffoldState extends State<AdminScaffold> {
                 ),
                 const Divider(color: MxColors.lineDark, height: 1),
                 const SizedBox(height: 10),
-                for (final (area, label, icon) in _nav)
-                  _NavItem(
-                    label: label,
-                    icon: icon,
-                    selected: _area == area,
-                    onTap: () => setState(() => _area = area),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final (area, label, icon) in _nav)
+                          _NavItem(
+                            label: label,
+                            icon: icon,
+                            selected: _area == area,
+                            onTap: () => setState(() => _area = area),
+                          ),
+                      ],
+                    ),
                   ),
-                const Spacer(),
+                ),
                 const _AccountFooter(),
               ],
             ),
@@ -140,8 +164,11 @@ class _AdminScaffoldState extends State<AdminScaffold> {
       child: switch (_area) {
         _Area.dashboard => const DashboardSection(),
         _Area.orders => const OrdersSection(),
-        _Area.products => const ProductsSection(),
+        _Area.analytics => const AnalyticsSection(),
         _Area.inventory => const InventorySection(),
+        _Area.batches => const BatchesSection(),
+        _Area.requests => const RequestsSection(),
+        _Area.products => const ProductsSection(),
         _Area.contentTeam => const ContentTeamSection(),
         _Area.settings => const SettingsSection(),
       },

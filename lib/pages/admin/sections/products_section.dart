@@ -1,10 +1,17 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../../config/mx_colors.dart';
 import '../../../config/mx_type.dart';
+import '../../../firebase/admin_logs.dart';
 import '../../../firebase/fb.dart';
+import '../../../models/inventory_movement.dart';
 import '../../../models/product.dart';
+import '../../../state/auth_controller.dart';
+import '../../../util/product_image.dart';
+import '../../../widgets/mx_image.dart';
 import '../admin_widgets.dart';
 
 /// Catalogue management. Every change is written straight to Firestore and is
@@ -324,7 +331,72 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
   late bool _busy = false;
   String? _error;
 
+  // Optional photo. A photo chosen here is stored inline on the product
+  // document (see util/product_image.dart); an existing product may keep its
+  // bundled asset path, be replaced, or have its photo removed.
+  String? _pickedImage;
+  bool _imageRemoved = false;
+  bool _pickingImage = false;
+  String? _imageError;
+
   static String _num(num? v) => v == null ? '' : v.toString();
+
+  String get _existingImage => widget.product?.image ?? '';
+
+  /// The value `image` should hold when the editor is saved.
+  String get _imageToSave {
+    if (_pickedImage != null) return _pickedImage!;
+    if (_imageRemoved) return '';
+    return _existingImage;
+  }
+
+  /// What the preview box should show right now.
+  String get _previewImage {
+    if (_pickedImage != null) return _pickedImage!;
+    if (_imageRemoved) return '';
+    return _existingImage;
+  }
+
+  Future<void> _pickPhoto() async {
+    if (_pickingImage) return;
+    setState(() {
+      _pickingImage = true;
+      _imageError = null;
+    });
+    try {
+      final picked = await FilePicker.pickFiles(type: FileType.image);
+      if (picked.isEmpty) return; // admin cancelled the picker
+      final bytes = await picked.first.readAsBytes();
+      final url = await encodeInlineProductImage(bytes);
+      if (url == null) {
+        if (!mounted) return;
+        setState(() {
+          _imageError = 'That photo could not be stored. Choose a JPEG/PNG '
+              'photo under a few MB.';
+        });
+        return;
+      }
+      if (!mounted) return;
+      setState(() {
+        _pickedImage = url;
+        _imageRemoved = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _imageError = 'The photo could not be read. Choose a JPEG/PNG image.';
+      });
+    } finally {
+      if (mounted) setState(() => _pickingImage = false);
+    }
+  }
+
+  void _removeImage() {
+    setState(() {
+      _pickedImage = null;
+      _imageRemoved = true;
+    });
+  }
 
   @override
   void dispose() {
@@ -364,20 +436,47 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
         'stock': stock,
         'sortKey': sortKey,
         'available': _available,
+        'image': _imageToSave,
         'updatedAt': FieldValue.serverTimestamp(),
       };
       final existing = widget.product;
+      final actor = context.read<AuthController>().user?.email;
       if (existing == null) {
         final ref = Fb.products.doc();
         await ref.set({
           ...base,
           'id': ref.id,
-          'image': '',
           'gallery': const <String>[],
           'createdAt': FieldValue.serverTimestamp(),
         });
+        final label = _name.text.trim() +
+            (_weight.text.trim().isEmpty
+                ? ''
+                : ' (${_weight.text.trim()})');
+        await logStockChange(
+          productId: ref.id,
+          productLabel: label,
+          type: InventoryMovementType.adjustment,
+          previousStock: 0,
+          newStock: stock,
+          note: 'Initial stock on creation',
+          recordedByEmail: actor,
+        );
       } else {
         await Fb.products.doc(existing.id).set(base, SetOptions(merge: true));
+        if (stock != existing.stock) {
+          final label = existing.name +
+              (existing.weight.isEmpty ? '' : ' (${existing.weight})');
+          await logStockChange(
+            productId: existing.id,
+            productLabel: label,
+            type: InventoryMovementType.adjustment,
+            previousStock: existing.stock,
+            newStock: stock,
+            note: 'Stock set in the product editor',
+            recordedByEmail: actor,
+          );
+        }
       }
       if (!mounted) return;
       Navigator.pop(context);
@@ -450,6 +549,8 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
                 ),
                 const SizedBox(height: 10),
                 _field(_description, 'Description', null, maxLines: 3),
+                const SizedBox(height: 12),
+                _photoTile(),
                 const SizedBox(height: 10),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -503,6 +604,101 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _photoTile() {
+    final hasPhoto = _previewImage.isNotEmpty;
+    final preview = SizedBox(
+      width: 88,
+      height: 88,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(MxRadius.sm),
+        child: hasPhoto
+            ? MxImage(asset: _previewImage, width: 88, height: 88)
+            : Container(
+                color: MxColors.creamDeep,
+                child: const Icon(
+                  Icons.image_outlined,
+                  size: 30,
+                  color: MxColors.stoneLight,
+                ),
+              ),
+      ),
+    );
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: MxColors.creamDeep,
+        borderRadius: BorderRadius.circular(MxRadius.md),
+        border: Border.all(color: MxColors.line),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          preview,
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Product photo (optional)',
+                  style: MxType.bodySm(
+                    color: MxColors.charcoal,
+                    weight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  hasPhoto
+                      ? 'Shown in the shop. Pick another photo to replace it.'
+                      : 'No photo yet - the shop shows a placeholder. You can '
+                          'add one later.',
+                  style: MxType.bodyXs(color: MxColors.stone),
+                ),
+                if (_imageError != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    _imageError!,
+                    style: MxType.bodyXs(
+                      color: MxColors.danger,
+                      weight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _pickingImage || _busy ? null : _pickPhoto,
+                      icon: _pickingImage
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.add_a_photo_outlined, size: 16),
+                      label: Text(
+                        _pickingImage
+                            ? 'Preparing...'
+                            : (hasPhoto ? 'Change photo' : 'Add photo'),
+                      ),
+                    ),
+                    if (hasPhoto) ...[
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: _busy ? null : _removeImage,
+                        child: const Text('Remove'),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -30,6 +30,15 @@ class Fb {
   static CollectionReference<Map<String, dynamic>> get siteConfig =>
       db.collection('siteConfig');
 
+  // Zero-budget production data collections. All are admin-only under the
+  // security rules: customers can never read or write them.
+  static CollectionReference<Map<String, dynamic>> get batches =>
+      db.collection('batches');
+  static CollectionReference<Map<String, dynamic>> get orderRequests =>
+      db.collection('orderRequests');
+  static CollectionReference<Map<String, dynamic>> get inventoryMovements =>
+      db.collection('inventoryMovements');
+
   /// Maps a Firebase/network failure to a short, human-safe message. Customers
   /// must never see stack traces or Firebase internals.
   static String friendlyMessage(Object error) {
