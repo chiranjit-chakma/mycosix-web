@@ -87,7 +87,11 @@ List<MonthlyRow> buildMonthlyRows({
     final key = _key(at);
     final a = acc.putIfAbsent(key, () => _MonthAcc(at.year, at.month));
     a.deliveredOrderCount += 1;
-    a.revenue += order.total;
+    // Only trusted economics count as revenue; a captured (verified == false)
+    // order has no server total.
+    if (order.verified) {
+      a.revenue += order.total;
+    }
     a.unitsSold += order.totalQuantity;
   }
 

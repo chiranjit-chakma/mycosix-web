@@ -14,6 +14,7 @@ import '../../utils/money.dart';
 import '../../widgets/mx_image.dart';
 import '../../widgets/page.dart';
 import '../../widgets/product_card.dart';
+import '../../widgets/product_video.dart';
 import '../../widgets/products_scope.dart';
 import '../../widgets/shell.dart';
 
@@ -289,6 +290,7 @@ class _ProductInfo extends StatelessWidget {
         Text('About this pack', style: MxType.label(color: MxColors.forest)),
         const SizedBox(height: 8),
         Text(product.description, style: MxType.body(width)),
+        ProductVideoButton(product: product),
         const SizedBox(height: 28),
         if (product.inStock) ...[
           Row(

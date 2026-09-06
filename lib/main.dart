@@ -120,7 +120,6 @@ class MxApp extends StatelessWidget {
             final config = context.read<ConfigRepository>();
             return WhatsAppOrderService(
               whatsappNumber: config.whatsappNumber,
-              deliveryFee: config.deliveryFee,
             );
           },
         ),

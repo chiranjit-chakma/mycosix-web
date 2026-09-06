@@ -1,26 +1,18 @@
 import 'dart:math';
 
-import '../models/customer_order.dart';
-
-/// Prepares a professional WhatsApp order message and opens the handoff.
+/// The one, deliberately simple WhatsApp handoff the website offers.
 ///
-/// Opening WhatsApp is only a handoff — this service NEVER claims the website
-/// silently sends the message. The customer reviews and taps send in WhatsApp.
+/// The order itself is confirmed on screen and (via a trusted backend, or a
+/// money-free capture when that backend is unreachable) recorded for the admin
+/// workflow. WhatsApp is only an optional, NON-authoritative follow-up: it
+/// opens a chat with MYCOSIX pre-filled with a short notice that carries no
+/// items, prices, addresses or map links. The customer never sends the order
+/// data itself through WhatsApp.
 class WhatsAppOrderService {
-  WhatsAppOrderService({
-    required this.whatsappNumber,
-    required this.deliveryFee,
-  });
+  WhatsAppOrderService({required this.whatsappNumber});
 
-  final String whatsappNumber; // e.g. '916363816465'
-  final double deliveryFee;
-
-  static const _maxWhatsAppLength = 4096;
-
-  static const _rupee = '₹';
-  static const _emDash = '—';
-  static const _multiply = '×';
-  static const _pin = '📍';
+  /// MYCOSIX business number in international form, e.g. '916363816465'.
+  final String whatsappNumber;
 
   /// Unambiguous id alphabet — no 0/O or 1/I, so an id survives being read
   /// aloud over the phone.
@@ -39,74 +31,15 @@ class WhatsAppOrderService {
     return buf.toString();
   }
 
-  /// Builds the WhatsApp message in the exact plain-text layout the team
-  /// reviews orders from. WhatsApp renders this verbatim — no markup.
-  String buildMessage(CustomerOrder order) {
-    final b = StringBuffer();
-
-    // Header.
-    b.write('MYCOSIX MUSHROOMS $_emDash NEW ORDER\n');
-    b.write('Order ID: ${order.orderId}\n');
-
-    // Customer.
-    b.write('\nCUSTOMER\n');
-    b.write('Name: ${order.customerName}\n');
-    b.write('Phone: ${order.phone}\n');
-    final email = (order.email ?? '').trim();
-    if (email.isNotEmpty) b.write('Email: $email\n');
-
-    // Order lines.
-    b.write('\nORDER\n');
-    var n = 1;
-    for (final line in order.items) {
-      final unit = line.product.weight.trim();
-      final unitText = unit.isNotEmpty ? ' $unit' : '';
-      b.write(
-        '$n. ${line.product.name} $_emDash$unitText $_multiply '
-        '${line.quantity} $_emDash $_rupee${_fmt(line.lineTotal)}\n',
-      );
-      n++;
-    }
-
-    // Totals.
-    b.write('\nSubtotal: $_rupee${_fmt(order.subtotal)}\n');
-    b.write('Delivery: $_rupee${_fmt(order.deliveryFee)}\n');
-    b.write('TOTAL: $_rupee${_fmt(order.total)}\n');
-
-    // Confirmed delivery location.
-    b.write('\nDELIVERY LOCATION\n');
-    b.write('$_pin Exact pinned location: ${order.location.mapsUrl}\n');
-
-    // Optional address hints, only when the customer filled them in.
-    final building = (order.building ?? '').trim();
-    final apartment = (order.apartment ?? '').trim();
-    final landmark = (order.landmark ?? '').trim();
-    final instructions = (order.instructions ?? '').trim();
-    if (building.isNotEmpty) b.write('Building/House: $building\n');
-    if (apartment.isNotEmpty) b.write('Apartment/Unit: $apartment\n');
-    if (landmark.isNotEmpty) b.write('Landmark: $landmark\n');
-    if (instructions.isNotEmpty) {
-      b.write('Delivery instructions: $instructions\n');
-    }
-
-    b.write('\nPlease confirm availability and delivery.');
-
-    return b.toString();
-  }
-
-  /// Opens WhatsApp with the prepared message. Returns the wa.me URL used.
-  String openHandoff(CustomerOrder order) {
-    var text = buildMessage(order);
-    if (text.length > _maxWhatsAppLength) {
-      text = text.substring(0, _maxWhatsAppLength);
-    }
-    final uri = Uri.parse('https://wa.me/$whatsappNumber')
-        .replace(queryParameters: {'text': text});
-    return uri.toString();
-  }
-
-  static String _fmt(double value) {
-    if (value == value.roundToDouble()) return value.toStringAsFixed(0);
-    return value.toStringAsFixed(2);
+  /// The confirmation-screen WhatsApp handoff: opens a chat with MYCOSIX
+  /// pre-filled with the fixed notice below. Intentionally NOT an order
+  /// channel — items, amounts and the delivery location are never included,
+  /// so nothing here can disagree with the recorded order.
+  String confirmationHandoffUrl(String orderId) {
+    final text = 'MYCOSIX order $orderId has been confirmed. '
+        'Please contact MYCOSIX if you need assistance.';
+    return Uri.parse('https://wa.me/$whatsappNumber')
+        .replace(queryParameters: {'text': text})
+        .toString();
   }
 }

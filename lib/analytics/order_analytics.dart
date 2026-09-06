@@ -50,11 +50,13 @@ class SalesMetrics {
   final int deliveredCount;
   final int cancelledCount;
 
-  /// Sum of Delivered order totals only. Cancelled and other statuses are not
-  /// revenue.
+  /// Sum of Delivered order totals only. Only orders with trusted economics
+  /// ([StoreOrder.verified]) count — a delivered but browser-captured order has
+  /// no server-verified total, so it can never inflate revenue.
   final double revenue;
 
-  /// revenue / deliveredCount (0 when nothing delivered yet).
+  /// revenue / number of delivered orders with trusted economics
+  /// (0 when nothing delivered yet).
   final double averageOrderValue;
 
   /// Units sold across Delivered line items.
@@ -73,13 +75,18 @@ class SalesMetrics {
 SalesMetrics computeSalesMetrics(List<StoreOrder> orders) {
   final delivered =
       orders.where((o) => o.status == OrderStatus.delivered).toList();
+  // Revenue is only ever computed from orders with trusted economics. A
+  // browser-captured order (verified == false) has no server total, so it is
+  // excluded here even if it was delivered.
+  final moneyDelivered =
+      delivered.where((o) => o.verified).toList();
   final cancelled =
       orders.where((o) => o.status == OrderStatus.cancelled).toList();
 
   var revenue = 0.0;
   var quantitySold = 0;
   final byName = <String, _ProductAcc>{};
-  for (final order in delivered) {
+  for (final order in moneyDelivered) {
     revenue += order.total;
     for (final line in order.items) {
       quantitySold += line.quantity;
@@ -115,13 +122,14 @@ SalesMetrics computeSalesMetrics(List<StoreOrder> orders) {
   }
 
   final deliveredCount = delivered.length;
+  final moneyDeliveredCount = moneyDelivered.length;
   return SalesMetrics(
     ordersCount: orders.length,
     deliveredCount: deliveredCount,
     cancelledCount: cancelled.length,
     revenue: revenue,
     averageOrderValue:
-        deliveredCount == 0 ? 0 : revenue / deliveredCount,
+        moneyDeliveredCount == 0 ? 0 : revenue / moneyDeliveredCount,
     quantitySold: quantitySold,
     breakdown: breakdown,
     bestSellers: best.length > 8 ? best.sublist(0, 8) : best,

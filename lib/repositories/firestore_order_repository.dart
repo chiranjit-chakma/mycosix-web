@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
 import '../firebase/fb.dart';
@@ -44,6 +45,54 @@ class FirestoreOrderRepository implements OrderRepository {
       throw OrderRejected(
         e.message ?? Fb.friendlyMessage(e),
         code: e.code,
+      );
+    }
+  }
+
+  @override
+  Future<void> captureNewOrder(CapturedOrderData data) async {
+    try {
+      // Money-free by construction AND by security rules. status/verified are
+      // pinned here (never read from the customer) and createdAt is the server
+      // clock. Firestore rules re-enforce all of it on the write.
+      await Fb.orders.add({
+        'orderId': data.orderId,
+        'customerName': data.customerName,
+        'phone': data.phone,
+        if (data.email != null && data.email!.trim().isNotEmpty)
+          'email': data.email!.trim(),
+        'latitude': data.latitude,
+        'longitude': data.longitude,
+        'mapsUrl': data.mapsUrl,
+        if (data.building != null && data.building!.trim().isNotEmpty)
+          'building': data.building!.trim(),
+        if (data.apartment != null && data.apartment!.trim().isNotEmpty)
+          'apartment': data.apartment!.trim(),
+        if (data.landmark != null && data.landmark!.trim().isNotEmpty)
+          'landmark': data.landmark!.trim(),
+        if (data.instructions != null && data.instructions!.trim().isNotEmpty)
+          'instructions': data.instructions!.trim(),
+        'items': [
+          for (final l in data.lines)
+            {
+              'productId': l.productId,
+              'productName': l.productName,
+              'quantity': l.quantity,
+              if (l.variant != null && l.variant!.trim().isNotEmpty)
+                'variant': l.variant!.trim(),
+              if (l.weight != null && l.weight!.trim().isNotEmpty)
+                'weight': l.weight!.trim(),
+            },
+        ],
+        'status': 'New',
+        'verified': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      // Rules refusal, offline, or anything else: the order was NOT recorded.
+      // Never pretend it was.
+      throw BackendUnavailable(
+        'Your order could not be recorded right now. Please try again.',
       );
     }
   }

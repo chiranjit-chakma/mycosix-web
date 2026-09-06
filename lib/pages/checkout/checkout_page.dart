@@ -11,6 +11,8 @@ import '../../models/product.dart';
 import '../../models/store_order.dart';
 import '../../repositories/order_repository.dart';
 import '../../router/routes.dart';
+import '../../services/order_receipt_pdf.dart';
+import '../../services/pdf_browser.dart';
 import '../../services/url_launcher.dart';
 import '../../services/whatsapp_order_service.dart';
 import '../../state/cart_controller.dart';
@@ -22,7 +24,7 @@ import '../../widgets/location/location_selector.dart';
 import '../../widgets/page.dart';
 import '../../widgets/shell.dart';
 
-/// Shared field validators — the form fields and the WhatsApp-button gating
+/// Shared field validators — the form fields and the place-order button
 /// use exactly the same rules so they can never disagree.
 String? _validatePhone(String? value) {
   final v = value?.trim() ?? '';
@@ -73,7 +75,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   bool _submitted = false;
   CustomerOrder? _placed;
-  bool _opening = false;
+  bool _placing = false;
   String? _orderError;
 
   List<TextEditingController> get _fieldControllers => [
@@ -89,8 +91,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
   @override
   void initState() {
     super.initState();
-    // Rebuild whenever a field changes so the WhatsApp CTA reflects live
-    // validity (disabled until the order data is complete and valid).
+    // Rebuild whenever a field changes so the place-order CTA reflects
+    // live validity (disabled until the order data is complete and valid).
     for (final c in _fieldControllers) {
       c.addListener(_fieldsChanged);
     }
@@ -144,6 +146,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
     super.dispose();
   }
 
+  /// Places the order: the trusted backend validates and writes it; if that
+  /// backend is unreachable, checkout records a strictly money-free capture so
+  /// the order still reaches the admin workflow. The confirmation is always
+  /// shown on screen — WhatsApp is never opened with the order data itself.
   Future<void> _placeOrder() async {
     final cart = context.read<CartController>();
     final location = context.read<LocationController>();
@@ -160,10 +166,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
     setState(() => _submitted = true);
 
     if (!(_formKey.currentState?.validate() ?? false) || !canSend) return;
-    if (_opening) return;
+    if (_placing) return;
 
     setState(() {
-      _opening = true;
+      _placing = true;
       _orderError = null;
     });
 
@@ -192,27 +198,65 @@ class _CheckoutPageState extends State<CheckoutPage> {
       final stored = await orderRepo.createOrder(draft);
       order = _orderFromStored(stored);
     } on OrderRejected catch (e) {
-      // The backend refused the order (e.g. a product became unavailable).
-      // Show the customer-safe reason; nothing was handed off or recorded.
+      // The backend refused the order (e.g. a product became unavailable or is
+      // out of stock). Show the customer-safe reason; nothing was recorded and
+      // nothing was handed off.
       if (!mounted) return;
       setState(() {
-        _opening = false;
+        _placing = false;
         _orderError = e.message;
       });
       return;
     } on BackendUnavailable {
-      // No trusted backend reachable (not deployed yet / offline): keep the
-      // exact Part 1 flow. The WhatsApp message is prepared here with a local
-      // id; nothing is claimed to be recorded server-side.
-      order = _localFallbackOrder(cart, whatsapp, loc);
+      // No trusted backend reachable (not deployed yet / offline): record a
+      // money-free capture so the shop still sees the order, then confirm on
+      // screen. No WhatsApp auto-open with the order data — ever.
+      final orderId = whatsapp.generateOrderId();
+      try {
+        await orderRepo.captureNewOrder(
+          CapturedOrderData(
+            orderId: orderId,
+            customerName: draft.customerName,
+            phone: draft.phone,
+            email: draft.email,
+            latitude: loc.latitude,
+            longitude: loc.longitude,
+            mapsUrl: loc.mapsUrl,
+            building: draft.building,
+            apartment: draft.apartment,
+            landmark: draft.landmark,
+            instructions: draft.instructions,
+            lines: [
+              for (final line in cart.lines)
+                CapturedOrderLine(
+                  productId: line.product.id,
+                  productName: line.product.name,
+                  quantity: line.quantity,
+                  variant: line.product.variant,
+                  weight: line.product.weight,
+                ),
+            ],
+          ),
+        );
+      } catch (_) {
+        // The capture failed too, so the order was not recorded anywhere
+        // server-side. Tell the customer honestly and keep the cart so they
+        // can retry.
+        if (!mounted) return;
+        setState(() {
+          _placing = false;
+          _orderError =
+              'We could not record your order right now. Please check your '
+              'connection and try again. Nothing has been charged.';
+        });
+        return;
+      }
+      order = _capturedFallbackOrder(cart, loc, orderId);
     }
-
-    final url = whatsapp.openHandoff(order);
-    UrlLauncher.open(url); // handoff only: the customer presses Send.
 
     if (!mounted) return;
     setState(() {
-      _opening = false;
+      _placing = false;
       _placed = order;
     });
 
@@ -228,7 +272,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   /// Maps the authoritative stored order into a [CustomerOrder] whose values
   /// (order id, totals, line prices) all come from the backend, so the
-  /// WhatsApp message always matches what was actually recorded.
+  /// on-screen confirmation and the PDF receipt always match what was actually
+  /// recorded.
   CustomerOrder _orderFromStored(StoreOrder stored) {
     return CustomerOrder(
       orderId: stored.orderId,
@@ -269,11 +314,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
-  /// Part 1 fallback: WhatsApp handoff with a locally generated order id.
-  CustomerOrder _localFallbackOrder(
+  /// Receipt copy for a captured order: built locally from the cart with the
+  /// SAME id that was recorded money-free, so the on-screen confirmation and
+  /// the PDF receipt match the order in the admin list. No WhatsApp is opened.
+  CustomerOrder _capturedFallbackOrder(
     CartController cart,
-    WhatsAppOrderService whatsapp,
     DeliveryLocation loc,
+    String orderId,
   ) {
     String? clean(String v) {
       final t = v.trim();
@@ -281,11 +328,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
     }
 
     return CustomerOrder(
-      orderId: whatsapp.generateOrderId(),
+      orderId: orderId,
       customerName: _name.text.trim(),
       phone: _phone.text.trim(),
       location: loc,
-      items: List.of(cart.lines), // copy: the cart is cleared after handoff
+      items: List.of(cart.lines), // copy: the cart is cleared after placement
       subtotal: cart.subtotal,
       deliveryFee: cart.deliveryFee,
       total: cart.total,
@@ -335,8 +382,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 Text('Almost there', style: MxType.h1(width)),
                 const SizedBox(height: 14),
                 Text(
-                  'No account needed. Tell us where to deliver and we will '
-                  'confirm your order on WhatsApp.',
+                  'No account needed. Pay cash on delivery when your order '
+                  'arrives - we confirm every order by a quick call or '
+                  'WhatsApp message before we deliver.',
                   style: MxType.body(width),
                 ),
               ],
@@ -377,14 +425,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
                         children: [
                           _SummaryCard(),
                           const SizedBox(height: 20),
-                          _WhatsAppCard(
+                          _PlaceOrderCard(
                             enabled: canSend,
-                            opening: _opening,
+                            placing: _placing,
                             hint: ctaHint,
                             onPlace: _placeOrder,
                           ),
-                          const SizedBox(height: 14),
-                          const _HandoffNote(),
                         ],
                       );
                       return desktop
@@ -677,16 +723,20 @@ class _CheckoutForm extends StatelessWidget {
   }
 }
 
-class _WhatsAppCard extends StatelessWidget {
-  const _WhatsAppCard({
+/// Place-order card: records the order (trusted backend, or a money-free
+/// capture) and shows the confirmation on screen. The order data itself is
+/// never sent over WhatsApp — the confirmation screen and stored record are
+/// what confirm the order.
+class _PlaceOrderCard extends StatelessWidget {
+  const _PlaceOrderCard({
     required this.enabled,
-    required this.opening,
+    required this.placing,
     required this.hint,
     required this.onPlace,
   });
 
   final bool enabled;
-  final bool opening;
+  final bool placing;
   final String? hint;
   final VoidCallback onPlace;
 
@@ -705,34 +755,47 @@ class _WhatsAppCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const _WhatsAppIcon(),
+              Container(
+                width: 34,
+                height: 34,
+                decoration: const BoxDecoration(
+                  color: MxColors.moss,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.payments,
+                  size: 18,
+                  color: Colors.white,
+                ),
+              ),
               const SizedBox(width: 10),
               Text(
-                'Place order on WhatsApp',
+                'Place your order',
                 style: MxType.h4(color: MxColors.charcoal),
               ),
             ],
           ),
           const SizedBox(height: 8),
           Text(
-            'We open WhatsApp with your order ready to send — you review it '
-            'there and press Send to confirm.',
+            'Pay cash on delivery — no online payment. Your order is confirmed '
+            'on this screen, and we follow up with a call or WhatsApp message '
+            'before we deliver.',
             style: MxType.bodySm(color: MxColors.stone),
           ),
           const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: enabled && !opening ? onPlace : null,
+              onPressed: enabled && !placing ? onPlace : null,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF128C4A),
+                backgroundColor: MxColors.forest,
                 foregroundColor: Colors.white,
                 disabledBackgroundColor: MxColors.stoneLight.withValues(
                   alpha: 0.25,
                 ),
                 disabledForegroundColor: MxColors.stone,
               ),
-              child: opening
+              child: placing
                   ? const SizedBox(
                       width: 18,
                       height: 18,
@@ -741,10 +804,10 @@ class _WhatsAppCard extends StatelessWidget {
                         color: Colors.white,
                       ),
                     )
-                  : const Text('Continue on WhatsApp'),
+                  : const Text('Place order - cash on delivery'),
             ),
           ),
-          if (!enabled && !opening && hint != null) ...[
+          if (!enabled && !placing && hint != null) ...[
             const SizedBox(height: 10),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -766,28 +829,6 @@ class _WhatsAppCard extends StatelessWidget {
           ],
         ],
       ),
-    );
-  }
-}
-
-class _HandoffNote extends StatelessWidget {
-  const _HandoffNote();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Icon(Icons.info_outline_rounded, size: 15, color: MxColors.stone),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            'MYCOSIX never sends WhatsApp messages from this website. Your '
-            'order is prepared here and you send it yourself.',
-            style: MxType.bodyXs(color: MxColors.stone),
-          ),
-        ),
-      ],
     );
   }
 }
@@ -830,10 +871,55 @@ class _OrderErrorBanner extends StatelessWidget {
   }
 }
 
-class _SuccessPanel extends StatelessWidget {
+/// Confirmation panel. Shows ONLY the confirmed state and the order id — no
+/// items and no amounts on screen. The full receipt is available locally as a
+/// branded PDF the customer can view or download, and WhatsApp offers only a
+/// short, non-authoritative notice (never the order data).
+class _SuccessPanel extends StatefulWidget {
   const _SuccessPanel({required this.order});
 
   final CustomerOrder order;
+
+  @override
+  State<_SuccessPanel> createState() => _SuccessPanelState();
+}
+
+class _SuccessPanelState extends State<_SuccessPanel> {
+  ReceiptAssets? _assets;
+  bool _pdfBusy = false;
+  String? _pdfError;
+
+  CustomerOrder get order => widget.order;
+
+  Future<void> _pdfAction({required bool download}) async {
+    if (_pdfBusy) return;
+    setState(() {
+      _pdfBusy = true;
+      _pdfError = null;
+    });
+    try {
+      final assets = _assets ??= await ReceiptAssets.fromAssets();
+      final bytes = await buildOrderReceiptPdf(order, assets: assets);
+      if (download) {
+        PdfBrowser.download(bytes, 'MYCOSIX-${order.orderId}.pdf');
+      } else {
+        PdfBrowser.view(bytes, 'MYCOSIX-${order.orderId}.pdf');
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _pdfError =
+            'Your receipt could not be prepared right now. Please try again.';
+      });
+    } finally {
+      if (mounted) setState(() => _pdfBusy = false);
+    }
+  }
+
+  void _whatsappHandoff() {
+    final whatsapp = context.read<WhatsAppOrderService>();
+    UrlLauncher.open(whatsapp.confirmationHandoffUrl(order.orderId));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -862,36 +948,81 @@ class _SuccessPanel extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 22),
-            Text('Your order is ready in WhatsApp', style: MxType.h2(width)),
-            const SizedBox(height: 10),
-            Text(
-              'Order ${order.orderId} · ${formatRupees(order.total)}',
-              style: MxType.h4(color: MxColors.ok),
-            ),
+            Text('Order confirmed', style: MxType.h2(width)),
             const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              decoration: BoxDecoration(
+                color: MxColors.creamSoft,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: MxColors.ok.withValues(alpha: 0.45),
+                ),
+              ),
+              child: Text(
+                order.orderId,
+                style: MxType.h4(color: MxColors.forest),
+              ),
+            ),
+            const SizedBox(height: 16),
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 560),
               child: Text(
-                'We opened WhatsApp with your full order — items, location pin '
-                'and delivery details. Press Send there to place it, and we '
-                'will confirm on WhatsApp. Your cart has been cleared, ready '
-                'for your next order.',
+                'Your order has been received. Pay cash on delivery — we will '
+                'confirm it with a quick call or WhatsApp message before we '
+                'deliver. Keep your receipt below for the full order details; '
+                'we will never ask you to send your order over WhatsApp.',
                 textAlign: TextAlign.center,
                 style: MxType.bodySm(color: MxColors.charcoalSoft),
               ),
             ),
+            if (_pdfError != null) ...[
+              const SizedBox(height: 12),
+              Text(_pdfError!, style: MxType.bodyXs(color: MxColors.danger)),
+            ],
             const SizedBox(height: 24),
             Wrap(
               spacing: 12,
               runSpacing: 12,
               alignment: WrapAlignment.center,
               children: [
+                FilledButton.tonalIcon(
+                  onPressed: _pdfBusy ? null : () => _pdfAction(download: false),
+                  icon: _pdfBusy
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                  label: const Text('View receipt'),
+                ),
                 OutlinedButton.icon(
+                  onPressed: _pdfBusy ? null : () => _pdfAction(download: true),
+                  icon: const Icon(Icons.download_rounded, size: 18),
+                  label: const Text('Download receipt'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _whatsappHandoff,
+                  icon: const Icon(Icons.chat_bubble_rounded, size: 18),
+                  label: const Text('Notify on WhatsApp'),
+                ),
+                TextButton.icon(
                   onPressed: () => Navigator.of(context).pushNamed(Routes.shop),
                   icon: const Icon(Icons.arrow_forward_rounded, size: 17),
                   label: const Text('Continue shopping'),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: Text(
+                'The WhatsApp button only sends MYCOSIX a short notice that '
+                'your order is confirmed — it never sends your order details.',
+                textAlign: TextAlign.center,
+                style: MxType.bodyXs(color: MxColors.stone),
+              ),
             ),
           ],
         ),
@@ -929,28 +1060,6 @@ class _EmptyCheckout extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// Simple WhatsApp glyph so the button reads clearly without an icon package.
-class _WhatsAppIcon extends StatelessWidget {
-  const _WhatsAppIcon();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 34,
-      height: 34,
-      decoration: const BoxDecoration(
-        color: Color(0xFF128C4A),
-        shape: BoxShape.circle,
-      ),
-      child: const Icon(
-        Icons.chat_bubble_rounded,
-        size: 18,
-        color: Colors.white,
       ),
     );
   }

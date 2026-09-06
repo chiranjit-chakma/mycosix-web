@@ -274,3 +274,10 @@ bool orderOpen(StoreOrder o) =>
 
 bool orderNeedsAttention(StoreOrder o) =>
     o.status == OrderStatus.newOrder || o.status == OrderStatus.contacted;
+
+/// Money label for an order row: trusted totals when the backend priced the
+/// order, otherwise a clear "awaiting confirmation" note (a browser-captured
+/// order carries no money and the total is agreed with the customer by phone
+/// before packing).
+String orderMoneyLabel(StoreOrder o) =>
+    o.verified ? rupees(o.total) : 'Awaiting confirmation';

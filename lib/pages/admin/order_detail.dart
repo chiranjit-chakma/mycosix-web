@@ -146,30 +146,87 @@ class _OrderSheetState extends State<_OrderSheet> {
                 title: 'Items',
                 rows: [
                   for (final l in o.items)
-                    _row(
-                      '${l.productName}${l.weight == null ? '' : ' (${l.weight})'} × ${l.quantity}',
-                      formatRupees(l.lineTotal),
-                      secondary: '₹${l.unitPrice.toStringAsFixed(0)} each',
-                    ),
+                    if (o.verified)
+                      _row(
+                        '${l.productName}${l.weight == null ? '' : ' (${l.weight})'} × ${l.quantity}',
+                        formatRupees(l.lineTotal),
+                        secondary: '₹${l.unitPrice.toStringAsFixed(0)} each',
+                      )
+                    else
+                      // Packing view: a captured order has no prices, so show
+                      // exactly what needs packing (product x quantity).
+                      _row(
+                        '${l.productName}${l.weight == null ? '' : ' (${l.weight})'}',
+                        '× ${l.quantity}',
+                      ),
                 ],
               ),
               const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: MxColors.cream,
-                  borderRadius: BorderRadius.circular(MxRadius.md),
-                  border: Border.all(color: MxColors.line),
+              if (o.verified)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: MxColors.cream,
+                    borderRadius: BorderRadius.circular(MxRadius.md),
+                    border: Border.all(color: MxColors.line),
+                  ),
+                  child: Column(
+                    children: [
+                      _row('Subtotal', formatRupees(o.subtotal)),
+                      _row('Delivery fee', formatRupees(o.deliveryFee)),
+                      const Divider(color: MxColors.line, height: 22),
+                      _row('Total', formatRupees(o.total), bold: true),
+                    ],
+                  ),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: MxColors.warn.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(MxRadius.md),
+                    border: Border.all(
+                      color: MxColors.warn.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.info_outline_rounded,
+                        size: 18,
+                        color: MxColors.warn,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Not yet priced - confirm the cash total on the call',
+                              style: MxType.bodySm(
+                                color: MxColors.charcoal,
+                                weight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              'This order was captured money-free while the '
+                              'secure order service was unavailable. The cash '
+                              'total is agreed with the customer before '
+                              'packing; it will not appear in sales analytics '
+                              'until the trusted backend records a priced '
+                              'total.',
+                              style: MxType.bodyXs(
+                                color: MxColors.charcoalSoft,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                child: Column(
-                  children: [
-                    _row('Subtotal', formatRupees(o.subtotal)),
-                    _row('Delivery fee', formatRupees(o.deliveryFee)),
-                    const Divider(color: MxColors.line, height: 22),
-                    _row('Total', formatRupees(o.total), bold: true),
-                  ],
-                ),
-              ),
               const SizedBox(height: 16),
               Text('Status', style: MxType.labelLg(color: MxColors.moss)),
               const SizedBox(height: 8),

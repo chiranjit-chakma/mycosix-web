@@ -85,10 +85,10 @@ class _HeroSection extends StatelessWidget {
   }
 }
 
-/// The warm-parchment hero art shared by every breakpoint. On desktop the
-/// forest-green message sits on the start edge and the real grow-room
-/// photograph fills one large rounded card on the other side, both vertically
-/// centred against the full first-viewport band.
+/// Whole-hero (desktop): the new hero photograph fills the whole first-viewport
+/// band edge to edge, with the brand message overlaid on it — the exact same
+/// copy, sitting on a soft cream glass panel so it stays readable over the
+/// photo. No side-by-side split; the image IS the hero.
 class _HeroBodyDesktop extends StatelessWidget {
   const _HeroBodyDesktop({required this.minHeight});
 
@@ -98,38 +98,51 @@ class _HeroBodyDesktop extends StatelessWidget {
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
     final hpad = width >= 1440 ? 88.0 : 56.0;
-    final avail = width - hpad * 2;
-    // The card scales with the hero: as large as the remaining width allows
-    // (up to a sane cap), but never so wide it crowds the copy.
-    final cardWidth = math.min(math.max(avail * 0.46, 360.0), 720.0);
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [MxColors.cream, MxColors.parchment],
-        ),
-      ),
-      child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: hpad),
-        child: SizedBox(
-          height: minHeight,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const Expanded(child: _HeroCopy()),
-              const SizedBox(width: 56),
-              _HeroVisual(width: cardWidth),
-            ],
+    return SizedBox(
+      height: minHeight,
+      width: double.infinity,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              image: DecorationImage(
+                image: AssetImage('assets/images/hero_image.jpeg'),
+                fit: BoxFit.cover,
+              ),
+            ),
           ),
-        ),
+          // Legibility scrim: deepest at the message edge, fading clear over
+          // the open part of the photograph.
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [
+                  Color(0xD91D2717),
+                  Color(0x551D2717),
+                  Color(0x001D2717),
+                ],
+              ),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: hpad),
+              child: _HeroCopy(panel: true),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-/// Phone/tablet hero: message and photograph stacked and centred, so the hero
-/// opens full-screen on phones and the photograph reads as one clean card.
+/// Whole-hero (phone/tablet): the photograph again fills the band and the
+/// message is overlaid in the middle on a cream glass panel, so the hero opens
+/// as one full-screen image.
 class _HeroBodyCompact extends StatelessWidget {
   const _HeroBodyCompact({required this.minHeight});
 
@@ -139,46 +152,65 @@ class _HeroBodyCompact extends StatelessWidget {
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
     final contentW = math.min(width - 40, 620.0);
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [MxColors.cream, MxColors.parchment],
-        ),
-      ),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(minHeight: minHeight),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 30, 20, 40),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const _HeroCopy(center: true),
-              const SizedBox(height: 30),
-              SizedBox(
-                width: contentW,
-                child: _HeroVisual(width: contentW),
+    return SizedBox(
+      height: minHeight,
+      width: double.infinity,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              image: DecorationImage(
+                image: AssetImage('assets/images/hero_image.jpeg'),
+                fit: BoxFit.cover,
               ),
-            ],
+            ),
           ),
-        ),
+          // Bottom-heavy scrim so the overlaid panel is legible on phones.
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0x401D2717),
+                  Color(0x001D2717),
+                  Color(0x8A1D2717),
+                ],
+              ),
+            ),
+          ),
+          Align(
+            alignment: Alignment.center,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: SizedBox(
+                width: contentW,
+                child: _HeroCopy(center: true, panel: true),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
 class _HeroCopy extends StatelessWidget {
-  const _HeroCopy({this.center = false});
+  const _HeroCopy({this.center = false, this.panel = false});
 
   /// Centres the message (phones/tablets); otherwise it sits on the start edge
   /// (desktop).
   final bool center;
 
+  /// When true the copy is wrapped in a translucent cream glass panel so it
+  /// stays readable overlaid on the whole-hero photograph.
+  final bool panel;
+
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    return ConstrainedBox(
+    final copy = ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 560),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -239,50 +271,25 @@ class _HeroCopy extends StatelessWidget {
         ],
       ),
     );
-  }
-}
 
-/// The real grow-room photograph as one large rounded card. It keeps the
-/// photograph at its natural aspect (a gentle 7:5), so the frame is never
-/// awkwardly cropped and nothing reads as empty space.
-class _HeroVisual extends StatelessWidget {
-  const _HeroVisual({required this.width});
-
-  final double width;
-
-  @override
-  Widget build(BuildContext context) {
-    // The card is bound to [width]; the rounded frame keeps the photograph at
-    // its natural aspect below it, so the card never steals the Row and the
-    // copy keeps its share.
-    return SizedBox(
-      width: width,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(36),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.95),
-            width: 1.6,
+    if (!panel) return copy;
+    // The cream glass panel keeps the preserved message legible regardless of
+    // how bright or busy the photograph behind it is.
+    return Container(
+      padding: EdgeInsets.all(width >= 1024 ? 34 : 26),
+      decoration: BoxDecoration(
+        color: MxColors.cream.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.85)),
+        boxShadow: [
+          BoxShadow(
+            color: MxColors.forest.withValues(alpha: 0.22),
+            blurRadius: 42,
+            offset: const Offset(0, 18),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: MxColors.forest.withValues(alpha: 0.12),
-              blurRadius: 44,
-              offset: const Offset(0, 20),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(34),
-          child: AspectRatio(
-            aspectRatio: 7 / 5,
-            child: MxImage(
-              asset: 'assets/images/hero_new.jpg',
-              fit: BoxFit.cover,
-            ),
-          ),
-        ),
+        ],
       ),
+      child: copy,
     );
   }
 }
@@ -295,36 +302,62 @@ class _FeaturedSection extends StatelessWidget {
     return MxPage(
       padding: mxSectionPadding(context, large: 72, small: 48),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           MxSectionHeader(
             overline: 'The Harvest',
             title: 'Featured Mushrooms',
-            body: 'Hand-picked at peak freshness, delivered to your door.',
+            body: 'A taste of today\'s harvest — swipe to explore.',
           ),
           const SizedBox(height: 44),
-          const _FeaturedGrid(),
+          const _FeaturedRail(),
+          const SizedBox(height: 36),
+          Center(
+            child: MxCta(
+              label: 'See all products',
+              tone: 'ghost',
+              icon: Icons.arrow_forward_rounded,
+              onTap: () => Navigator.of(context).pushNamed(Routes.shop),
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-/// Featured packs. Kicks the catalog load after the first frame and rebuilds
-/// whenever [ProductsController] changes — so an admin adding or editing a
-/// product updates this section live, with no refresh needed.
-class _FeaturedGrid extends StatefulWidget {
-  const _FeaturedGrid();
+/// Featured packs as a horizontal swipeable rail. Kicks the catalog load after
+/// the first frame and rebuilds whenever [ProductsController] changes — so an
+/// admin adding or editing a product updates this section live, with no
+/// refresh needed. Only a limited first set is shown; "See all products" opens
+/// the full shop.
+class _FeaturedRail extends StatefulWidget {
+  const _FeaturedRail();
 
   @override
-  State<_FeaturedGrid> createState() => _FeaturedGridState();
+  State<_FeaturedRail> createState() => _FeaturedRailState();
 }
 
-class _FeaturedGridState extends State<_FeaturedGrid> {
+class _FeaturedRailState extends State<_FeaturedRail> {
+  /// Rail shows a limited initial set — the full catalogue lives in the shop.
+  static const _maxShown = 8;
+
+  /// A fixed card width keeps the rail a true horizontal swipe at every
+  /// breakpoint: each card is a self-contained tile, and the next one peeks in
+  /// from the right edge to signal more is coming.
+  double _cardWidth(double screen) {
+    if (screen >= 1440) return 320.0;
+    if (screen >= 1180) return 306.0;
+    if (screen >= 768) return 300.0;
+    if (screen >= 600) return 320.0;
+    return 268.0;
+  }
+
   @override
   void initState() {
     super.initState();
-    // First paint is the hero; fetch right after so the section is populated
-    // by the time the user scrolls to it.
+    // First paint is the hero; fetch right after so the rail is populated by
+    // the time the user scrolls to it.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.products()?.fetchAll();
     });
@@ -333,13 +366,19 @@ class _FeaturedGridState extends State<_FeaturedGrid> {
   @override
   Widget build(BuildContext context) {
     final products = context.watch<ProductsController>();
+    final screenW = MediaQuery.of(context).size.width;
+    final cardW = _cardWidth(screenW);
+    // Each card keeps the exact height a [ProductCard] of this width needs, so
+    // nothing clips as the rail scrolls.
+    final extent = productTileExtent(cardW);
+
     if (!products.loaded) {
       if (products.error != null) {
         return Text('Could not load products', style: MxType.bodySm());
       }
-      return const SizedBox(
-        height: 220,
-        child: Center(
+      return SizedBox(
+        height: extent,
+        child: const Center(
           child: CircularProgressIndicator(
             color: MxColors.moss,
             strokeWidth: 2.5,
@@ -347,8 +386,29 @@ class _FeaturedGridState extends State<_FeaturedGrid> {
         ),
       );
     }
-    final items = products.products.where((p) => p.available).take(4).toList();
-    return ProductGrid(products: items);
+
+    final items = products.products
+        .where((p) => p.available)
+        .take(_maxShown)
+        .toList();
+    if (items.isEmpty) return const SizedBox.shrink();
+
+    return SizedBox(
+      width: double.infinity,
+      height: extent,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.only(right: 2),
+        itemCount: items.length,
+        separatorBuilder: (context, index) => const SizedBox(width: 20),
+        itemBuilder: (context, index) {
+          return SizedBox(
+            width: cardW,
+            child: ProductCard(product: items[index], compact: cardW < 320),
+          );
+        },
+      ),
+    );
   }
 }
 

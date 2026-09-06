@@ -48,6 +48,63 @@ service cloud.firestore {
       return type in ['Adjustment', 'Sale'];
     }
 
+    // A browser-captured order. This is the ONLY shape any client may create in
+    // /orders: status pinned to 'New', verified pinned to false, and a strict
+    // key allowlist with NO money keys (subtotal/deliveryFee/total/unitPrice/
+    // lineTotal/currency are simply impossible to write). A manipulated browser
+    // can therefore never write a priced order, choose a status, or stamp a
+    // delivery. Firestore rules have no loops, so per-item field checks are
+    // bounded at the list level here (count + the top-level allowlist); item
+    // contents are product ids/names/quantities only and are reviewed by an
+    // admin before packing. Money is confirmed with the customer on the phone
+    // by the admin workflow, never trusted from this document.
+    function isCapturedOrder(res) {
+      return res.data.keys().hasOnly([
+        'orderId', 'customerName', 'phone', 'email',
+        'latitude', 'longitude', 'mapsUrl',
+        'building', 'apartment', 'landmark', 'instructions',
+        'items', 'status', 'verified', 'createdAt'
+      ])
+      && res.data.status == 'New'
+      && res.data.verified == false
+      && 'orderId' in res.data
+      && res.data.orderId is string
+      && res.data.orderId.size() <= 14
+      && res.data.orderId.matches('^MYC-[A-HJ-NP-Z2-9]{8}$')
+      && 'customerName' in res.data
+      && res.data.customerName is string
+      && res.data.customerName.size() >= 1
+      && res.data.customerName.size() <= 120
+      && 'phone' in res.data
+      && res.data.phone is string
+      && res.data.phone.size() >= 6
+      && res.data.phone.size() <= 20
+      && 'latitude' in res.data
+      && res.data.latitude is number
+      && 'longitude' in res.data
+      && res.data.longitude is number
+      && 'mapsUrl' in res.data
+      && res.data.mapsUrl is string
+      && res.data.mapsUrl.size() <= 500
+      && (!('email' in res.data)
+          || (res.data.email is string && res.data.email.size() <= 120))
+      && (!('building' in res.data)
+          || (res.data.building is string && res.data.building.size() <= 200))
+      && (!('apartment' in res.data)
+          || (res.data.apartment is string && res.data.apartment.size() <= 200))
+      && (!('landmark' in res.data)
+          || (res.data.landmark is string && res.data.landmark.size() <= 200))
+      && (!('instructions' in res.data)
+          || (res.data.instructions is string
+              && res.data.instructions.size() <= 500))
+      && 'items' in res.data
+      && res.data.items is list
+      && res.data.items.size() >= 1
+      && res.data.items.size() <= 30
+      && 'createdAt' in res.data
+      && res.data.createdAt is timestamp;
+    }
+
     // Batch quantities must stay sane server-side: nothing negative and never
     // more sold + waste than produced (a produced=0 batch therefore can have
     // no sales or waste at all).
@@ -73,18 +130,15 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
-    // Orders are created ONLY by the trusted Cloud Function (admin SDK, which
-    // bypasses these rules). The browser cannot create, read, or delete an
-    // order; authorised admins may read orders and move them between the
-    // canonical statuses.
-    //
-    // An order's economics and customer details (prices, totals, stock, items,
-    // name, phone, address, coordinates, maps link) are immutable once the
-    // trusted backend has written it. An admin may change ONLY the status and
-    // the change timestamps, and only to a canonical status.
+    // Real orders are created ONLY by the trusted Cloud Function (admin SDK,
+    // which bypasses these rules). While that function is not deployed, the
+    // browser may record a strictly money-free captured order (status 'New',
+    // verified false) through the allowlist below - the one exception to "the
+    // browser never writes orders", and it carries no economics. Only admins
+    // may read orders; nobody may delete them.
     match /orders/{orderId} {
       allow read: if isAdmin();
-      allow create: if false;
+      allow create: if isCapturedOrder(request.resource);
       allow delete: if false;
 
       allow update: if isAdmin()

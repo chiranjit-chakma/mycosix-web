@@ -16,6 +16,7 @@ class Product {
     required this.stock,
     this.available = true,
     this.sortKey = 0,
+    this.videoUrl,
     this.createdAt,
     this.updatedAt,
   });
@@ -28,6 +29,11 @@ class Product {
 
   /// Additional images for the product gallery. Falls back to [image].
   final List<String> gallery;
+
+  /// Optional web (https) video link (e.g. a cooking or grow-room clip).
+  /// Null/blank means the product has no video and the UI hides the
+  /// "Watch product video" control entirely.
+  final String? videoUrl;
 
   /// e.g. "Fresh Oyster Mushroom" or "Dried Slices".
   final String variant;
@@ -63,6 +69,7 @@ class Product {
     int? stock,
     bool? available,
     int? sortKey,
+    String? videoUrl,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -79,6 +86,7 @@ class Product {
       stock: stock ?? this.stock,
       available: available ?? this.available,
       sortKey: sortKey ?? this.sortKey,
+      videoUrl: videoUrl ?? this.videoUrl,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -97,6 +105,8 @@ class Product {
         'stock': stock,
         'available': available,
         'sortKey': sortKey,
+        if (videoUrl != null && videoUrl!.trim().isNotEmpty)
+          'videoUrl': videoUrl!.trim(),
         'createdAt': createdAt?.toIso8601String(),
         'updatedAt': updatedAt?.toIso8601String(),
       };
@@ -115,6 +125,7 @@ class Product {
       stock: (json['stock'] ?? 0) as int,
       available: json['available'] as bool? ?? true,
       sortKey: ((json['sortKey'] ?? 0) as num).toInt(),
+      videoUrl: (json['videoUrl'] as String?)?.trim(),
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'] as String)
           : null,
@@ -140,6 +151,8 @@ class Product {
         'stock': stock,
         'available': available,
         'sortKey': sortKey,
+        if (videoUrl != null && videoUrl!.trim().isNotEmpty)
+          'videoUrl': videoUrl!.trim(),
       };
 
   /// Reads a product document. Timestamp fields are converted by the caller
@@ -159,6 +172,7 @@ class Product {
       stock: ((map['stock'] ?? 0) as num).toInt(),
       available: map['available'] as bool? ?? true,
       sortKey: ((map['sortKey'] ?? 0) as num).toInt(),
+      videoUrl: (map['videoUrl'] as String?)?.trim(),
     );
   }
 

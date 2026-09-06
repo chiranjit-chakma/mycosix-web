@@ -68,6 +68,7 @@ class StoreOrder {
     this.apartment,
     this.landmark,
     this.instructions,
+    this.verified = true,
     this.createdAt,
     this.updatedAt,
     this.deliveredAt,
@@ -106,6 +107,18 @@ class StoreOrder {
   /// the admin status control (server timestamp) and never by a customer.
   final DateTime? deliveredAt;
 
+  /// True when the economics on this order came from the trusted backend (the
+  /// `createOrder` Cloud Function) — i.e. [subtotal]/[deliveryFee]/[total] and
+  /// the per-line [StoreOrderLine.unitPrice]/[lineTotal] are authoritative.
+  ///
+  /// A browser-captured order (recorded while the backend is unreachable) is
+  /// deliberately money-free and `verified == false`: no customer-supplied
+  /// price ever reaches Firestore. Admin money screens and sales analytics use
+  /// only verified orders, and admins confirm captured orders by phone before
+  /// packing. Defaults to true so orders constructed in code (which represent
+  /// trusted-backend records) behave as before.
+  final bool verified;
+
   int get totalQuantity => items.fold(0, (sum, l) => sum + l.quantity);
 
   StoreOrder copyWith({OrderStatus? status, DateTime? updatedAt}) {
@@ -131,6 +144,7 @@ class StoreOrder {
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deliveredAt: deliveredAt,
+      verified: verified,
     );
   }
 
@@ -153,6 +167,7 @@ class StoreOrder {
         if (instructions != null && instructions!.isNotEmpty)
           'instructions': instructions,
         'status': status.label,
+        'verified': verified,
       };
 
   factory StoreOrder.fromMap(
@@ -185,6 +200,10 @@ class StoreOrder {
       landmark: map['landmark'] as String?,
       instructions: map['instructions'] as String?,
       status: OrderStatus.fromLabel(map['status'] as String?),
+      // True when the economics came from the trusted backend. A money-bearing
+      // document written by the backend has no `verified` flag but always a
+      // total; a browser-captured order carries `verified: false` and no money.
+      verified: map['verified'] as bool? ?? map.containsKey('total'),
       // Timestamps are converted by the caller (Firestore returns Timestamp
       // objects, which must not be cast straight to DateTime here).
       createdAt: createdAt,

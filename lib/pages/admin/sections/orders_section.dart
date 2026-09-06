@@ -30,8 +30,8 @@ class _OrdersSectionState extends State<OrdersSection> {
           const SectionHeader(
             title: 'Orders',
             subtitle:
-                'Created only by the trusted backend - browser totals can '
-                'never reach Firestore.',
+                'Created by the trusted backend, or captured money-free while '
+                'it is unavailable - browser totals can never reach Firestore.',
           ),
           const SizedBox(height: 14),
           _filterBar(),
@@ -150,7 +150,7 @@ class _OrderRow extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${o.phone}  |  ${rupees(o.total)}  |  ${shortWhen(o.createdAt)}',
+                      '${o.phone}  |  ${orderMoneyLabel(o)}  |  ${shortWhen(o.createdAt)}',
                       style: MxType.bodyXs(color: MxColors.stone),
                     ),
                   ],
