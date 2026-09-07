@@ -158,12 +158,13 @@ class _MxPwaRootState extends State<MxPwaRoot> {
     );
   }
 
-  /// System back inside the app: a section other than Home glides to the
-  /// previous one; on Home the three-step exit guard applies (scroll to top,
-  /// then "press back again to exit", then leave).
+  /// System back inside the app: any section other than Home glides back
+  /// to Home (the customer's anchor) in one step; back on Home runs the
+  /// exit guard (scroll to top, then "press back again to exit", then
+  /// leave).
   void _handleBack() {
     if (_index > 0) {
-      _switchTo(_index - 1);
+      _switchTo(0);
       return;
     }
     final s = _sectionStates[0];

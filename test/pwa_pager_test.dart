@@ -248,21 +248,27 @@ void main() {
     expect(vertical.position.pixels, greaterThan(0));
   });
 
-  testWidgets('system back on a deeper section glides to the previous one', (
+  testWidgets('system back on a deeper section glides Home first', (
     tester,
   ) async {
-    await _pumpPager(tester, initialIndex: 2);
-    expect(_page(tester), 2.0);
-
-    await tester.binding.handlePopRoute();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    expect(_page(tester), 1.0);
+    // The owner flow: from any section but Home, back goes straight to
+    // Home in one step (never one section at a time).
+    await _pumpPager(tester, initialIndex: 4);
+    expect(_page(tester), 4.0);
 
     await tester.binding.handlePopRoute();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(_page(tester), 0.0);
+    expect(_navSelected(tester, 'Home'), isTrue);
+
+    // A second back on Home starts the exit guard: the hint appears and
+    // the app does not leave (the test arm of the exit facade is a no-op).
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(_page(tester), 0.0);
+    expect(find.textContaining('Press back again'), findsOneWidget);
   });
 
   testWidgets('system back on Home shows the exit hint and does not leave', (
