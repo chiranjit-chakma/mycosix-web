@@ -44,5 +44,5 @@ class MxConfig {
 
   /// Delivery service area shown in site copy (footer, product pages). This is
   /// the business's call — edit here when the delivery footprint changes.
-  static const serviceArea = 'Hyderabad';
+  static const serviceArea = 'Mysore, Karnataka';
 }

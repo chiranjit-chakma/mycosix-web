@@ -1,7 +1,7 @@
 # MYCOSIX Mushrooms
 
 Premium e-commerce website for **MYCOSIX**, a student oyster-mushroom farm
-(six growers) delivering fresh, farm-grown mushrooms around Hyderabad. Built
+(six growers) delivering fresh, farm-grown mushrooms around Mysore, Karnataka. Built
 with Flutter Web.
 
 - Live site: https://mycosix.web.app
