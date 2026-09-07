@@ -87,24 +87,27 @@ class _MxCtaState extends State<MxCta> {
             borderRadius: BorderRadius.circular(999),
             border: border,
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (widget.icon != null) ...[
-                Icon(widget.icon, size: 18, color: fg),
-                const SizedBox(width: 8),
-              ],
-              Text(
-                widget.label,
-                style: TextStyle(
-                  fontFamily: 'Manrope',
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.3,
-                  color: fg,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (widget.icon != null) ...[
+                  Icon(widget.icon, size: 18, color: fg),
+                  const SizedBox(width: 8),
+                ],
+                Text(
+                  widget.label,
+                  style: TextStyle(
+                    fontFamily: 'Manrope',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
+                    color: fg,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

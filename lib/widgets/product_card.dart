@@ -226,19 +226,30 @@ class _ProductCardState extends State<ProductCard> {
                         const SizedBox(height: 12),
                         Row(
                           children: [
-                            Text(
-                              formatRupees(product.price),
-                              style: compact
-                                  ? const TextStyle(
-                                      fontFamily: 'Fraunces',
-                                      fontSize: 17,
-                                      height: 1.1,
-                                      fontWeight: FontWeight.w700,
-                                      color: MxColors.forest,
-                                    )
-                                  : MxType.h3(color: MxColors.forest),
+                            // The price sits left, the button right. On very
+                            // narrow two-up tiles the price is allowed to scale
+                            // down (never wraps, never overflows) so long rupee
+                            // amounts and the button still share the row.
+                            Flexible(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  formatRupees(product.price),
+                                  maxLines: 1,
+                                  style: compact
+                                      ? const TextStyle(
+                                          fontFamily: 'Fraunces',
+                                          fontSize: 17,
+                                          height: 1.1,
+                                          fontWeight: FontWeight.w700,
+                                          color: MxColors.forest,
+                                        )
+                                      : MxType.h3(color: MxColors.forest),
+                                ),
+                              ),
                             ),
-                            const Spacer(),
+                            const SizedBox(width: 10),
                             if (product.inStock)
                               _AddButton(
                                 product: product,

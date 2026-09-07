@@ -114,53 +114,73 @@ class TeamPage extends StatelessWidget {
                               'and we will keep getting better.',
                         ),
                       ];
-                      return GridView.count(
-                        crossAxisCount: cols,
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        mainAxisSpacing: 18,
-                        crossAxisSpacing: 18,
-                        childAspectRatio: cols >= 3 ? 1.9 : 2.4,
-                        children: [
-                          for (final (icon, title, body) in items)
-                            Container(
-                              padding: const EdgeInsets.all(22),
-                              decoration: BoxDecoration(
-                                color: MxColors.forest.withValues(alpha: 0.55),
-                                borderRadius: BorderRadius.circular(
-                                  MxRadius.lg,
-                                ),
-                                border: Border.all(
-                                  color: MxColors.lineDark.withValues(
-                                    alpha: 0.5,
-                                  ),
-                                ),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Icon(
-                                    icon,
-                                    size: 22,
-                                    color: MxColors.mossSoft,
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    title,
-                                    style: MxType.h4(color: MxColors.cream),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    body,
-                                    style: MxType.bodySm(
-                                      color: MxColors.cream.withValues(
-                                        alpha: 0.78,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
+                      Widget ruleCard((IconData, String, String) it) {
+                        final (icon, title, body) = it;
+                        return Container(
+                          padding: const EdgeInsets.all(22),
+                          decoration: BoxDecoration(
+                            color: MxColors.forest.withValues(alpha: 0.55),
+                            borderRadius: BorderRadius.circular(MxRadius.lg),
+                            border: Border.all(
+                              color: MxColors.lineDark.withValues(alpha: 0.5),
                             ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(icon, size: 22, color: MxColors.mossSoft),
+                              const SizedBox(height: 12),
+                              Text(
+                                title,
+                                style: MxType.h4(color: MxColors.cream),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                body,
+                                style: MxType.bodySm(
+                                  color: MxColors.cream.withValues(
+                                    alpha: 0.78,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
+                      // Cards grow to their content (the old fixed aspect-ratio
+                      // grid clipped the longer bodies). On three-up they share
+                      // the tallest card's height so a row never looks ragged.
+                      if (cols >= 3) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            for (var r = 0; r < items.length; r += cols) ...[
+                              if (r > 0) const SizedBox(height: 18),
+                              IntrinsicHeight(
+                                child: Row(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    for (var c = 0; c < cols; c++) ...[
+                                      if (c > 0) const SizedBox(width: 18),
+                                      if (r + c < items.length)
+                                        Expanded(child: ruleCard(items[r + c])),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
+                        );
+                      }
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (var i = 0; i < items.length; i++) ...[
+                            if (i > 0) const SizedBox(height: 18),
+                            ruleCard(items[i]),
+                          ],
                         ],
                       );
                     },

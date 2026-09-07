@@ -32,13 +32,18 @@ class _ProductPageState extends State<ProductPage> {
   int _activeImage = 0;
   bool _loading = true;
   Product? _product;
+  // The catalog is looked up once in initState and kept for the page's whole
+  // life. dispose() must not do a context lookup to remove the listener: by
+  // then the element is already deactivated and the lookup would throw.
+  late final ProductsController _catalog;
 
   @override
   void initState() {
     super.initState();
     // Stay in step with the live catalog: if the owner edits a product while a
     // customer is viewing it, the page updates in place (price, stock, etc.).
-    context.read<ProductsController>().addListener(_refreshFromCatalog);
+    _catalog = context.read<ProductsController>();
+    _catalog.addListener(_refreshFromCatalog);
     _load();
   }
 
@@ -75,7 +80,7 @@ class _ProductPageState extends State<ProductPage> {
 
   @override
   void dispose() {
-    context.read<ProductsController>().removeListener(_refreshFromCatalog);
+    _catalog.removeListener(_refreshFromCatalog);
     super.dispose();
   }
 

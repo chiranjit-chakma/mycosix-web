@@ -66,9 +66,13 @@ class _HeroSection extends StatelessWidget {
     // The hero fills the first viewport (clearance + hero body), so the
     // section below it never peeks in at load on desktop or tall tablets.
     // The generous cap only guards against pathological fullscreen heights.
+    // On the very smallest screens (<= 360px wide) the overlaid message panel
+    // is at its narrowest and therefore tallest, so it needs a taller minimum
+    // to fit without clipping.
+    final compactFloor = width < 360 ? 560.0 : 520.0;
     final minH = desktop
         ? math.min(math.max(600.0, vh - clearance), 1700.0)
-        : math.min(math.max(520.0, vh - clearance), 1700.0);
+        : math.min(math.max(compactFloor, vh - clearance), 1700.0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -151,7 +155,10 @@ class _HeroBodyCompact extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    final contentW = math.min(width - 40, 620.0);
+    // On very small phones the message panel borrows a little more of the edge
+    // so its buttons fit on one natural line instead of being squeezed.
+    final sideInset = width < 360 ? 28.0 : 40.0;
+    final contentW = math.min(width - sideInset, 620.0);
     return SizedBox(
       height: minHeight,
       width: double.infinity,
@@ -183,7 +190,13 @@ class _HeroBodyCompact extends StatelessWidget {
           Align(
             alignment: Alignment.center,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
+              // contentW below already reserves the side inset, so on the very
+              // small phones a fixed 20 here would eat the extra edge that the
+              // smaller inset was meant to give the hero's buttons; keep only a
+              // hair of margin so the panel can sit at its full natural width.
+              padding: EdgeInsets.symmetric(
+                horizontal: width < 360 ? 12.0 : 20.0,
+              ),
               child: SizedBox(
                 width: contentW,
                 child: _HeroCopy(center: true, panel: true),
@@ -274,9 +287,11 @@ class _HeroCopy extends StatelessWidget {
 
     if (!panel) return copy;
     // The cream glass panel keeps the preserved message legible regardless of
-    // how bright or busy the photograph behind it is.
+    // how bright or busy the photograph behind it is. Its padding tightens on
+    // the smallest screens, where every pixel of the narrow column matters.
+    final panelPad = width >= 1024 ? 34.0 : (width < 360 ? 20.0 : 26.0);
     return Container(
-      padding: EdgeInsets.all(width >= 1024 ? 34 : 26),
+      padding: EdgeInsets.all(panelPad),
       decoration: BoxDecoration(
         color: MxColors.cream.withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(28),
