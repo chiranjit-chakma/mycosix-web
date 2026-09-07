@@ -41,19 +41,25 @@ class _LocationSelectorState extends State<LocationSelector> {
         children: [
           Row(
             children: [
-              const Icon(Icons.location_on_outlined, size: 20, color: MxColors.moss),
+              const Icon(
+                Icons.location_on_outlined,
+                size: 20,
+                color: MxColors.moss,
+              ),
               const SizedBox(width: 8),
-              Text('Delivery Location', style: MxType.h4(color: MxColors.charcoal)),
+              Text(
+                'Delivery Location',
+                style: MxType.h4(color: MxColors.charcoal),
+              ),
               const Spacer(),
-              if (hasLocation)
-                _StatusChip(confirmed: loc.isConfirmed),
+              if (hasLocation) _StatusChip(confirmed: loc.isConfirmed),
             ],
           ),
           const SizedBox(height: 14),
           Text(
             hasLocation
-                ? 'Drag the map or use + / − to zoom, then move the pin to your exact delivery point.'
-                : 'Set your delivery location — drag the map, zoom with + / −, or use your current location.',
+                ? 'Drag the map to find your spot, tap to drop the pin, or drag the pin to fine-tune it. Zoom with + / - for precision.'
+                : 'Set your delivery location - grant current location once, or tap Use Current Location below to open the map.',
             style: MxType.bodySm(color: MxColors.charcoalSoft),
           ),
           const SizedBox(height: 16),
@@ -65,7 +71,9 @@ class _LocationSelectorState extends State<LocationSelector> {
               children: [
                 _ActionBtn(
                   icon: Icons.my_location_rounded,
-                  label: loc.locating ? 'Getting location…' : 'Use Current Location',
+                  label: loc.locating
+                      ? 'Getting location…'
+                      : 'Use Current Location',
                   loading: loc.locating,
                   onTap: loc.locating ? null : () => _useGps(),
                 ),
@@ -97,7 +105,10 @@ class _LocationSelectorState extends State<LocationSelector> {
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   onPressed: () => loc.confirm(),
-                  icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
+                  icon: const Icon(
+                    Icons.check_circle_outline_rounded,
+                    size: 18,
+                  ),
                   label: const Text('Confirm this location'),
                 ),
               )
@@ -111,12 +122,19 @@ class _LocationSelectorState extends State<LocationSelector> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.check_circle_rounded, size: 18, color: MxColors.ok),
+                    const Icon(
+                      Icons.check_circle_rounded,
+                      size: 18,
+                      color: MxColors.ok,
+                    ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         'Location confirmed',
-                        style: MxType.bodySm(color: MxColors.ok, weight: FontWeight.w700),
+                        style: MxType.bodySm(
+                          color: MxColors.ok,
+                          weight: FontWeight.w700,
+                        ),
                       ),
                     ),
                     TextButton(
@@ -140,7 +158,11 @@ class _LocationSelectorState extends State<LocationSelector> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.map_outlined, size: 34, color: MxColors.stoneLight),
+                      const Icon(
+                        Icons.map_outlined,
+                        size: 34,
+                        color: MxColors.stoneLight,
+                      ),
                       const SizedBox(height: 10),
                       Text(
                         'No location set yet',
@@ -148,7 +170,7 @@ class _LocationSelectorState extends State<LocationSelector> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Use your current location or the map above.',
+                        'Tap "Use Current Location" - the map then opens right here with your pin.',
                         style: MxType.bodyXs(color: MxColors.stoneLight),
                       ),
                     ],
@@ -195,7 +217,12 @@ class _StatusChip extends StatelessWidget {
 }
 
 class _ActionBtn extends StatelessWidget {
-  const _ActionBtn({required this.icon, required this.label, this.onTap, this.loading = false});
+  const _ActionBtn({
+    required this.icon,
+    required this.label,
+    this.onTap,
+    this.loading = false,
+  });
 
   final IconData icon;
   final String label;
@@ -218,7 +245,10 @@ class _ActionBtn extends StatelessWidget {
             ? const SizedBox(
                 width: 16,
                 height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2, color: MxColors.moss),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: MxColors.moss,
+                ),
               )
             : Row(
                 mainAxisSize: MainAxisSize.min,
@@ -227,7 +257,10 @@ class _ActionBtn extends StatelessWidget {
                   const SizedBox(width: 8),
                   Text(
                     label,
-                    style: MxType.label(color: MxColors.moss, weight: FontWeight.w700),
+                    style: MxType.label(
+                      color: MxColors.moss,
+                      weight: FontWeight.w700,
+                    ),
                   ),
                 ],
               ),
@@ -253,10 +286,20 @@ class _ErrorBanner extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.error_outline_rounded, size: 18, color: MxColors.danger),
+          const Icon(
+            Icons.error_outline_rounded,
+            size: 18,
+            color: MxColors.danger,
+          ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(message, style: MxType.bodySm(color: MxColors.danger, weight: FontWeight.w500)),
+            child: Text(
+              message,
+              style: MxType.bodySm(
+                color: MxColors.danger,
+                weight: FontWeight.w500,
+              ),
+            ),
           ),
         ],
       ),
