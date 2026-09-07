@@ -5,9 +5,17 @@ import 'package:provider/provider.dart';
 import '../../config/mx_colors.dart';
 import '../../config/mx_type.dart';
 import '../../firebase/fb.dart';
+import '../../models/cart_item.dart';
+import '../../models/customer_order.dart';
+import '../../models/delivery_location.dart';
 import '../../models/order_status.dart';
+import '../../models/product.dart';
 import '../../models/store_order.dart';
 import '../../router/routes.dart';
+import '../../services/order_receipt_pdf.dart';
+import '../../services/pdf_browser.dart';
+import '../../services/url_launcher.dart';
+import '../../services/whatsapp_order_service.dart';
 import '../../state/customer_auth_controller.dart';
 import '../../utils/money.dart';
 import '../../widgets/account_locked.dart';
@@ -236,10 +244,96 @@ class _OrderCard extends StatelessWidget {
   }
 }
 
-class _OrderDetail extends StatelessWidget {
+class _OrderDetail extends StatefulWidget {
   const _OrderDetail({required this.order});
 
   final StoreOrder order;
+
+  @override
+  State<_OrderDetail> createState() => _OrderDetailState();
+}
+
+class _OrderDetailState extends State<_OrderDetail> {
+  ReceiptAssets? _assets;
+  bool _pdfBusy = false;
+  String? _pdfError;
+
+  StoreOrder get order => widget.order;
+
+  Future<void> _pdfAction({required bool download}) async {
+    if (_pdfBusy) return;
+    setState(() {
+      _pdfBusy = true;
+      _pdfError = null;
+    });
+    try {
+      final assets = _assets ??= await ReceiptAssets.fromAssets();
+      final receipt = _receiptOrder(order);
+      final bytes = await buildOrderReceiptPdf(receipt, assets: assets);
+      if (download) {
+        PdfBrowser.download(bytes, 'MYCOSIX-${order.orderId}.pdf');
+      } else {
+        PdfBrowser.view(bytes, 'MYCOSIX-${order.orderId}.pdf');
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _pdfError =
+            'Your receipt could not be prepared right now. Please try again.';
+      });
+    } finally {
+      if (mounted) setState(() => _pdfBusy = false);
+    }
+  }
+
+  void _whatsappHandoff() {
+    final whatsapp = context.read<WhatsAppOrderService>();
+    UrlLauncher.open(whatsapp.confirmationHandoffUrl(order.orderId));
+  }
+
+  /// Rebuilds the stored order into a [CustomerOrder] so the same receipt
+  /// builder the checkout screen uses renders byte-for-byte the same document.
+  /// Values all come from the stored order; legacy money-free captures render
+  /// their stored amounts (₹0) honestly.
+  static CustomerOrder _receiptOrder(StoreOrder o) {
+    return CustomerOrder(
+      orderId: o.orderId,
+      customerName: o.customerName,
+      phone: o.phone,
+      email: o.email,
+      location: DeliveryLocation(
+        latitude: o.latitude,
+        longitude: o.longitude,
+        mapsUrl: o.mapsUrl,
+        confirmed: true,
+      ),
+      items: [
+        for (final l in o.items)
+          CartItem(
+            product: Product(
+              id: l.productId,
+              name: l.productName,
+              description: '',
+              category: '',
+              image: '',
+              variant: l.variant ?? '',
+              weight: l.weight ?? '',
+              price: l.unitPrice,
+              stock: 0,
+            ),
+            quantity: l.quantity,
+          ),
+      ],
+      subtotal: o.subtotal,
+      deliveryFee: o.deliveryFee,
+      total: o.total,
+      building: o.building,
+      apartment: o.apartment,
+      landmark: o.landmark,
+      instructions: o.instructions,
+      createdAt: o.createdAt ?? DateTime.now(),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -324,7 +418,52 @@ class _OrderDetail extends StatelessWidget {
                   style: MxType.bodyXs(color: MxColors.stone),
                 ),
               ],
-              const SizedBox(height: 20),
+              if (_pdfError != null) ...[
+                const SizedBox(height: 12),
+                Text(_pdfError!, style: MxType.bodyXs(color: MxColors.danger)),
+              ],
+              const SizedBox(height: 18),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  FilledButton.tonalIcon(
+                    onPressed:
+                        _pdfBusy ? null : () => _pdfAction(download: false),
+                    icon: _pdfBusy
+                        ? const SizedBox(
+                            width: 15,
+                            height: 15,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.picture_as_pdf_outlined, size: 17),
+                    label: const Text('View receipt'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed:
+                        _pdfBusy ? null : () => _pdfAction(download: true),
+                    icon: const Icon(Icons.download_rounded, size: 17),
+                    label: const Text('Download receipt'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: _whatsappHandoff,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: MxColors.forest,
+                      foregroundColor: Colors.white,
+                    ),
+                    icon: const Icon(Icons.chat_bubble_rounded, size: 17),
+                    label: const Text('Message us on WhatsApp'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'The WhatsApp button sends MYCOSIX a short notice for this '
+                'order so we can reply with the delivery time — it never '
+                'sends your order details.',
+                style: MxType.bodyXs(color: MxColors.stone),
+              ),
+              const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton(

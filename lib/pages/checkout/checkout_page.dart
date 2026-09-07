@@ -311,6 +311,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
       _placed = order;
     });
 
+    // The success panel replaces the form below the fold; glide back to the
+    // top so the customer lands straight on "Order confirmed" and the
+    // View/Download receipt actions.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) MxShell.scrollToTop();
+    });
+
     // The cart has been turned into an order — empty it so the next order
     // starts fresh. The success panel keeps showing because it keys on
     // _placed, not on the cart contents.
@@ -1061,10 +1068,17 @@ class _SuccessPanelState extends State<_SuccessPanel> {
                   icon: const Icon(Icons.download_rounded, size: 18),
                   label: const Text('Download receipt'),
                 ),
-                OutlinedButton.icon(
+                // The one call-to-action the customer is most likely to want:
+                // tell MYCOSIX the order is in, so we can reply on WhatsApp
+                // with the delivery time.
+                FilledButton.icon(
                   onPressed: _whatsappHandoff,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: MxColors.forest,
+                    foregroundColor: Colors.white,
+                  ),
                   icon: const Icon(Icons.chat_bubble_rounded, size: 18),
-                  label: const Text('Notify on WhatsApp'),
+                  label: const Text('Notify us on WhatsApp'),
                 ),
                 TextButton.icon(
                   onPressed: () => Navigator.of(context).pushNamed(Routes.shop),
@@ -1078,7 +1092,8 @@ class _SuccessPanelState extends State<_SuccessPanel> {
               constraints: const BoxConstraints(maxWidth: 560),
               child: Text(
                 'The WhatsApp button only sends MYCOSIX a short notice that '
-                'your order is confirmed — it never sends your order details.',
+                'your order is confirmed — nothing else. We will reply with '
+                'your delivery time.',
                 textAlign: TextAlign.center,
                 style: MxType.bodyXs(color: MxColors.stone),
               ),

@@ -34,7 +34,7 @@ void main() {
       expect(
         decoded,
         'MYCOSIX order MYC-8F3K2PLQ has been confirmed. '
-        'Please contact MYCOSIX if you need assistance.',
+        'Please share the delivery time for this order.',
       );
     });
 

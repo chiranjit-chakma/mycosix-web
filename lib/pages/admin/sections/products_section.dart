@@ -172,7 +172,9 @@ class _ProductsSectionState extends State<ProductsSection> {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: MxColors.creamSoft,
+        color: p.available
+            ? MxColors.creamSoft
+            : MxColors.oyster.withValues(alpha: 0.35),
         borderRadius: BorderRadius.circular(MxRadius.md),
         border: Border.all(color: MxColors.line),
       ),
@@ -207,22 +209,25 @@ class _ProductsSectionState extends State<ProductsSection> {
                 ),
                 const SizedBox(height: 1),
                 Text(
-                  '${p.category}  |  ${rupees(p.price)}  |  stock ${p.stock}'
-                  '${hasProductVideo(p.videoUrl) ? '  |  video' : ''}'
-                  '${low ? '  - low!' : ''}',
+                  p.available
+                      ? '${p.category}  |  ${rupees(p.price)}  |  stock '
+                          '${p.stock}'
+                          '${hasProductVideo(p.videoUrl) ? '  |  video' : ''}'
+                          '${low ? '  - low!' : ''}'
+                      : 'Hidden from the shop  |  ${p.category}  |  '
+                          '${rupees(p.price)}',
                   style: MxType.bodyXs(
-                    color: low ? MxColors.warn : MxColors.stone,
-                    weight: low ? FontWeight.w700 : FontWeight.w400,
+                    color: !p.available
+                        ? MxColors.stone
+                        : (low ? MxColors.warn : MxColors.stone),
+                    weight: !p.available
+                        ? FontWeight.w600
+                        : (low ? FontWeight.w700 : FontWeight.w400),
                   ),
                 ),
               ],
             ),
           ),
-          if (!p.available)
-            Text(
-              'Hidden from shop',
-              style: MxType.bodyXs(color: MxColors.stoneLight),
-            ),
           Switch(value: p.available, onChanged: (v) => _toggleAvailable(p, v)),
           IconButton(
             tooltip: 'Edit',

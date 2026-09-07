@@ -168,6 +168,7 @@ class _ProductPageState extends State<ProductPage> {
                         flex: 6,
                         child: _Gallery(
                           gallery: gallery,
+                          product: product,
                           activeImage: _activeImage,
                           onSelect: (i) => setState(() => _activeImage = i),
                         ),
@@ -189,6 +190,7 @@ class _ProductPageState extends State<ProductPage> {
                     children: [
                       _Gallery(
                         gallery: gallery,
+                        product: product,
                         activeImage: _activeImage,
                         onSelect: (i) => setState(() => _activeImage = i),
                       ),
@@ -214,11 +216,13 @@ class _ProductPageState extends State<ProductPage> {
 class _Gallery extends StatelessWidget {
   const _Gallery({
     required this.gallery,
+    required this.product,
     required this.activeImage,
     required this.onSelect,
   });
 
   final List<String> gallery;
+  final Product product;
   final int activeImage;
   final ValueChanged<int> onSelect;
 
@@ -229,12 +233,35 @@ class _Gallery extends StatelessWidget {
       children: [
         AspectRatio(
           aspectRatio: 4 / 3.2,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(MxRadius.lg),
-            child: MxImage(
-              asset: gallery[activeImage.clamp(0, gallery.length - 1)],
-              fit: BoxFit.cover,
-            ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(MxRadius.lg),
+                child: MxImage(
+                  asset: gallery[activeImage.clamp(0, gallery.length - 1)],
+                  fit: BoxFit.cover,
+                ),
+              ),
+              // Quick actions float over the image's top-right corner.
+              Positioned(
+                top: 12,
+                right: 12,
+                child: Row(
+                  key: const Key('product-image-actions'),
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    WishlistHeartButton(productId: product.id, compact: true),
+                    const SizedBox(width: 8),
+                    ProductShareButton(
+                      productName: product.name,
+                      productId: product.id,
+                      compact: true,
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
         if (gallery.length > 1) ...[

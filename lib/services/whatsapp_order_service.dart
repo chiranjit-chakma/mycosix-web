@@ -34,10 +34,11 @@ class WhatsAppOrderService {
   /// The confirmation-screen WhatsApp handoff: opens a chat with MYCOSIX
   /// pre-filled with the fixed notice below. Intentionally NOT an order
   /// channel — items, amounts and the delivery location are never included,
-  /// so nothing here can disagree with the recorded order.
+  /// so nothing here can disagree with the recorded order. It nudges the admin
+  /// to reply with the delivery time, which the customer sees in the chat.
   String confirmationHandoffUrl(String orderId) {
     final text = 'MYCOSIX order $orderId has been confirmed. '
-        'Please contact MYCOSIX if you need assistance.';
+        'Please share the delivery time for this order.';
     return Uri.parse('https://wa.me/$whatsappNumber')
         .replace(queryParameters: {'text': text})
         .toString();

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../config/mx_colors.dart';
 import '../services/share_service.dart';
 
 /// "Share" control for one product page.
@@ -13,13 +14,48 @@ class ProductShareButton extends StatelessWidget {
     super.key,
     required this.productName,
     required this.productId,
+    this.compact = false,
   });
 
   final String productName;
   final String productId;
 
+  /// Small round overlay style for the product image.
+  final bool compact;
+
   @override
   Widget build(BuildContext context) {
+    if (compact) {
+      return Semantics(
+        button: true,
+        label: 'Share this product',
+        child: InkWell(
+          onTap: () => _share(context),
+          borderRadius: BorderRadius.circular(999),
+          child: Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: MxColors.cream.withValues(alpha: 0.92),
+              shape: BoxShape.circle,
+              border: Border.all(color: MxColors.line),
+              boxShadow: [
+                BoxShadow(
+                  color: MxColors.charcoal.withValues(alpha: 0.08),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.share_outlined,
+              size: 20,
+              color: MxColors.charcoal,
+            ),
+          ),
+        ),
+      );
+    }
     return OutlinedButton.icon(
       onPressed: () => _share(context),
       icon: const Icon(Icons.share_outlined, size: 17),
