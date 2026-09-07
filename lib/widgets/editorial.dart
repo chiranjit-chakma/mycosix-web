@@ -26,11 +26,23 @@ class MxPageHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    final desktop = width >= 1024;
-    final height = (desktop ? 400.0 : 330.0).clamp(280.0, 480.0);
+    final vh = MediaQuery.of(context).size.height;
+    // Fill the first viewport on every device (mirroring the home hero) so
+    // the opening image is full-screen and the next section never peeks in
+    // half-visible before the user scrolls.
+    final floor = width < 360
+        ? 560.0
+        : (width < 768
+              ? 520.0
+              : (width < 1024 ? 540.0 : 560.0));
+    final height = vh > floor ? vh : floor;
+    // Same side gutter as the page sections below so the copy lines up.
+    final gutter = width >= 1440
+        ? 88.0
+        : (width >= 1024 ? 56.0 : 20.0);
 
     return SizedBox(
-      height: height + 30,
+      height: height,
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -49,49 +61,53 @@ class MxPageHero extends StatelessWidget {
               ),
             ),
           ),
-          Positioned(
-            left: 0,
-            right: 0,
-            child: MxPage(
-              padding: const EdgeInsets.only(top: 132),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 30,
-                        height: 1.5,
-                        color: MxColors.mossSoft,
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        overline.toUpperCase(),
-                        style: MxType.overline(color: MxColors.mossSoft),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 720),
-                    child: Text(
-                      title,
-                      style: MxType.h1(width, color: Colors.white),
+          // Copy, vertically centred on the fold and clear of the floating
+          // top bar, with the page gutter either side.
+          Positioned.fill(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(gutter, 92, gutter, 72),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 30,
+                          height: 1.5,
+                          color: MxColors.mossSoft,
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          overline.toUpperCase(),
+                          style: MxType.overline(color: MxColors.mossSoft),
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 620),
-                    child: Text(
-                      body,
-                      style: MxType.body(
-                        width,
-                        color: Colors.white.withValues(alpha: 0.88),
+                    const SizedBox(height: 16),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 720),
+                      child: Text(
+                        title,
+                        style: MxType.h1(width, color: Colors.white),
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 14),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 620),
+                      child: Text(
+                        body,
+                        style: MxType.body(
+                          width,
+                          color: Colors.white.withValues(alpha: 0.88),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
