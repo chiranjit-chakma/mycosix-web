@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 
 import '../../config/mx_colors.dart';
@@ -61,6 +63,11 @@ const List<IconData> kPwaSectionIcons = <IconData>[
   Icons.route_rounded,
   Icons.person_rounded,
 ];
+
+/// Height of the floating bottom navigation bar, and the clearance kept
+/// around it: a small gap above the screen's bottom safe inset, then room
+/// inside each section's scroll view so the footer never hides behind it.
+const double _kNavBarHeight = 62;
 
 /// The installed-app home: a Slice-style horizontal pager over the five
 /// primary sections with a bottom navigation bar.
@@ -204,27 +211,54 @@ class _MxPwaRootState extends State<MxPwaRoot> {
       },
       child: Scaffold(
         backgroundColor: MxColors.cream,
-        body: PageView.builder(
-          key: const Key('pwa-pager'),
-          controller: _pageController,
-          physics: const PageScrollPhysics(),
-          itemCount: widget.sections.length,
-          onPageChanged: (i) => setState(() => _index = i),
-          itemBuilder: (context, index) {
-            return _PwaSection(
-              key: Key('pwa-section-$index'),
-              index: index,
-              onSwitchSection: _switchTo,
-              onState: (state) => _sectionStates[index] = state,
-              child: widget.sections[index],
-            );
-          },
-        ),
-        bottomNavigationBar: _PwaNavBar(
-          index: _index,
-          labels: kPwaSectionLabels,
-          icons: kPwaSectionIcons,
-          onTap: _switchTo,
+        // The pages fill the whole screen and the floating glass navigation
+        // bar overlays them; each section reserves bottom scroll space so
+        // its content can always clear the bar.
+        body: Stack(
+          children: [
+            Positioned.fill(
+              child: PageView.builder(
+                key: const Key('pwa-pager'),
+                controller: _pageController,
+                physics: const PageScrollPhysics(),
+                itemCount: widget.sections.length,
+                onPageChanged: (i) => setState(() => _index = i),
+                itemBuilder: (context, index) {
+                  return _PwaSection(
+                    key: Key('pwa-section-$index'),
+                    index: index,
+                    onSwitchSection: _switchTo,
+                    onState: (state) => _sectionStates[index] = state,
+                    child: widget.sections[index],
+                  );
+                },
+              ),
+            ),
+            // Floating glass bar: safe-area aware, floating just above the
+            // bottom inset, capped in width so tablets and desktop get a
+            // centered capsule instead of an edge-to-edge strip.
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: SafeArea(
+                top: false,
+                minimum: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 620),
+                    child: _PwaNavBar(
+                      index: _index,
+                      labels: kPwaSectionLabels,
+                      icons: kPwaSectionIcons,
+                      onTap: _switchTo,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -315,7 +349,18 @@ class _PwaSectionState extends State<_PwaSection>
                 physics: const BouncingScrollPhysics(
                   parent: AlwaysScrollableScrollPhysics(),
                 ),
-                child: Column(children: [widget.child, const MxFooter()]),
+                child: Padding(
+                  // Scroll room for the floating navigation bar: even fully
+                  // scrolled down, the footer clears the glass pill by a
+                  // comfortable margin.
+                  padding: EdgeInsets.only(
+                    bottom:
+                        MediaQuery.paddingOf(context).bottom +
+                        _kNavBarHeight +
+                        24,
+                  ),
+                  child: Column(children: [widget.child, const MxFooter()]),
+                ),
               ),
             ),
           ),
@@ -338,8 +383,10 @@ class _PwaSectionState extends State<_PwaSection>
   }
 }
 
-/// The installed app's bottom navigation: five destinations, safe-area aware,
-/// tapping glides the pager to the matching section.
+/// The installed app's primary navigation: a floating frosted-glass capsule
+/// with five destinations. It overlays the pager (each section reserves
+/// scroll room below), floats above the bottom safe inset, and tapping a
+/// destination glides the pager to the matching section.
 class _PwaNavBar extends StatelessWidget {
   const _PwaNavBar({
     required this.index,
@@ -355,31 +402,60 @@ class _PwaNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: MxColors.cream,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: MxColors.line, width: 1)),
-        ),
-        child: SafeArea(
-          top: false,
-          child: SizedBox(
-            height: 60,
-            child: Row(
-              children: [
-                for (var i = 0; i < labels.length; i++)
-                  Expanded(
-                    child: _PwaNavItem(
-                      key: Key('pwa-nav-${labels[i].toLowerCase()}'),
-                      selected: i == index,
-                      label: labels[i],
-                      icon: icons[i],
-                      onTap: () => onTap(i),
-                    ),
-                  ),
-              ],
-            ),
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: MxColors.charcoal.withValues(alpha: 0.14),
+            blurRadius: 26,
+            offset: const Offset(0, 10),
           ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Stack(
+          children: [
+            // Frosted backing: soft blur of whatever scrolls beneath, under
+            // a translucent cream surface with a hairline highlight border.
+            Positioned.fill(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                child: const ColoredBox(color: Colors.transparent),
+              ),
+            ),
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: MxColors.cream.withValues(alpha: 0.88),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.6),
+                    width: 1,
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(
+              height: _kNavBarHeight,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < labels.length; i++)
+                    Expanded(
+                      child: _PwaNavItem(
+                        key: Key('pwa-nav-${labels[i].toLowerCase()}'),
+                        selected: i == index,
+                        label: labels[i],
+                        icon: icons[i],
+                        onTap: () => onTap(i),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -400,28 +476,66 @@ class _PwaNavItem extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
 
+  static const _radius = 18.0;
+
   @override
   Widget build(BuildContext context) {
-    final color = selected ? MxColors.forest : MxColors.stone;
     return Semantics(
       selected: selected,
       button: true,
       label: label,
-      child: InkWell(
-        onTap: onTap,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 22, color: color),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              style: MxType.label(
-                color: color,
-                weight: selected ? FontWeight.w800 : FontWeight.w600,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 3),
+        child: TweenAnimationBuilder<double>(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+          tween: Tween<double>(end: selected ? 1 : 0),
+          builder: (context, t, _) {
+            // The chosen section fills its cell with deep forest and lifts
+            // it with a soft glow; the fill and the ink share the material,
+            // so a tap always ripples above the surface.
+            final fill =
+                Color.lerp(Colors.transparent, MxColors.forest, t) ??
+                Colors.transparent;
+            final content =
+                Color.lerp(
+                  selected ? MxColors.charcoalSoft : MxColors.stone,
+                  Colors.white,
+                  t,
+                ) ??
+                Colors.white;
+            return Material(
+              color: fill,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(_radius),
               ),
-            ),
-          ],
+              elevation: 4 * t,
+              shadowColor: MxColors.forest.withValues(alpha: 0.45),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: onTap,
+                splashColor: Colors.white.withValues(alpha: 0.22),
+                highlightColor: Colors.white.withValues(alpha: 0.08),
+                child: SizedBox.expand(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(icon, size: 21, color: content),
+                      const SizedBox(height: 3),
+                      Text(
+                        label,
+                        maxLines: 1,
+                        style: MxType.label(
+                          color: content,
+                          weight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
         ),
       ),
     );

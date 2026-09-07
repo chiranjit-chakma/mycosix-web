@@ -1,9 +1,12 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../config/mx_colors.dart';
 import '../config/mx_type.dart';
+import '../pages/pwa/pwa_registry.dart';
 import '../router/app_nav.dart';
 import '../router/routes.dart';
 import '../state/cart_controller.dart';
@@ -40,32 +43,20 @@ class MxTopBar extends StatelessWidget {
     // lives in the drawer (My Account) so the bar never overflows.
     final showAccount = width >= 480;
 
-    final barColor = scrolled
-        ? MxColors.cream.withValues(alpha: 0.94)
-        : Colors.transparent;
-    final borderColor = scrolled ? MxColors.line : Colors.transparent;
+    // Active-section highlight for the desktop links. The installed app
+    // marks its section through the bottom navigation instead (a live
+    // pager is not on the route of the section it shows), so the top
+    // links only light up in a normal browser tab.
+    final pagerLive = PwaRegistry.switchToSection != null;
+    final currentRoute = ModalRoute.of(context)?.settings.name;
+    bool isActive(String route) => !pagerLive && currentRoute == route;
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 240),
-      curve: Curves.easeOut,
+    return _FrostPill(
+      frosted: scrolled,
       margin: EdgeInsets.symmetric(horizontal: width >= 1440 ? 48 : 20),
       padding: EdgeInsets.symmetric(
         horizontal: width >= 1024 ? 14 : 10,
         vertical: 8,
-      ),
-      decoration: BoxDecoration(
-        color: barColor,
-        border: Border.all(color: borderColor),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: scrolled
-            ? [
-                BoxShadow(
-                  color: MxColors.charcoal.withValues(alpha: 0.07),
-                  blurRadius: 22,
-                  offset: const Offset(0, 8),
-                ),
-              ]
-            : null,
       ),
       child: Row(
         children: [
@@ -79,11 +70,31 @@ class MxTopBar extends StatelessWidget {
           ),
           const Spacer(),
           if (desktop) ...[
-            _NavLink(label: 'Shop', route: Routes.shop),
-            _NavLink(label: 'Farm', route: Routes.farm),
-            _NavLink(label: 'Journey', route: Routes.journey),
-            _NavLink(label: 'Team', route: Routes.team),
-            _NavLink(label: 'Contact', route: Routes.contact),
+            _NavLink(
+              active: isActive(Routes.shop),
+              label: 'Shop',
+              route: Routes.shop,
+            ),
+            _NavLink(
+              active: isActive(Routes.farm),
+              label: 'Farm',
+              route: Routes.farm,
+            ),
+            _NavLink(
+              active: isActive(Routes.journey),
+              label: 'Journey',
+              route: Routes.journey,
+            ),
+            _NavLink(
+              active: isActive(Routes.team),
+              label: 'Team',
+              route: Routes.team,
+            ),
+            _NavLink(
+              active: isActive(Routes.contact),
+              label: 'Contact',
+              route: Routes.contact,
+            ),
             const SizedBox(width: 8),
             if (showAccount) ...[
               _AccountButton(onTap: () => _go(context, Routes.profile)),
@@ -115,8 +126,94 @@ class MxTopBar extends StatelessWidget {
   }
 }
 
+/// Frosted-glass shell for the floating top bar. Transparent while the
+/// page sits at its top; once it scrolls, the bar fades into a translucent
+/// cream pill with a soft backdrop blur, a hairline border and a restrained
+/// shadow — so content sliding underneath reads as gently frosted glass.
+class _FrostPill extends StatelessWidget {
+  const _FrostPill({
+    required this.frosted,
+    required this.margin,
+    required this.padding,
+    required this.child,
+  });
+
+  final bool frosted;
+  final EdgeInsetsGeometry margin;
+  final EdgeInsetsGeometry padding;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOut,
+      margin: margin,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: frosted
+            ? [
+                BoxShadow(
+                  color: MxColors.charcoal.withValues(alpha: 0.10),
+                  blurRadius: 24,
+                  offset: const Offset(0, 10),
+                ),
+              ]
+            : const <BoxShadow>[],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 240),
+                curve: Curves.easeOut,
+                opacity: frosted ? 1 : 0,
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                  child: const ColoredBox(color: Colors.transparent),
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 240),
+                curve: Curves.easeOut,
+                decoration: BoxDecoration(
+                  color: frosted
+                      ? MxColors.cream.withValues(alpha: 0.82)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: frosted
+                        ? Colors.white.withValues(alpha: 0.55)
+                        : Colors.transparent,
+                    width: 1,
+                  ),
+                ),
+              ),
+            ),
+            Padding(padding: padding, child: child),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _NavLink extends StatefulWidget {
-  const _NavLink({required this.label, required this.route});
+  const _NavLink({
+    required this.active,
+    required this.label,
+    required this.route,
+  });
+
+  /// Whether this link names the page currently shown. Only marked in a
+  /// browser tab: the installed app highlights sections through its bottom
+  /// navigation instead, and a live pager is not on the route of the
+  /// section it displays.
+  final bool active;
 
   final String label;
   final String route;
@@ -152,21 +249,27 @@ class _NavLinkState extends State<_NavLink> {
         onKeyEvent: _handleKey,
         child: InkWell(
           onTap: _go,
-          borderRadius: BorderRadius.circular(10),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+          borderRadius: BorderRadius.circular(999),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 14),
+            decoration: BoxDecoration(
+              color: widget.active
+                  ? MxColors.moss.withValues(alpha: 0.16)
+                  : (_focused
+                        ? MxColors.moss.withValues(alpha: 0.10)
+                        : Colors.transparent),
+              borderRadius: BorderRadius.circular(999),
+            ),
             child: AnimatedDefaultTextStyle(
               duration: const Duration(milliseconds: 150),
-              style:
-                  MxType.label(
-                    color: _focused ? MxColors.forest : MxColors.charcoalSoft,
-                    weight: FontWeight.w600,
-                  ).copyWith(
-                    decoration: _focused
-                        ? TextDecoration.underline
-                        : TextDecoration.none,
-                    decorationThickness: 2,
-                  ),
+              style: MxType.labelLg(
+                color: widget.active || _focused
+                    ? MxColors.forest
+                    : MxColors.charcoalSoft,
+                weight: widget.active ? FontWeight.w800 : FontWeight.w600,
+              ),
               child: Text(widget.label),
             ),
           ),
@@ -188,6 +291,9 @@ class _AccountButton extends StatelessWidget {
     return IconButton(
       onPressed: onTap,
       tooltip: 'My account',
+      style: IconButton.styleFrom(
+        hoverColor: MxColors.moss.withValues(alpha: 0.10),
+      ),
       icon: const Icon(
         Icons.person_outline_rounded,
         size: 21,
@@ -208,6 +314,9 @@ class _CartButton extends StatelessWidget {
     return IconButton(
       onPressed: onTap,
       tooltip: label,
+      style: IconButton.styleFrom(
+        hoverColor: MxColors.moss.withValues(alpha: 0.10),
+      ),
       icon: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -293,6 +402,9 @@ class _MenuButton extends StatelessWidget {
         onPressed: onTap,
         tooltip: 'Open menu',
         padding: const EdgeInsets.all(6),
+        style: IconButton.styleFrom(
+          hoverColor: MxColors.moss.withValues(alpha: 0.10),
+        ),
         icon: const Icon(Icons.menu_rounded, size: 20, color: MxColors.forest),
       ),
     );
