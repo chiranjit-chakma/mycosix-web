@@ -357,6 +357,12 @@ class _FeaturedRailState extends State<_FeaturedRail> {
   /// Rail shows a limited initial set — the full catalogue lives in the shop.
   static const _maxShown = 8;
 
+  /// Drives the desktop prev/next arrows that page through the rail — on a
+  /// mouse there is no natural way to swipe, so the arrows are the control.
+  final ScrollController _scroller = ScrollController();
+  bool _canPrev = false;
+  bool _canNext = false;
+
   /// A fixed card width keeps the rail a true horizontal swipe at every
   /// breakpoint: each card is a self-contained tile, and the next one peeks in
   /// from the right edge to signal more is coming.
@@ -371,11 +377,75 @@ class _FeaturedRailState extends State<_FeaturedRail> {
   @override
   void initState() {
     super.initState();
+    _scroller.addListener(_onScroll);
     // First paint is the hero; fetch right after so the rail is populated by
     // the time the user scrolls to it.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.products()?.fetchAll();
     });
+  }
+
+  @override
+  void dispose() {
+    _scroller.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    final pos = _scroller.hasClients ? _scroller.position : null;
+    if (pos == null) return;
+    final canPrev = pos.pixels > 1.0;
+    final canNext =
+        pos.maxScrollExtent > 1.0 && pos.pixels < pos.maxScrollExtent - 1.0;
+    if (canPrev != _canPrev || canNext != _canNext) {
+      setState(() {
+        _canPrev = canPrev;
+        _canNext = canNext;
+      });
+    }
+  }
+
+  /// Slides the rail toward the edge nearest the pressed arrow, revealing at
+  /// least one full card (and usually a whole screenful) per press.
+  void _nudge(double dir) {
+    final pos = _scroller.hasClients ? _scroller.position : null;
+    if (pos == null) return;
+    final cardW = _cardWidth(MediaQuery.of(context).size.width);
+    var step = pos.viewportDimension - (cardW + 20);
+    if (step < cardW + 20) step = cardW + 20;
+    final target =
+        (pos.pixels + dir * step).clamp(0.0, pos.maxScrollExtent);
+    _scroller.animateTo(
+      target,
+      duration: const Duration(milliseconds: 360),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Widget _railArrow({
+    required IconData icon,
+    required String tooltip,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    return IconButton(
+      onPressed: enabled ? onTap : null,
+      tooltip: tooltip,
+      icon: Icon(icon, size: 20),
+      style: IconButton.styleFrom(
+        minimumSize: const Size(40, 40),
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(999),
+        ),
+        side: BorderSide(
+          color: enabled ? MxColors.lineDark : MxColors.line,
+        ),
+        foregroundColor: MxColors.charcoal,
+        disabledForegroundColor: MxColors.line,
+        disabledBackgroundColor: Colors.white,
+      ),
+    );
   }
 
   @override
@@ -408,10 +478,11 @@ class _FeaturedRailState extends State<_FeaturedRail> {
         .toList();
     if (items.isEmpty) return const SizedBox.shrink();
 
-    return SizedBox(
+    final rail = SizedBox(
       width: double.infinity,
       height: extent,
       child: ListView.separated(
+        controller: _scroller,
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.only(right: 2),
         itemCount: items.length,
@@ -423,6 +494,41 @@ class _FeaturedRailState extends State<_FeaturedRail> {
           );
         },
       ),
+    );
+
+    // Phones and tablets swipe the rail naturally. Desktop has a mouse, so the
+    // rail needs visible prev/next arrows as the only way to move it.
+    if (screenW < 1024) return rail;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _onScroll();
+    });
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Align(
+          alignment: Alignment.centerRight,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _railArrow(
+                icon: Icons.arrow_back_rounded,
+                tooltip: 'Previous products',
+                enabled: _canPrev,
+                onTap: () => _nudge(-1),
+              ),
+              const SizedBox(width: 8),
+              _railArrow(
+                icon: Icons.arrow_forward_rounded,
+                tooltip: 'Next products',
+                enabled: _canNext,
+                onTap: () => _nudge(1),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        rail,
+      ],
     );
   }
 }
