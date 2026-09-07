@@ -2,7 +2,7 @@
 
 > **What this file is:** everything stored in the MYCOSIX Firebase project (the data
 > layer that powers the live site https://mycosix.web.app), captured from the live
-> project on **2026-09-07**. If Firebase is ever deleted, this file (plus the tools
+> project on **2026-09-07**, re-captured on **2026-09-08** (this is the current snapshot). If Firebase is ever deleted, this file (plus the tools
 > already in this repo) is the recipe to recreate it - by hand, or by pasting this
 > file into an AI and asking it to recreate the documents.
 >
@@ -39,11 +39,12 @@
 | Project id | `mycosix` |
 | Live site | https://mycosix.web.app (Firebase Hosting) |
 | Web app config (apiKey, authDomain, ...) | Already in the repo: `lib/firebase/firebase_options.dart` - a rebuild reads it from there |
-| Sign-in method enabled | Email/Password (the only one) |
+| Sign-in method enabled | Email/Password + Google (both verified live on 2026-09-08 via the project management API and a live sign-in probe) |
+| Authorized domains | `localhost`, `mycosix.firebaseapp.com`, `mycosix.web.app` (verified live 2026-09-08) |
 | Admin sign-in email | `chiranjitc.official@gmail.com` |
 | Admin password | **Not stored anywhere in this repo.** If forgotten: Firebase console > Authentication > user > reset password |
 | Admin service-account key file | `mycosix-firebase-adminsdk.json` (in the project folder; NOT in GitHub - see rule 2) |
-| Firebase Storage | NOT set up. Product photos are stored as *text inside the product document*, not in Storage (see products below) |
+| Firebase Storage | NOT set up (re-verified 2026-09-08). Product photos are stored as *text inside the product document*, not in Storage (see products below) |
 
 ---
 
@@ -66,18 +67,11 @@ with: `firebase deploy --only firestore:rules --project mycosix`
 
 ---
 
-## Collections with live data today (captured 2026-09-07)
+## Collections with live data today (captured 2026-09-08)
 
-Only **4 collections held data** at capture time: `products`, `siteConfig`,
-`orders`, `admins`. `customers`, `carts` and `wishlists` (customer accounts,
-cart mirrors and saved-product lists, added 2026-09-07) start EMPTY: a
-`customers/{uid}` document is created automatically the first time someone
-registers, `carts/{uid}` the first time that customer changes their cart while
-signed in, and `wishlists/{uid}` the first time they save a product.
-`team`, `content`, `batches`, `inventoryMovements`, `orderRequests` are defined in the
-rules for future features but hold **no documents** today.
+At re-capture (2026-09-08) six collections hold live data: `products` (8 documents), `siteConfig` (1), `orders` (11), `admins` (1), and - new since the first capture - the customer-account collections `customers`, `carts` and `wishlists` (3 documents each; rows are private customer data and are deliberately NOT reproduced in this file). The account collections are still auto-created on first use: `customers/{uid}` the first time someone registers, `carts/{uid}` the first time that customer changes their cart while signed in, and `wishlists/{uid}` the first time they save a product. `team`, `content`, `batches`, `inventoryMovements`, `orderRequests` remain defined in the rules for future features and hold **no documents** today. What changed since 2026-09-07: the admin restocked `oyster-pickle-250` (0 -> 6), one `New Trending Mushroom` sold (5 -> 4), the `chandan mushroom` admin test entry was deleted from the Products screen, and 6 new orders arrived (5 -> 11 total; 4 of 11 are linked to signed-in customer accounts). No schema or security-rules changes.
 
-### 1) `products` - 9 documents
+### 1) `products` - 8 documents
 
 **Field meaning (the app reads these):**
 - `id` - stable product id, also the document id.
@@ -94,7 +88,7 @@ rules for future features but hold **no documents** today.
   (ordering in the shop, lowest first), `videoUrl` (optional YouTube link), `createdAt`,
   `updatedAt`.
 
-**Live product list (values as read from Firebase on 2026-09-07):**
+**Live product list (values as read from Firebase on 2026-09-08):**
 
 | id | name | category | weight | price (INR) | stock | available | sortKey |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -103,9 +97,8 @@ rules for future features but hold **no documents** today.
 | `fresh-oyster-1kg` | Fresh Oyster Mushrooms - Party Pack | Fresh | 1 kg | 280 | 25 | true | 2 |
 | `oyster-slices-50` | Dried Oyster Mushroom Slices | Dried | 50 g | 120 | 18 | true | 3 |
 | `oyster-powder-100` | Oyster Mushroom Powder | Dried | 100 g | 180 | 12 | true | 4 |
-| `oyster-pickle-250` | Oyster Mushroom Pickle | Preserved | 250 g | 160 | 0 | true | 5 |
-| `mzQNBGFab6dxcJCtRFmh` | New Trending Mushroom | Mushrooms | 56 | 300 | 5 | true | 6 |
-| `nOtFI79mEzsMSH2MNPKy` | chandan mushroom | Mushrooms | 30 | 400 | 100 | true | 67 |
+| `oyster-pickle-250` | Oyster Mushroom Pickle | Preserved | 250 g | 160 | 6 | true | 5 |
+| `mzQNBGFab6dxcJCtRFmh` | New Trending Mushroom | Mushrooms | 56 | 300 | 4 | true | 6 |
 | `u1E60lkd0AE1IxcDTMTr` | Video link test1 | Mushrooms | 20 | 200 | 3 | true | 7 |
 
 Notes:
@@ -113,10 +106,10 @@ Notes:
   photos (asset paths), price/stock defaults - are exactly reproducible by running
   `node scripts/seed_catalog.js` from the `functions/` folder (see rule 3 and that
   file's header). Their cover/gallery photo files live in `assets/` in this repo.
-- The **last 3 products** are admin test entries. Their `image` and `gallery` are
+- The **last 2 products** are admin test entries (a third test entry, `chandan mushroom`, existed at first capture but was deleted by the admin since). Their `image` and `gallery` are
   empty (no photo), so there is no photo data to lose. `Video link test1` also holds a
   `videoUrl` (`https://youtube.com/shorts/267pDJFeark?si=zKZBs8gq0-1gFLmu`).
-- `oyster-pickle-250` has `stock: 0` (sold out) but `available: true`.
+- `oyster-pickle-250` was `stock: 0` (sold out) at first capture but `available: true`; the admin restocked it since (`stock: 6` today).
 - IMPORTANT: because the 6 real product photos are **asset paths**, and the admin test
   products have **no photos**, there is currently nothing in `products` that only
   exists in Firebase. If you later add a photo via the admin area it becomes inline
@@ -128,7 +121,7 @@ Notes:
 The single settings document the site reads for delivery/contact info. **Recreate this
 exact document** - without it the site falls back to built-in defaults.
 
-| Field | Live value (2026-09-07) |
+| Field | Live value (2026-09-08) |
 | --- | --- |
 | `whatsappNumber` | `916363816465` |
 | `deliveryFee` | `39` |
@@ -139,7 +132,7 @@ exact document** - without it the site falls back to built-in defaults.
 | `instagramUrl` | `https://instagram.com/mycosix_mushroom` |
 | `updatedAt` | server timestamp |
 
-### 3) `orders` - 5 documents (NOT reproduced in this file)
+### 3) `orders` - 11 documents (NOT reproduced in this file)
 
 **An order holds the customer's private details (name, phone, delivery location), so
 real order rows are deliberately not copied here or into GitHub.** If Firebase is
