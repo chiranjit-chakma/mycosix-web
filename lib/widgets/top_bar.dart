@@ -11,10 +11,21 @@ import 'brand.dart';
 
 /// Floating top navigation bar. Rendered by [MxShell] above page content.
 class MxTopBar extends StatelessWidget {
-  const MxTopBar({super.key, required this.scrolled, required this.onMenu});
+  const MxTopBar({
+    super.key,
+    required this.scrolled,
+    required this.onMenu,
+    this.showMenu = true,
+  });
 
   final bool scrolled;
   final VoidCallback onMenu;
+
+  /// Whether the mobile hamburger menu is shown. The browser website keeps
+  /// it (it is the only navigation on a narrow phone); the installed app
+  /// hides it because the bottom navigation already covers every primary
+  /// section.
+  final bool showMenu;
 
   void _go(BuildContext context, String route) {
     AppNav.go(context, route);
@@ -93,8 +104,10 @@ class MxTopBar extends StatelessWidget {
               count: cart.totalQuantity,
               onTap: () => _go(context, Routes.cart),
             ),
-            const SizedBox(width: 4),
-            _MenuButton(onTap: onMenu),
+            if (showMenu) ...[
+              const SizedBox(width: 4),
+              _MenuButton(onTap: onMenu),
+            ],
           ],
         ],
       ),

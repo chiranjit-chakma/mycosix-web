@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../pages/pwa/pwa_registry.dart';
+import '../widgets/shell.dart';
 
 /// Pager-aware navigation.
 ///
@@ -13,12 +14,22 @@ import '../pages/pwa/pwa_registry.dart';
 ///
 /// In a normal browser tab — or for any secondary route (cart, checkout,
 /// product, team, contact, legal, admin, ...) — this is an ordinary
-/// `pushNamed`, byte-for-byte the behavior the browser website has today.
+/// `pushNamed`, byte-for-byte the behavior the browser website has today. A
+/// tap that targets the page you are already on (the logo on Home, the Shop
+/// link on Shop, ...) glides that page back to the top instead of doing
+/// nothing.
 class AppNav {
   AppNav._();
 
   static bool go(BuildContext context, String route) {
+    // Installed PWA: the pager owns the five primary sections.
     if (PwaRegistry.switchSection(route)) return true;
+    // Same-page tap -> glide the visible page back to the top.
+    final current = ModalRoute.of(context);
+    if (current != null && current.settings.name == route) {
+      MxShell.scrollToTop();
+      return true;
+    }
     Navigator.of(context).pushNamed(route);
     return false;
   }

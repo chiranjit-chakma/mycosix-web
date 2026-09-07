@@ -10,6 +10,7 @@ import '../../utils/validators.dart';
 import '../../widgets/google_sign_in_button.dart';
 import '../../widgets/page.dart';
 import '../../widgets/shell.dart';
+import '../../widgets/sign_out_confirm.dart';
 
 /// Customer account page.
 ///
@@ -129,6 +130,15 @@ class _ProfilePageState extends State<ProfilePage> {
     setState(() => _mode = mode);
   }
 
+  /// Signs the customer out - but only after they confirm. A sign-out is
+  /// meant to be deliberate: a stray tap on the button must not log anyone
+  /// out of the app.
+  Future<void> _confirmSignOut() async {
+    final auth = _auth;
+    if (!await showSignOutConfirm(context)) return;
+    await auth.signOut();
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<CustomerAuthController>();
@@ -195,7 +205,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
                 CustomerAuthStatus.signedIn => _AccountHub(
                   auth: auth,
-                  onSignOut: () => _auth.signOut(),
+                  onSignOut: _confirmSignOut,
                 ),
               },
               const _MoreSection(),

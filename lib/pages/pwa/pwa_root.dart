@@ -5,7 +5,6 @@ import '../../config/mx_type.dart';
 import '../../router/routes.dart';
 import '../../services/app_exit.dart';
 import '../../state/back_press_controller.dart';
-import '../../widgets/back_to_top_button.dart';
 import '../../widgets/footer.dart';
 import '../../widgets/top_bar.dart';
 import '../farm/farm_page.dart';
@@ -96,7 +95,6 @@ class _MxPwaRootState extends State<MxPwaRoot> {
   NavigatorState? _rootNavigator;
   final Map<int, _PwaSectionState> _sectionStates = <int, _PwaSectionState>{};
   final _back = BackPressController();
-  final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   void initState() {
@@ -147,16 +145,17 @@ class _MxPwaRootState extends State<MxPwaRoot> {
   }
 
   void _switchTo(int index) {
-    if (!mounted || index == _index) return;
+    if (!mounted) return;
+    if (index == _index) {
+      // Tapping the section you are already on glides it back to the top.
+      _sectionStates[index]?.scrollToTop();
+      return;
+    }
     _pageController.animateToPage(
       index,
       duration: const Duration(milliseconds: 280),
       curve: Curves.easeOutCubic,
     );
-  }
-
-  void openDrawer() {
-    _scaffoldKey.currentState?.openEndDrawer();
   }
 
   /// System back inside the app: a section other than Home glides to the
@@ -203,9 +202,7 @@ class _MxPwaRootState extends State<MxPwaRoot> {
         _handleBack();
       },
       child: Scaffold(
-        key: _scaffoldKey,
         backgroundColor: MxColors.cream,
-        endDrawer: MxDrawer(),
         body: PageView.builder(
           key: const Key('pwa-pager'),
           controller: _pageController,
@@ -216,7 +213,6 @@ class _MxPwaRootState extends State<MxPwaRoot> {
             return _PwaSection(
               key: Key('pwa-section-$index'),
               index: index,
-              onMenu: openDrawer,
               onSwitchSection: _switchTo,
               onState: (state) => _sectionStates[index] = state,
               child: widget.sections[index],
@@ -244,14 +240,12 @@ class _PwaSection extends StatefulWidget {
     super.key,
     required this.index,
     required this.child,
-    required this.onMenu,
     required this.onSwitchSection,
     required this.onState,
   });
 
   final int index;
   final Widget child;
-  final VoidCallback onMenu;
   final void Function(int index) onSwitchSection;
   final void Function(_PwaSectionState state) onState;
 
@@ -263,7 +257,6 @@ class _PwaSectionState extends State<_PwaSection>
     with AutomaticKeepAliveClientMixin {
   final _scrollController = ScrollController();
   bool _scrolled = false;
-  bool _showTopButton = false;
 
   @override
   bool get wantKeepAlive => true;
@@ -297,16 +290,9 @@ class _PwaSectionState extends State<_PwaSection>
 
   bool _handleScroll(ScrollNotification notification) {
     if (notification.depth != 0) return false;
-    final pixels = notification.metrics.pixels;
-    final scrolled = pixels > 24;
-    final showTop = pixels > 420;
-    if (scrolled != _scrolled || showTop != _showTopButton) {
-      if (mounted) {
-        setState(() {
-          _scrolled = scrolled;
-          _showTopButton = showTop;
-        });
-      }
+    final scrolled = notification.metrics.pixels > 24;
+    if (scrolled != _scrolled && mounted) {
+      setState(() => _scrolled = scrolled);
     }
     return false;
   }
@@ -315,7 +301,6 @@ class _PwaSectionState extends State<_PwaSection>
   Widget build(BuildContext context) {
     super.build(context);
     final width = MediaQuery.of(context).size.width;
-    final bottomSafe = MediaQuery.paddingOf(context).bottom;
     return NotificationListener<ScrollNotification>(
       onNotification: _handleScroll,
       child: Stack(
@@ -333,30 +318,17 @@ class _PwaSectionState extends State<_PwaSection>
               ),
             ),
           ),
-          // Floating top bar, exactly as on the browser pages.
+          // Floating top bar, exactly as on the browser pages. The hamburger
+          // menu is hidden here: the bottom navigation already reaches every
+          // primary section, and the rest lives under Profile -> More.
           Positioned(
             top: 10,
             left: 0,
             right: 0,
-            child: MxTopBar(scrolled: _scrolled, onMenu: widget.onMenu),
-          ),
-          // Back to top — raised so the bottom navigation never covers it.
-          Positioned(
-            right: width >= 768 ? 24 : 14,
-            bottom: (width >= 768 ? 28 : 16) + 60 + bottomSafe,
-            child: IgnorePointer(
-              ignoring: !_showTopButton,
-              child: AnimatedOpacity(
-                opacity: _showTopButton ? 1 : 0,
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOut,
-                child: AnimatedScale(
-                  scale: _showTopButton ? 1 : 0.6,
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOut,
-                  child: MxBackToTopButton(onTap: scrollToTop),
-                ),
-              ),
+            child: MxTopBar(
+              scrolled: _scrolled,
+              onMenu: () {},
+              showMenu: false,
             ),
           ),
         ],

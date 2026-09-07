@@ -9,6 +9,26 @@ import '../../../models/store_order.dart';
 import '../admin_widgets.dart';
 import '../order_detail.dart';
 
+/// Sends a password-reset email to a customer's own inbox - the admin-facing
+/// one-click recovery action. The link (and the new password, once the
+/// customer picks one) never passes through this screen: it arrives straight
+/// from Firebase to the customer's email address.
+Future<void> _sendResetLink(BuildContext context, String email) async {
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    await Fb.auth.sendPasswordResetEmail(email: email.trim());
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text('Reset link sent to $email')));
+  } catch (e) {
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text('Could not send: ${Fb.friendlyMessage(e)}')),
+      );
+  }
+}
+
 /// Customer accounts: everyone who created an account on the site.
 ///
 /// Read from the admin-visible `customers` collection (rules grant admins
@@ -74,19 +94,17 @@ class _CustomersSectionState extends State<CustomersSection> {
                     return const LoadingNote(label: 'Loading customers...');
                   }
 
-                  final customers = [
-                    for (final d in custSnap.data!.docs)
-                      CustomerRow(
-                        uid: d.id,
-                        doc: d.data(),
-                      ),
-                  ]..sort((a, b) {
-                      final at = a.joined;
-                      final bt = b.joined;
-                      if (at == null) return 1;
-                      if (bt == null) return -1;
-                      return bt.compareTo(at);
-                    });
+                  final customers =
+                      [
+                        for (final d in custSnap.data!.docs)
+                          CustomerRow(uid: d.id, doc: d.data()),
+                      ]..sort((a, b) {
+                        final at = a.joined;
+                        final bt = b.joined;
+                        if (at == null) return 1;
+                        if (bt == null) return -1;
+                        return bt.compareTo(at);
+                      });
 
                   final ordersByCustomer = <String, List<StoreOrder>>{};
                   var unlinked = 0;
@@ -198,10 +216,7 @@ class _SummaryStrip extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                value,
-                style: MxType.h4(color: MxColors.forest),
-              ),
+              Text(value, style: MxType.h4(color: MxColors.forest)),
               const SizedBox(height: 1),
               Text(label, style: MxType.label(color: MxColors.stone)),
             ],
@@ -266,10 +281,8 @@ class _CustomerTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(MxRadius.md),
         onTap: () => showDialog<void>(
           context: context,
-          builder: (context) => _CustomerDetailDialog(
-            customer: c,
-            orders: orders,
-          ),
+          builder: (context) =>
+              _CustomerDetailDialog(customer: c, orders: orders),
         ),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -292,8 +305,9 @@ class _CustomerTile extends StatelessWidget {
                   child: Icon(
                     Icons.person_outline_rounded,
                     size: 21,
-                    color:
-                        c.status == 'active' ? MxColors.moss : MxColors.stone,
+                    color: c.status == 'active'
+                        ? MxColors.moss
+                        : MxColors.stone,
                   ),
                 ),
               ),
@@ -330,6 +344,18 @@ class _CustomerTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
+              IconButton(
+                tooltip: 'Send password reset link',
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.all(6),
+                onPressed: () => _sendResetLink(context, c.email),
+                icon: const Icon(
+                  Icons.key_rounded,
+                  size: 18,
+                  color: MxColors.moss,
+                ),
+              ),
+              const SizedBox(width: 4),
               _StatusChip(active: c.status == 'active'),
               const SizedBox(width: 4),
               const Icon(
@@ -502,7 +528,9 @@ class _CustomerDetailDialogState extends State<_CustomerDetailDialog> {
                         ),
                         if (active)
                           OutlinedButton.icon(
-                            onPressed: _saving ? null : () => _setStatus('disabled'),
+                            onPressed: _saving
+                                ? null
+                                : () => _setStatus('disabled'),
                             icon: _saving
                                 ? const SizedBox(
                                     width: 15,
@@ -516,7 +544,9 @@ class _CustomerDetailDialogState extends State<_CustomerDetailDialog> {
                           )
                         else
                           FilledButton.icon(
-                            onPressed: _saving ? null : () => _setStatus('active'),
+                            onPressed: _saving
+                                ? null
+                                : () => _setStatus('active'),
                             icon: _saving
                                 ? const SizedBox(
                                     width: 15,
@@ -536,10 +566,7 @@ class _CustomerDetailDialogState extends State<_CustomerDetailDialog> {
                       ],
                     ),
                     const Divider(color: MxColors.line, height: 30),
-                    Text(
-                      'Orders',
-                      style: MxType.label(color: MxColors.forest),
-                    ),
+                    Text('Orders', style: MxType.label(color: MxColors.forest)),
                     const SizedBox(height: 8),
                     if (widget.orders.isEmpty)
                       Text(

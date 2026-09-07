@@ -285,18 +285,46 @@ void main() {
   });
 
   testWidgets(
-    'the drawer still reaches Team and Contact in the installed app',
+    'the installed app has no hamburger menu (bottom nav covers it)',
     (tester) async {
       await _pumpPager(tester);
-      await tester.tap(find.byIcon(Icons.menu_rounded));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-
-      expect(find.text('Team'), findsWidgets);
-      expect(find.text('Contact'), findsWidgets);
-      expect(find.text('My Account'), findsWidgets);
+      // No menu button and no drawer: the bottom navigation reaches every
+      // primary section, and Team/Contact/legal stay under Profile -> More.
+      expect(find.byIcon(Icons.menu_rounded), findsNothing);
+      expect(find.byType(Drawer), findsNothing);
+      expect(find.byKey(const Key('pwa-nav-home')), findsOneWidget);
+      expect(find.byKey(const Key('pwa-nav-profile')), findsOneWidget);
     },
   );
+
+  testWidgets('tapping the current bottom-nav item scrolls it to the top', (
+    tester,
+  ) async {
+    await _pumpPager(tester);
+    // Scroll the Home section well down first.
+    await tester.drag(find.text('S0'), const Offset(0, -600));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    final vertical = tester
+        .stateList<ScrollableState>(
+          find.descendant(
+            of: find.byKey(const Key('pwa-section-0')),
+            matching: find.byType(Scrollable),
+          ),
+        )
+        .where(
+          (s) =>
+              s.widget.axisDirection == AxisDirection.down &&
+              s.position.maxScrollExtent > 0,
+        )
+        .first;
+    expect(vertical.position.pixels, greaterThan(0));
+
+    // Tapping Home while already on Home glides the section back to the top.
+    await tester.tap(find.byKey(const Key('pwa-nav-home')));
+    await tester.pumpAndSettle();
+    expect(vertical.position.pixels, 0);
+  });
 
   testWidgets(
     'a live pager consumes primary-route navigation; other routes pass through',
