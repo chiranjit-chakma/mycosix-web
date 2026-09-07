@@ -10,6 +10,7 @@ import '../../models/order_draft.dart';
 import '../../models/product.dart';
 import '../../models/store_order.dart';
 import '../../repositories/order_repository.dart';
+import '../../router/app_nav.dart';
 import '../../router/routes.dart';
 import '../../services/order_receipt_pdf.dart';
 import '../../services/pdf_browser.dart';
@@ -420,7 +421,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
     // A short line under the CTA explaining why it is disabled.
     final String? ctaHint;
     if (paused) {
-      ctaHint = 'Deliveries are paused right now - orders are off until '
+      ctaHint =
+          'Deliveries are paused right now - orders are off until '
           'MYCOSIX resumes.';
     } else if (!detailsValid) {
       ctaHint = _firstFieldHint();
@@ -1021,9 +1023,7 @@ class _SuccessPanelState extends State<_SuccessPanel> {
               decoration: BoxDecoration(
                 color: MxColors.creamSoft,
                 borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: MxColors.ok.withValues(alpha: 0.45),
-                ),
+                border: Border.all(color: MxColors.ok.withValues(alpha: 0.45)),
               ),
               child: Text(
                 order.orderId,
@@ -1053,7 +1053,9 @@ class _SuccessPanelState extends State<_SuccessPanel> {
               alignment: WrapAlignment.center,
               children: [
                 FilledButton.tonalIcon(
-                  onPressed: _pdfBusy ? null : () => _pdfAction(download: false),
+                  onPressed: _pdfBusy
+                      ? null
+                      : () => _pdfAction(download: false),
                   icon: _pdfBusy
                       ? const SizedBox(
                           width: 16,
@@ -1081,7 +1083,7 @@ class _SuccessPanelState extends State<_SuccessPanel> {
                   label: const Text('Notify us on WhatsApp'),
                 ),
                 TextButton.icon(
-                  onPressed: () => Navigator.of(context).pushNamed(Routes.shop),
+                  onPressed: () => AppNav.go(context, Routes.shop),
                   icon: const Icon(Icons.arrow_forward_rounded, size: 17),
                   label: const Text('Continue shopping'),
                 ),
@@ -1128,7 +1130,7 @@ class _EmptyCheckout extends StatelessWidget {
             ),
             const SizedBox(height: 26),
             ElevatedButton.icon(
-              onPressed: () => Navigator.of(context).pushNamed(Routes.shop),
+              onPressed: () => AppNav.go(context, Routes.shop),
               icon: const Icon(Icons.arrow_forward_rounded, size: 18),
               label: const Text('Browse the shop'),
             ),

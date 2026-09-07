@@ -8,6 +8,7 @@ import '../pages/admin/admin_gate.dart';
 import '../pages/home/home_page.dart';
 import '../pages/journey/journey_page.dart';
 import '../pages/legal/privacy_page.dart';
+import '../pages/pwa/pwa_root.dart';
 import '../pages/legal/terms_page.dart';
 import '../pages/product/product_page.dart';
 import '../pages/profile/my_orders_page.dart';
@@ -15,6 +16,7 @@ import '../pages/profile/profile_page.dart';
 import '../pages/profile/wishlist_page.dart';
 import '../pages/shop/shop_page.dart';
 import '../pages/team/team_page.dart';
+import '../services/display_mode.dart';
 import 'routes.dart';
 
 /// Route table + transitions.
@@ -51,6 +53,18 @@ class AppRouter {
       );
     }
 
+    // Installed PWA: the five primary sections live in a horizontal
+    // paging shell, so a primary route becomes the shell at that section
+    // instead of a full page. Profile reached WITH arguments is a real
+    // page (the wishlist-heart return flow), not a pager section, and
+    // keeps its ordinary route. A browser tab never takes this branch.
+    if (isStandaloneDisplay()) {
+      final idx = primarySectionIndex(name);
+      if (idx >= 0 && !(name == Routes.profile && settings.arguments != null)) {
+        return fadeRoute(MxPwaRoot(initialIndex: idx));
+      }
+    }
+
     switch (name) {
       case Routes.home:
         return fadeRoute(const HomePage());
@@ -83,10 +97,12 @@ class AppRouter {
         final request = arg is ProfileRouteRequest
             ? arg
             : ProfileRouteRequest(returnRoute: arg as String?);
-        return fadeRoute(ProfilePage(
-          returnRoute: request.returnRoute,
-          initialMode: request.startMode,
-        ));
+        return fadeRoute(
+          ProfilePage(
+            returnRoute: request.returnRoute,
+            initialMode: request.startMode,
+          ),
+        );
       case Routes.wishlist:
         return fadeRoute(const WishlistPage());
       case Routes.myOrders:

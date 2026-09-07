@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../config/mx_colors.dart';
+import '../pages/pwa/pwa_registry.dart';
 import '../router/routes.dart';
 import '../services/app_exit.dart';
 import '../services/display_mode.dart';
 import '../state/back_press_controller.dart';
+import 'back_to_top_button.dart';
 import 'footer.dart';
 import 'top_bar.dart';
 
@@ -35,6 +37,10 @@ class MxShell extends StatefulWidget {
   /// with no shell mounted (e.g. a post-frame callback racing the first
   /// frame) it simply does nothing.
   static void scrollToTop() {
+    // An installed PWA shows its sections in a paging shell; let it
+    // scroll its visible section. Browser pages fall through to the
+    // ordinary shells below.
+    if (PwaRegistry.scrollToTop()) return;
     final live = _live;
     if (live.isEmpty) return;
     live.last._scrollToTop();
@@ -189,10 +195,7 @@ class _MxShellState extends State<MxShell> {
                 right: 0,
                 child: IgnorePointer(
                   ignoring: false,
-                  child: MxTopBar(
-                    scrolled: _scrolled,
-                    onMenu: openDrawer,
-                  ),
+                  child: MxTopBar(scrolled: _scrolled, onMenu: openDrawer),
                 ),
               ),
               // Premium "back to top" — fades and scales in once the page has
@@ -210,59 +213,12 @@ class _MxShellState extends State<MxShell> {
                       scale: _showTopButton ? 1 : 0.6,
                       duration: const Duration(milliseconds: 220),
                       curve: Curves.easeOut,
-                      child: _TopButton(onTap: _scrollToTop),
+                      child: MxBackToTopButton(onTap: _scrollToTop),
                     ),
                   ),
                 ),
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The floating "back to top" circle: forest-to-moss gradient, soft shadow,
-/// gentle ripple — reads as premium without shouting.
-class _TopButton extends StatelessWidget {
-  const _TopButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: 'Back to top',
-      child: Semantics(
-        button: true,
-        label: 'Back to top',
-        child: Material(
-          key: const Key('scroll-top-button'),
-          shape: const CircleBorder(),
-          elevation: 6,
-          shadowColor: MxColors.forest.withValues(alpha: 0.35),
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onTap,
-            customBorder: const CircleBorder(),
-            child: Ink(
-              width: 46,
-              height: 46,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [MxColors.forest, MxColors.mossDeep],
-                ),
-              ),
-              child: const Icon(
-                Icons.keyboard_arrow_up_rounded,
-                color: Colors.white,
-                size: 28,
-              ),
-            ),
           ),
         ),
       ),

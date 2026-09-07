@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../config/mx_colors.dart';
 import '../../config/mx_type.dart';
 import '../../models/cart_item.dart';
+import '../../router/app_nav.dart';
 import '../../router/routes.dart';
 import '../../state/cart_controller.dart';
 import '../../state/site_config_controller.dart';
@@ -112,7 +113,7 @@ class _EmptyCart extends StatelessWidget {
             ),
             const SizedBox(height: 28),
             ElevatedButton.icon(
-              onPressed: () => Navigator.of(context).pushNamed(Routes.shop),
+              onPressed: () => AppNav.go(context, Routes.shop),
               icon: const Icon(Icons.arrow_forward_rounded, size: 18),
               label: const Text('Continue Shopping'),
             ),
@@ -363,7 +364,7 @@ class _SummaryCard extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: OutlinedButton(
-              onPressed: () => Navigator.of(context).pushNamed(Routes.shop),
+              onPressed: () => AppNav.go(context, Routes.shop),
               child: const Text('Continue Shopping'),
             ),
           ),

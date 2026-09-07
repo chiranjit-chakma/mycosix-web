@@ -24,7 +24,17 @@ import '../../widgets/shell.dart';
 /// their email small underneath, and one clean card linking to their
 /// Wishlist and My Orders, their account details and sign out.
 class ProfilePage extends StatefulWidget {
-  const ProfilePage({super.key, this.returnRoute, this.initialMode});
+  const ProfilePage({
+    super.key,
+    this.returnRoute,
+    this.initialMode,
+    this.embedded = false,
+  });
+
+  /// Installed-PWA paging: when true, renders only the page content (no
+  /// shell, top bar or footer) so the horizontal app shell can host the
+  /// section. The browser website keeps the default full-shell form.
+  final bool embedded;
 
   /// The named route to return to after a successful sign-in when the
   /// customer was sent here to unlock something. Always an in-app route.
@@ -89,14 +99,14 @@ class _ProfilePageState extends State<ProfilePage> {
     setState(() => _busy = true);
     final ok = switch (_mode) {
       _AuthMode.signIn => await _auth.signIn(
-          email: _email.text,
-          password: _password.text,
-        ),
+        email: _email.text,
+        password: _password.text,
+      ),
       _AuthMode.register => await _auth.register(
-          name: _name.text,
-          email: _email.text,
-          password: _password.text,
-        ),
+        name: _name.text,
+        email: _email.text,
+        password: _password.text,
+      ),
       _AuthMode.reset => await _auth.sendPasswordReset(email: _email.text),
     };
     if (!mounted) return;
@@ -128,74 +138,75 @@ class _ProfilePageState extends State<ProfilePage> {
       signedIn: auth.user != null,
     );
 
-    return MxShell(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 120),
-          MxPage(
-            maxWidth: 680,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('YOUR ACCOUNT'.toUpperCase(), style: MxType.overline()),
-                const SizedBox(height: 12),
-                Text(
-                  status == CustomerAuthStatus.signedIn
-                      ? _displayName(auth)
-                      : _modeTitle,
-                  style: MxType.h1(MediaQuery.of(context).size.width),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  status == CustomerAuthStatus.signedIn
-                      ? (auth.email ?? '—')
-                      : _modeSubtitle,
-                  style: MxType.bodyXs(color: MxColors.stone),
-                ),
-                const SizedBox(height: 28),
-                switch (status) {
-                  CustomerAuthStatus.backendOffline => const _OfflinePanel(),
-                  CustomerAuthStatus.resolving => const _ResolvingPanel(),
-                  CustomerAuthStatus.signedOut => Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _AuthPanel(
-                          mode: _mode,
-                          formKey: _formKey,
-                          name: _name,
-                          email: _email,
-                          password: _password,
-                          confirm: _confirm,
-                          obscure: _obscure,
-                          busy: _busy,
-                          onToggleObscure: () =>
-                              setState(() => _obscure = !_obscure),
-                          onSubmit: _submit,
-                          onGoogleSignIn: _googleSignIn,
-                          onSwitchMode: _switchMode,
-                        ),
-                        // Installed-app users always see where their Wishlist
-                        // and My Orders live, locked until they sign in. In a
-                        // browser tab these stay out of the signed-out page.
-                        if (isStandaloneDisplay()) ...[
-                          const SizedBox(height: 28),
-                          const _LockedSections(),
-                        ],
-                      ],
+    final body = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 120),
+        MxPage(
+          maxWidth: 680,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('YOUR ACCOUNT'.toUpperCase(), style: MxType.overline()),
+              const SizedBox(height: 12),
+              Text(
+                status == CustomerAuthStatus.signedIn
+                    ? _displayName(auth)
+                    : _modeTitle,
+                style: MxType.h1(MediaQuery.of(context).size.width),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                status == CustomerAuthStatus.signedIn
+                    ? (auth.email ?? '—')
+                    : _modeSubtitle,
+                style: MxType.bodyXs(color: MxColors.stone),
+              ),
+              const SizedBox(height: 28),
+              switch (status) {
+                CustomerAuthStatus.backendOffline => const _OfflinePanel(),
+                CustomerAuthStatus.resolving => const _ResolvingPanel(),
+                CustomerAuthStatus.signedOut => Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _AuthPanel(
+                      mode: _mode,
+                      formKey: _formKey,
+                      name: _name,
+                      email: _email,
+                      password: _password,
+                      confirm: _confirm,
+                      obscure: _obscure,
+                      busy: _busy,
+                      onToggleObscure: () =>
+                          setState(() => _obscure = !_obscure),
+                      onSubmit: _submit,
+                      onGoogleSignIn: _googleSignIn,
+                      onSwitchMode: _switchMode,
                     ),
-                  CustomerAuthStatus.signedIn => _AccountHub(
-                      auth: auth,
-                      onSignOut: () => _auth.signOut(),
-                    ),
-                },
-                const SizedBox(height: 96),
-              ],
-            ),
+                    // Installed-app users always see where their Wishlist
+                    // and My Orders live, locked until they sign in. In a
+                    // browser tab these stay out of the signed-out page.
+                    if (isStandaloneDisplay()) ...[
+                      const SizedBox(height: 28),
+                      const _LockedSections(),
+                    ],
+                  ],
+                ),
+                CustomerAuthStatus.signedIn => _AccountHub(
+                  auth: auth,
+                  onSignOut: () => _auth.signOut(),
+                ),
+              },
+              const _MoreSection(),
+              const SizedBox(height: 96),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
+    if (widget.embedded) return body;
+    return MxShell(child: body);
   }
 
   /// The customer's name as shown on the account page. Prefers the name they
@@ -212,21 +223,21 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   String get _modeTitle => switch (_mode) {
-        _AuthMode.signIn => 'Welcome back',
-        _AuthMode.register => 'Create your account',
-        _AuthMode.reset => 'Reset your password',
-      };
+    _AuthMode.signIn => 'Welcome back',
+    _AuthMode.register => 'Create your account',
+    _AuthMode.reset => 'Reset your password',
+  };
 
   String get _modeSubtitle => switch (_mode) {
-        _AuthMode.signIn =>
-          'Sign in to save products to your wishlist, keep your cart across '
+    _AuthMode.signIn =>
+      'Sign in to save products to your wishlist, keep your cart across '
           'devices, and follow your orders.',
-        _AuthMode.register =>
-          'One account for your wishlist, your cart and your orders — across '
+    _AuthMode.register =>
+      'One account for your wishlist, your cart and your orders — across '
           'the website and the installed app.',
-        _AuthMode.reset =>
-          'Enter your account email and we will send you a reset link.',
-      };
+    _AuthMode.reset =>
+      'Enter your account email and we will send you a reset link.',
+  };
 }
 
 /// Full-width feedback banner (error or confirmation) above the form.
@@ -285,8 +296,7 @@ class _OfflinePanel extends StatelessWidget {
     return MxPanel(
       child: Column(
         children: [
-          const Icon(Icons.cloud_off_outlined,
-              size: 34, color: MxColors.stone),
+          const Icon(Icons.cloud_off_outlined, size: 34, color: MxColors.stone),
           const SizedBox(height: 14),
           Text(
             'We cannot reach the sign-in service right now. Please check your '
@@ -458,8 +468,10 @@ class _AuthPanel extends StatelessWidget {
                       hintText: mode == _AuthMode.register
                           ? 'At least 8 characters'
                           : 'Your password',
-                      prefixIcon:
-                          const Icon(Icons.lock_outline_rounded, size: 20),
+                      prefixIcon: const Icon(
+                        Icons.lock_outline_rounded,
+                        size: 20,
+                      ),
                       suffixIcon: IconButton(
                         onPressed: onToggleObscure,
                         tooltip: obscure ? 'Show password' : 'Hide password',
@@ -491,8 +503,9 @@ class _AuthPanel extends StatelessWidget {
                       hintText: 'Same password again',
                       prefixIcon: Icon(Icons.lock_outline_rounded, size: 20),
                     ),
-                    validator: (value) =>
-                        value != password.text ? 'Passwords do not match' : null,
+                    validator: (value) => value != password.text
+                        ? 'Passwords do not match'
+                        : null,
                   ),
                   const SizedBox(height: 14),
                 ],
@@ -592,9 +605,7 @@ class _ModeTab extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 13),
         decoration: BoxDecoration(
           color: selected ? MxColors.forest : MxColors.creamSoft,
-          border: Border.all(
-            color: selected ? MxColors.forest : MxColors.line,
-          ),
+          border: Border.all(color: selected ? MxColors.forest : MxColors.line),
           borderRadius: BorderRadius.circular(999),
         ),
         child: Center(
@@ -685,8 +696,18 @@ class _AccountHub extends StatelessWidget {
 
   static String _monthYear(DateTime d) {
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${months[d.month - 1]} ${d.year}';
   }
@@ -735,16 +756,16 @@ class _AccountTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: MxType.bodyXs(color: MxColors.stone),
-                ),
+                Text(subtitle, style: MxType.bodyXs(color: MxColors.stone)),
               ],
             ),
           ),
           if (onTap != null)
-            const Icon(Icons.chevron_right_rounded,
-                size: 22, color: MxColors.stone),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 22,
+              color: MxColors.stone,
+            ),
         ],
       ),
     );
@@ -833,8 +854,7 @@ class _LockedSections extends StatelessWidget {
         _LockedTile(
           icon: Icons.receipt_long_outlined,
           title: 'My Orders',
-          subtitle:
-              'Follow your orders from confirmation to your door.',
+          subtitle: 'Follow your orders from confirmation to your door.',
           onSignIn: () => page?._switchMode(_AuthMode.signIn),
           onCreate: () => page?._switchMode(_AuthMode.register),
         ),
@@ -878,10 +898,7 @@ class _LockedTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  style: MxType.bodyXs(color: MxColors.stone),
-                ),
+                Text(subtitle, style: MxType.bodyXs(color: MxColors.stone)),
                 const SizedBox(height: 10),
                 Row(
                   children: [
@@ -905,9 +922,110 @@ class _LockedTile extends StatelessWidget {
               ],
             ),
           ),
-          const Icon(Icons.lock_outline_rounded,
-              size: 18, color: MxColors.stoneLight),
+          const Icon(
+            Icons.lock_outline_rounded,
+            size: 18,
+            color: MxColors.stoneLight,
+          ),
         ],
+      ),
+    );
+  }
+}
+
+/// Every important secondary page stays reachable from the account page:
+/// Team and Contact (the primary-site pages) plus the legal pages. In the
+/// installed app the profile is a primary section, so this "More" block is
+/// how those pages keep their place there — nothing existing disappears.
+class _MoreSection extends StatelessWidget {
+  const _MoreSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('MORE', style: MxType.overline()),
+          const SizedBox(height: 12),
+          MxPanel(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+            child: Column(
+              children: const [
+                _MoreTile(
+                  icon: Icons.groups_outlined,
+                  label: 'Team',
+                  route: Routes.team,
+                ),
+                Divider(color: MxColors.line, height: 1),
+                _MoreTile(
+                  icon: Icons.mail_outline_rounded,
+                  label: 'Contact',
+                  route: Routes.contact,
+                ),
+                Divider(color: MxColors.line, height: 1),
+                _MoreTile(
+                  icon: Icons.shield_outlined,
+                  label: 'Privacy Policy',
+                  route: Routes.privacy,
+                ),
+                Divider(color: MxColors.line, height: 1),
+                _MoreTile(
+                  icon: Icons.description_outlined,
+                  label: 'Terms & Conditions',
+                  route: Routes.terms,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MoreTile extends StatelessWidget {
+  const _MoreTile({
+    required this.icon,
+    required this.label,
+    required this.route,
+  });
+
+  final IconData icon;
+  final String label;
+  final String route;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: label,
+      child: InkWell(
+        onTap: () => Navigator.of(context).pushNamed(route),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 13),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: MxColors.moss),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  label,
+                  style: MxType.bodySm(
+                    color: MxColors.charcoal,
+                    weight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 22,
+                color: MxColors.stone,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

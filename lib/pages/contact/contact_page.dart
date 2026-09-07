@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../config/mx_colors.dart';
 import '../../config/mx_config.dart';
 import '../../config/mx_type.dart';
+import '../../router/app_nav.dart';
 import '../../router/routes.dart';
 import '../../services/url_launcher.dart';
 import '../../widgets/editorial.dart';
@@ -43,8 +44,7 @@ class ContactPage extends StatelessWidget {
                         accent: const Color(0xFF128C4A),
                         title: 'WhatsApp',
                         line: MxConfig.whatsappDisplay,
-                        subtitle:
-                            'Best for orders and quick questions. Tap to open a chat.',
+                        subtitle: 'Best for orders and quick questions. Tap to open a chat.',
                         actionLabel: 'Open WhatsApp',
                         onTap: () => UrlLauncher.open(
                           'https://wa.me/${MxConfig.whatsappNumber}',
@@ -55,8 +55,7 @@ class ContactPage extends StatelessWidget {
                         accent: MxColors.earth,
                         title: 'Instagram',
                         line: '@${MxConfig.instagramHandle}',
-                        subtitle:
-                            'Farm updates, harvests and behind the scenes. DM us there.',
+                        subtitle: 'Farm updates, harvests and behind the scenes. DM us there.',
                         actionLabel: 'Visit Instagram',
                         onTap: () => UrlLauncher.open(MxConfig.instagramUrl),
                       ),
@@ -94,7 +93,10 @@ class ContactPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('PLACE AN ORDER'.toUpperCase(), style: MxType.overline()),
+                  Text(
+                    'PLACE AN ORDER'.toUpperCase(),
+                    style: MxType.overline(),
+                  ),
                   const SizedBox(height: 14),
                   Text('Ordering is easy', style: MxType.h1(width)),
                   const SizedBox(height: 20),
@@ -102,12 +104,21 @@ class ContactPage extends StatelessWidget {
                     builder: (context, constraints) {
                       final wide = constraints.maxWidth >= 900;
                       final steps = <(IconData, String, String)>[
-                        (Icons.storefront_outlined, '1 · Add to cart',
-                            'Pick your packs in the shop — fresh, dried or preserved.'),
-                        (Icons.place_outlined, '2 · Set delivery location',
-                            'Checkout asks for your location pin, name and phone.'),
-                        (Icons.chat_bubble_outline_rounded, '3 · Send on WhatsApp',
-                            'We prepare your order message — you review and press Send.'),
+                        (
+                          Icons.storefront_outlined,
+                          '1 · Add to cart',
+                          'Pick your packs in the shop — fresh, dried or preserved.',
+                        ),
+                        (
+                          Icons.place_outlined,
+                          '2 · Set delivery location',
+                          'Checkout asks for your location pin, name and phone.',
+                        ),
+                        (
+                          Icons.chat_bubble_outline_rounded,
+                          '3 · Send on WhatsApp',
+                          'We prepare your order message — you review and press Send.',
+                        ),
                       ];
 
                       Widget stepCard((IconData, String, String) s) {
@@ -124,12 +135,17 @@ class ContactPage extends StatelessWidget {
                             children: [
                               Icon(icon, size: 22, color: MxColors.moss),
                               const SizedBox(height: 12),
-                              Text(title,
-                                  style: MxType.h4(color: MxColors.charcoal)),
+                              Text(
+                                title,
+                                style: MxType.h4(color: MxColors.charcoal),
+                              ),
                               const SizedBox(height: 8),
-                              Text(body,
-                                  style: MxType.bodySm(
-                                      color: MxColors.charcoalSoft)),
+                              Text(
+                                body,
+                                style: MxType.bodySm(
+                                  color: MxColors.charcoalSoft,
+                                ),
+                              ),
                             ],
                           ),
                         );
@@ -166,12 +182,16 @@ class ContactPage extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('For retail orders',
-                                style: MxType.h4(color: MxColors.charcoal)),
+                            Text(
+                              'For retail orders',
+                              style: MxType.h4(color: MxColors.charcoal),
+                            ),
                             const SizedBox(height: 8),
                             Text(
                               'Use the shop and checkout — the whole flow is ready.',
-                              style: MxType.bodySm(color: MxColors.charcoalSoft),
+                              style: MxType.bodySm(
+                                color: MxColors.charcoalSoft,
+                              ),
                             ),
                           ],
                         ),
@@ -181,8 +201,7 @@ class ContactPage extends StatelessWidget {
                         label: 'Go to Shop',
                         tone: 'primary',
                         icon: Icons.shopping_bag_outlined,
-                        onTap: () =>
-                            Navigator.of(context).pushNamed(Routes.shop),
+                        onTap: () => AppNav.go(context, Routes.shop),
                       ),
                     ],
                   ),
@@ -202,11 +221,15 @@ class ContactPage extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('FOR BUSINESS'.toUpperCase(),
-                                style: MxType.overline()),
+                            Text(
+                              'FOR BUSINESS'.toUpperCase(),
+                              style: MxType.overline(),
+                            ),
                             const SizedBox(height: 14),
-                            Text('Restaurant & bulk supply',
-                                style: MxType.h1(width)),
+                            Text(
+                              'Restaurant & bulk supply',
+                              style: MxType.h1(width),
+                            ),
                             const SizedBox(height: 18),
                             Text(
                               'Kitchens, caterers, events and resellers — if '
@@ -240,22 +263,22 @@ class ContactPage extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('BULK SUPPLY'.toUpperCase(),
-                                  style: MxType.label(
-                                      color: MxColors.mossSoft)),
+                              Text(
+                                'BULK SUPPLY'.toUpperCase(),
+                                style: MxType.label(color: MxColors.mossSoft),
+                              ),
                               const SizedBox(height: 12),
                               Text(
                                 'Fresh oyster mushrooms',
-                                style: MxType.h2(width,
-                                    color: MxColors.cream),
+                                style: MxType.h2(width, color: MxColors.cream),
                               ),
                               const SizedBox(height: 8),
                               Text(
                                 'Harvested to order · packed the same day · '
                                 'consistency from a grow room we control.',
                                 style: MxType.bodySm(
-                                    color:
-                                        MxColors.cream.withValues(alpha: 0.78)),
+                                  color: MxColors.cream.withValues(alpha: 0.78),
+                                ),
                               ),
                             ],
                           ),
@@ -266,11 +289,12 @@ class ContactPage extends StatelessWidget {
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('FOR BUSINESS'.toUpperCase(),
-                          style: MxType.overline()),
+                      Text(
+                        'FOR BUSINESS'.toUpperCase(),
+                        style: MxType.overline(),
+                      ),
                       const SizedBox(height: 14),
-                      Text('Restaurant & bulk supply',
-                          style: MxType.h1(width)),
+                      Text('Restaurant & bulk supply', style: MxType.h1(width)),
                       const SizedBox(height: 18),
                       Text(
                         'Kitchens, caterers, events and resellers — if you '
@@ -299,20 +323,22 @@ class ContactPage extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('BULK SUPPLY'.toUpperCase(),
-                                style:
-                                    MxType.label(color: MxColors.mossSoft)),
+                            Text(
+                              'BULK SUPPLY'.toUpperCase(),
+                              style: MxType.label(color: MxColors.mossSoft),
+                            ),
                             const SizedBox(height: 12),
-                            Text('Fresh oyster mushrooms',
-                                style:
-                                    MxType.h2(width, color: MxColors.cream)),
+                            Text(
+                              'Fresh oyster mushrooms',
+                              style: MxType.h2(width, color: MxColors.cream),
+                            ),
                             const SizedBox(height: 8),
                             Text(
                               'Harvested to order · packed the same day · '
                               'consistency from a grow room we control.',
                               style: MxType.bodySm(
-                                  color:
-                                      MxColors.cream.withValues(alpha: 0.78)),
+                                color: MxColors.cream.withValues(alpha: 0.78),
+                              ),
                             ),
                           ],
                         ),

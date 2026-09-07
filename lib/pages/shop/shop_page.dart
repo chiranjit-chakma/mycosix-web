@@ -17,7 +17,12 @@ import '../../widgets/shell.dart';
 /// admin area — typing the exact summon phrase there (instead of a product
 /// search) arms the admin sign-in and clears the box. See [AdminReveal].
 class ShopPage extends StatefulWidget {
-  const ShopPage({super.key});
+  const ShopPage({super.key, this.embedded = false});
+
+  /// Installed-PWA paging: when true, renders only the page content (no
+  /// shell, top bar or footer) so the horizontal app shell can host the
+  /// section. The browser website keeps the default full-shell form.
+  final bool embedded;
 
   @override
   State<ShopPage> createState() => _ShopPageState();
@@ -63,9 +68,10 @@ class _ShopPageState extends State<ShopPage> {
     for (final p in all) {
       if (_category != 'All' && p.category != _category) continue;
       if (q.isNotEmpty) {
-        final hay = '${p.name} ${p.variant} ${p.category} ${p.weight} '
-                '${p.description}'
-            .toLowerCase();
+        final hay =
+            '${p.name} ${p.variant} ${p.category} ${p.weight} '
+                    '${p.description}'
+                .toLowerCase();
         if (!hay.contains(q)) continue;
       }
       out.add(p);
@@ -80,142 +86,141 @@ class _ShopPageState extends State<ShopPage> {
     final all = products.products;
     final filtered = _visible(all);
 
-    return MxShell(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 120),
-          MxPage(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('THE SHOP'.toUpperCase(), style: MxType.overline()),
-                const SizedBox(height: 12),
-                Text('Fresh from the grow room', style: MxType.h1(width)),
-                const SizedBox(height: 14),
-                Text(
-                  'Every pack is harvested to order. When it is gone, it is gone — '
-                  'the next harvest is on its way.',
-                  style: MxType.body(width),
-                ),
-                const SizedBox(height: 22),
-                // The banner appears only when an admin has paused delivery.
-                const DeliveryPausedNotice(),
-                const SizedBox(height: 22),
-                // Search across the whole catalogue.
-                SizedBox(
-                  width: double.infinity,
-                  child: TextField(
-                    controller: _search,
-                    onChanged: _onSearchChanged,
-                    textInputAction: TextInputAction.search,
-                    autocorrect: false,
-                    enableSuggestions: false,
-                    decoration: InputDecoration(
-                      hintText:
-                          'Search the harvest, e.g. dried, powder, 250 g…',
-                      hintStyle: MxType.bodySm(color: MxColors.stone),
-                      prefixIcon: const Icon(
-                        Icons.search_rounded,
-                        color: MxColors.moss,
-                      ),
-                      suffixIcon: _query.isEmpty
-                          ? null
-                          : IconButton(
-                              tooltip: 'Clear search',
-                              icon: const Icon(
-                                Icons.close_rounded,
-                                color: MxColors.stone,
-                              ),
-                              onPressed: () {
-                                _search.clear();
-                                setState(() => _query = '');
-                              },
+    final body = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 120),
+        MxPage(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('THE SHOP'.toUpperCase(), style: MxType.overline()),
+              const SizedBox(height: 12),
+              Text('Fresh from the grow room', style: MxType.h1(width)),
+              const SizedBox(height: 14),
+              Text(
+                'Every pack is harvested to order. When it is gone, it is gone — '
+                'the next harvest is on its way.',
+                style: MxType.body(width),
+              ),
+              const SizedBox(height: 22),
+              // The banner appears only when an admin has paused delivery.
+              const DeliveryPausedNotice(),
+              const SizedBox(height: 22),
+              // Search across the whole catalogue.
+              SizedBox(
+                width: double.infinity,
+                child: TextField(
+                  controller: _search,
+                  onChanged: _onSearchChanged,
+                  textInputAction: TextInputAction.search,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: InputDecoration(
+                    hintText: 'Search the harvest, e.g. dried, powder, 250 g…',
+                    hintStyle: MxType.bodySm(color: MxColors.stone),
+                    prefixIcon: const Icon(
+                      Icons.search_rounded,
+                      color: MxColors.moss,
+                    ),
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Clear search',
+                            icon: const Icon(
+                              Icons.close_rounded,
+                              color: MxColors.stone,
                             ),
-                      filled: true,
-                      fillColor: MxColors.creamSoft,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 15,
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(MxRadius.md),
-                        borderSide: const BorderSide(color: MxColors.line),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(MxRadius.md),
-                        borderSide: const BorderSide(
-                          color: MxColors.moss,
-                          width: 1.4,
-                        ),
+                            onPressed: () {
+                              _search.clear();
+                              setState(() => _query = '');
+                            },
+                          ),
+                    filled: true,
+                    fillColor: MxColors.creamSoft,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 15,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(MxRadius.md),
+                      borderSide: const BorderSide(color: MxColors.line),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(MxRadius.md),
+                      borderSide: const BorderSide(
+                        color: MxColors.moss,
+                        width: 1.4,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 20),
-                // Category filter chips
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    for (final c in _categories)
-                      _FilterChip(
-                        label: c,
-                        selected: _category == c,
-                        onTap: () => setState(() => _category = c),
-                      ),
-                  ],
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 20),
+              // Category filter chips
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  for (final c in _categories)
+                    _FilterChip(
+                      label: c,
+                      selected: _category == c,
+                      onTap: () => setState(() => _category = c),
+                    ),
+                ],
+              ),
+            ],
           ),
-          const SizedBox(height: 32),
-          if (!products.loaded)
-            MxPage(
-              child: SizedBox(
-                height: 260,
-                child: Center(
-                  child: CircularProgressIndicator(
-                    color: MxColors.moss,
-                    strokeWidth: 2.5,
+        ),
+        const SizedBox(height: 32),
+        if (!products.loaded)
+          MxPage(
+            child: SizedBox(
+              height: 260,
+              child: Center(
+                child: CircularProgressIndicator(
+                  color: MxColors.moss,
+                  strokeWidth: 2.5,
+                ),
+              ),
+            ),
+          )
+        else if (filtered.isEmpty)
+          MxPage(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 48),
+              child: Column(
+                children: [
+                  const Icon(
+                    Icons.inbox_outlined,
+                    size: 40,
+                    color: MxColors.stoneLight,
                   ),
-                ),
-              ),
-            )
-          else if (filtered.isEmpty)
-            MxPage(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 48),
-                child: Column(
-                  children: [
-                    const Icon(
-                      Icons.inbox_outlined,
-                      size: 40,
-                      color: MxColors.stoneLight,
-                    ),
-                    const SizedBox(height: 12),
+                  const SizedBox(height: 12),
+                  Text(
+                    _query.trim().isEmpty
+                        ? 'No products in this category yet.'
+                        : 'No matches for “${_query.trim()}”.',
+                    style: MxType.bodySm(),
+                  ),
+                  const SizedBox(height: 4),
+                  if (_query.trim().isNotEmpty)
                     Text(
-                      _query.trim().isEmpty
-                          ? 'No products in this category yet.'
-                          : 'No matches for “${_query.trim()}”.',
-                      style: MxType.bodySm(),
+                      'Try a different word, or browse a category.',
+                      style: MxType.bodyXs(color: MxColors.stone),
                     ),
-                    const SizedBox(height: 4),
-                    if (_query.trim().isNotEmpty)
-                      Text(
-                        'Try a different word, or browse a category.',
-                        style: MxType.bodyXs(color: MxColors.stone),
-                      ),
-                  ],
-                ),
+                ],
               ),
-            )
-          else
-            MxPage(child: ProductGrid(products: filtered, spacing: 22)),
-          const SizedBox(height: 60),
-        ],
-      ),
+            ),
+          )
+        else
+          MxPage(child: ProductGrid(products: filtered, spacing: 22)),
+        const SizedBox(height: 60),
+      ],
     );
+    if (widget.embedded) return body;
+    return MxShell(child: body);
   }
 }
 
@@ -241,9 +246,7 @@ class _FilterChip extends StatelessWidget {
         decoration: BoxDecoration(
           color: selected ? MxColors.forest : MxColors.creamSoft,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: selected ? MxColors.forest : MxColors.line,
-          ),
+          border: Border.all(color: selected ? MxColors.forest : MxColors.line),
         ),
         child: Text(
           label,

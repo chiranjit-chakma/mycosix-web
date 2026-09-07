@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../config/mx_colors.dart';
 import '../config/mx_type.dart';
+import '../router/app_nav.dart';
 import '../router/routes.dart';
 import '../state/cart_controller.dart';
 import 'brand.dart';
@@ -16,7 +17,7 @@ class MxTopBar extends StatelessWidget {
   final VoidCallback onMenu;
 
   void _go(BuildContext context, String route) {
-    Navigator.of(context).pushNamed(route);
+    AppNav.go(context, route);
   }
 
   @override
@@ -115,7 +116,7 @@ class _NavLinkState extends State<_NavLink> {
   bool _focused = false;
 
   void _go() {
-    Navigator.of(context).pushNamed(widget.route);
+    AppNav.go(context, widget.route);
   }
 
   KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
@@ -335,9 +336,10 @@ class MxDrawer extends StatelessWidget {
                   _DrawerLink(label: 'Contact', route: Routes.contact),
                   const SizedBox(height: 16),
                   ListTile(
-                    onTap: () => Navigator.of(context)
-                      ..pop()
-                      ..pushNamed(Routes.profile),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      AppNav.go(context, Routes.profile);
+                    },
                     leading: const Icon(
                       Icons.person_outline_rounded,
                       color: MxColors.moss,
@@ -378,7 +380,7 @@ class _DrawerLink extends StatelessWidget {
     return ListTile(
       onTap: () {
         Navigator.of(context).pop();
-        Navigator.of(context).pushNamed(route);
+        AppNav.go(context, route);
       },
       contentPadding: const EdgeInsets.symmetric(horizontal: 12),
       title: Text(

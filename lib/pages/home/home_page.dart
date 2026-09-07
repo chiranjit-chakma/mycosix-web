@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../config/mx_colors.dart';
 import '../../config/mx_config.dart';
 import '../../config/mx_type.dart';
+import '../../router/app_nav.dart';
 import '../../router/routes.dart';
 import '../../services/url_launcher.dart';
 import '../../state/products_controller.dart';
@@ -18,28 +19,33 @@ import '../../widgets/shell.dart';
 
 /// The landing page: brand story, featured products, farm and team teasers.
 class HomePage extends StatelessWidget {
-  const HomePage({super.key});
+  const HomePage({super.key, this.embedded = false});
+
+  /// Installed-PWA paging: when true, renders only the page content (no
+  /// shell, top bar or footer) so the horizontal app shell can host the
+  /// section. The browser website keeps the default full-shell form.
+  final bool embedded;
 
   @override
   Widget build(BuildContext context) {
-    return MxShell(
-      child: Column(
-        children: const [
-          _HeroSection(),
-          _FeaturedSection(),
-          _StorySection(),
-          _VisionSection(),
-          _WhySection(),
-          _ProcessSection(),
-          _ResponsibleSection(),
-          _JourneyTeaserSection(),
-          _TeamTeaserSection(),
-          _SupplySection(),
-          _ContactSection(),
-          _OrderCtaSection(),
-        ],
-      ),
+    final body = Column(
+      children: const [
+        _HeroSection(),
+        _FeaturedSection(),
+        _StorySection(),
+        _VisionSection(),
+        _WhySection(),
+        _ProcessSection(),
+        _ResponsibleSection(),
+        _JourneyTeaserSection(),
+        _TeamTeaserSection(),
+        _SupplySection(),
+        _ContactSection(),
+        _OrderCtaSection(),
+      ],
     );
+    if (embedded) return body;
+    return MxShell(child: body);
   }
 }
 
@@ -227,13 +233,15 @@ class _HeroCopy extends StatelessWidget {
       constraints: const BoxConstraints(maxWidth: 560),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment:
-            center ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+        crossAxisAlignment: center
+            ? CrossAxisAlignment.center
+            : CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment:
-                center ? MainAxisAlignment.center : MainAxisAlignment.start,
+            mainAxisAlignment: center
+                ? MainAxisAlignment.center
+                : MainAxisAlignment.start,
             children: [
               Container(width: 34, height: 2, color: MxColors.moss),
               const SizedBox(width: 12),
@@ -272,12 +280,12 @@ class _HeroCopy extends StatelessWidget {
                 label: 'Shop Fresh Mushrooms',
                 tone: 'primary',
                 icon: Icons.shopping_bag_outlined,
-                onTap: () => Navigator.of(context).pushNamed(Routes.shop),
+                onTap: () => AppNav.go(context, Routes.shop),
               ),
               MxCta(
                 label: 'Our Farm',
                 tone: 'ghost',
-                onTap: () => Navigator.of(context).pushNamed(Routes.farm),
+                onTap: () => AppNav.go(context, Routes.farm),
               ),
             ],
           ),
@@ -332,7 +340,7 @@ class _FeaturedSection extends StatelessWidget {
               label: 'See all products',
               tone: 'ghost',
               icon: Icons.arrow_forward_rounded,
-              onTap: () => Navigator.of(context).pushNamed(Routes.shop),
+              onTap: () => AppNav.go(context, Routes.shop),
             ),
           ),
         ],
@@ -413,8 +421,7 @@ class _FeaturedRailState extends State<_FeaturedRail> {
     final cardW = _cardWidth(MediaQuery.of(context).size.width);
     var step = pos.viewportDimension - (cardW + 20);
     if (step < cardW + 20) step = cardW + 20;
-    final target =
-        (pos.pixels + dir * step).clamp(0.0, pos.maxScrollExtent);
+    final target = (pos.pixels + dir * step).clamp(0.0, pos.maxScrollExtent);
     _scroller.animateTo(
       target,
       duration: const Duration(milliseconds: 360),
@@ -435,12 +442,8 @@ class _FeaturedRailState extends State<_FeaturedRail> {
       style: IconButton.styleFrom(
         minimumSize: const Size(40, 40),
         backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(999),
-        ),
-        side: BorderSide(
-          color: enabled ? MxColors.lineDark : MxColors.line,
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+        side: BorderSide(color: enabled ? MxColors.lineDark : MxColors.line),
         foregroundColor: MxColors.charcoal,
         disabledForegroundColor: MxColors.line,
         disabledBackgroundColor: Colors.white,
@@ -624,7 +627,7 @@ class _StoryCopy extends StatelessWidget {
         MxCta(
           label: 'Read the Journey',
           tone: 'ghost',
-          onTap: () => Navigator.of(context).pushNamed(Routes.journey),
+          onTap: () => AppNav.go(context, Routes.journey),
         ),
       ],
     );
@@ -1133,7 +1136,7 @@ class _JourneyTeaserSection extends StatelessWidget {
               MxCta(
                 label: 'Follow the Journey',
                 tone: 'ghost',
-                onTap: () => Navigator.of(context).pushNamed(Routes.journey),
+                onTap: () => AppNav.go(context, Routes.journey),
               ),
             ],
           );
@@ -1465,7 +1468,7 @@ class _OrderCtaSection extends StatelessWidget {
               label: 'Order Fresh Mushrooms',
               tone: 'light',
               icon: Icons.shopping_bag_outlined,
-              onTap: () => Navigator.of(context).pushNamed(Routes.shop),
+              onTap: () => AppNav.go(context, Routes.shop),
             ),
           ],
         ),

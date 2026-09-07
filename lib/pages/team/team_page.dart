@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../config/mx_colors.dart';
 import '../../config/mx_config.dart';
 import '../../config/mx_type.dart';
+import '../../router/app_nav.dart';
 import '../../router/routes.dart';
 import '../../widgets/editorial.dart';
 import '../../widgets/mx_cta.dart';
@@ -138,9 +139,7 @@ class TeamPage extends StatelessWidget {
                               Text(
                                 body,
                                 style: MxType.bodySm(
-                                  color: MxColors.cream.withValues(
-                                    alpha: 0.78,
-                                  ),
+                                  color: MxColors.cream.withValues(alpha: 0.78),
                                 ),
                               ),
                             ],
@@ -258,7 +257,7 @@ class TeamPage extends StatelessWidget {
                       label: 'Visit the Farm',
                       tone: 'ghost',
                       icon: Icons.arrow_forward_rounded,
-                      onTap: () => Navigator.of(context).pushNamed(Routes.farm),
+                      onTap: () => AppNav.go(context, Routes.farm),
                     ),
                   ],
                 ),

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../config/mx_colors.dart';
 import '../../config/mx_type.dart';
 import '../../models/product.dart';
+import '../../router/app_nav.dart';
 import '../../router/routes.dart';
 import '../../state/cart_controller.dart';
 import '../../state/customer_auth_controller.dart';
@@ -98,9 +99,9 @@ class WishlistPage extends StatelessWidget {
                 Text(
                   ordered.isEmpty
                       ? 'No saved products yet — tap the heart on any product '
-                          'to keep it here.'
+                            'to keep it here.'
                       : '${ordered.length} saved '
-                          '${ordered.length == 1 ? 'product' : 'products'}',
+                            '${ordered.length == 1 ? 'product' : 'products'}',
                   style: MxType.bodySm(color: MxColors.stone),
                 ),
                 const SizedBox(height: 28),
@@ -134,8 +135,11 @@ class _EmptyState extends StatelessWidget {
     return MxPanel(
       child: Column(
         children: [
-          const Icon(Icons.favorite_border_rounded,
-              size: 34, color: MxColors.stone),
+          const Icon(
+            Icons.favorite_border_rounded,
+            size: 34,
+            color: MxColors.stone,
+          ),
           const SizedBox(height: 12),
           Text(
             'Your wishlist is empty.\nBrowse the shop and tap the heart on '
@@ -145,7 +149,7 @@ class _EmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           FilledButton(
-            onPressed: () => Navigator.of(context).pushNamed(Routes.shop),
+            onPressed: () => AppNav.go(context, Routes.shop),
             style: FilledButton.styleFrom(
               backgroundColor: MxColors.forest,
               foregroundColor: Colors.white,
@@ -172,8 +176,9 @@ class _WishlistRow extends StatelessWidget {
       color: MxColors.creamSoft,
       borderRadius: BorderRadius.circular(MxRadius.md),
       child: InkWell(
-        onTap: () => Navigator.of(context)
-            .pushNamed(Routes.product, arguments: product.id),
+        onTap: () =>
+            Navigator.of(context)
+                .pushNamed(Routes.product, arguments: product.id),
         borderRadius: BorderRadius.circular(MxRadius.md),
         child: Container(
           padding: const EdgeInsets.all(10),

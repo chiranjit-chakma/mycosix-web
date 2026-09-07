@@ -8,6 +8,7 @@ import '../../config/mx_config.dart';
 import '../../config/mx_type.dart';
 import '../../models/product.dart';
 import '../../state/products_controller.dart';
+import '../../router/app_nav.dart';
 import '../../router/routes.dart';
 import '../../state/cart_controller.dart';
 import '../../util/product_image.dart';
@@ -63,7 +64,8 @@ class _ProductPageState extends State<ProductPage> {
     if (fresh == null) return; // no longer in the catalogue — keep last view
     final p = fresh; // non-null local: promotions do not reach closures
     final cur = _product;
-    final same = cur != null &&
+    final same =
+        cur != null &&
         cur.id == p.id &&
         cur.price == p.price &&
         cur.stock == p.stock &&
@@ -138,7 +140,7 @@ class _ProductPageState extends State<ProductPage> {
               Text('Product not found', style: MxType.h1(width)),
               const SizedBox(height: 16),
               TextButton(
-                onPressed: () => Navigator.of(context).pushNamed(Routes.shop),
+                onPressed: () => AppNav.go(context, Routes.shop),
                 child: const Text('Back to shop'),
               ),
             ],
@@ -293,8 +295,7 @@ class _Gallery extends StatelessWidget {
                         ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(11),
-                          child:
-                              MxImage(asset: gallery[i], fit: BoxFit.cover),
+                          child: MxImage(asset: gallery[i], fit: BoxFit.cover),
                         ),
                       ),
                     ),

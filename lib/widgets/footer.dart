@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../config/mx_colors.dart';
 import '../config/mx_config.dart';
 import '../config/mx_type.dart';
+import '../router/app_nav.dart';
 import '../router/routes.dart';
 import '../services/url_launcher.dart';
 import '../state/cart_controller.dart';
@@ -203,7 +204,7 @@ class _FooterColumn extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: InkWell(
-              onTap: () => Navigator.of(context).pushNamed(route),
+              onTap: () => AppNav.go(context, route),
               borderRadius: BorderRadius.circular(6),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 2),
