@@ -23,6 +23,19 @@ const int maxInlineImageChars = 700 * 1000;
 /// stored copy stays a sensible size.
 const int maxInlineImageDimension = 900;
 
+/// The most photos a single product may carry: one cover (`image`) plus up to
+/// [maxGalleryPhotos] extra photos in `gallery`. Keeps admin uploads and the
+/// customer gallery bounded.
+const int maxProductPhotos = 5;
+
+/// Extra photos (after the cover) a product may hold in its `gallery`.
+const int maxGalleryPhotos = maxProductPhotos - 1;
+
+/// Document-wide budget (in characters) for every stored photo of one product
+/// combined. Firestore allows 1 MiB per document, so this sits below that cap
+/// and leaves room for the product's text fields next to the photos.
+const int maxInlineTotalChars = 950 * 1000;
+
 /// True when [value] is an inline image (an admin-uploaded photo stored on
 /// the product document) rather than a bundled asset path or a normal URL.
 bool isInlineImage(String value) => value.startsWith('data:image/');
@@ -128,5 +141,68 @@ Future<String> _pngUrl(ui.Image source, int tw, int th) async {
         '${base64Encode(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes))}';
   } finally {
     scaled.dispose();
+  }
+}
+
+/// The ordered photos a customer should see for one product: the cover
+/// [image] first, then each gallery photo that is not the cover itself
+/// (seeded products repeat the cover at the front of `gallery`). Empty values
+/// are dropped, so an image-less product simply shows its gallery.
+List<String> productPhotos({
+  required String image,
+  required List<String> gallery,
+}) {
+  return [
+    if (image.isNotEmpty) image,
+    for (final g in gallery)
+      if (g.isNotEmpty && g != image) g,
+  ];
+}
+
+/// Keeps a product's stored photos within the Firestore document budget.
+///
+/// Takes the ordered photo list (cover `image` first, then `gallery`) and
+/// re-encodes inline photos smaller, but ONLY when the whole list together is
+/// over [maxInlineTotalChars]. A single generously-sized cover photo keeps
+/// its quality untouched; bundled asset paths and normal URLs are never
+/// changed. Returns the list unchanged when it already fits.
+Future<List<String>> fitProductPhotoBudget(List<String> photos) async {
+  var totalChars = 0;
+  var inlineCount = 0;
+  for (final p in photos) {
+    totalChars += p.length;
+    if (isInlineImage(p)) inlineCount++;
+  }
+  if (inlineCount == 0 || totalChars <= maxInlineTotalChars) return photos;
+  // The photos are over budget together: give every inline photo an equal
+  // share of the room and shrink the ones that do not fit that share.
+  final perPhoto = maxInlineTotalChars ~/ inlineCount;
+  final out = <String>[];
+  for (final p in photos) {
+    if (!isInlineImage(p) || p.length <= perPhoto) {
+      out.add(p);
+      continue;
+    }
+    final bytes = _inlineBytes(p);
+    if (bytes == null) {
+      out.add(p);
+      continue;
+    }
+    final fitted = await encodeInlineProductImage(bytes, maxChars: perPhoto);
+    out.add(fitted ?? p);
+  }
+  return out;
+}
+
+/// Decodes the payload of an inline image data URL back to its original
+/// bytes, or null when [value] is not an inline image or cannot be read.
+Uint8List? _inlineBytes(String value) {
+  if (!isInlineImage(value)) return null;
+  final comma = value.indexOf(',');
+  if (comma < 0) return null;
+  try {
+    return base64Decode(value.substring(comma + 1));
+  } catch (_) {
+    return null;
   }
 }

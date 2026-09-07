@@ -96,6 +96,65 @@ void main() {
       });
     });
   });
+
+  group('productPhotos (customer photo list)', () {
+    test('puts the cover first and drops the repeated cover in gallery',
+        () {
+      expect(
+        productPhotos(image: 'a.webp', gallery: ['a.webp', 'b.jpg', 'c.jpg']),
+        ['a.webp', 'b.jpg', 'c.jpg'],
+      );
+    });
+
+    test('keeps genuine extra gallery photos after the cover', () {
+      expect(
+        productPhotos(image: 'a.webp', gallery: const ['b.jpg', 'c.jpg']),
+        ['a.webp', 'b.jpg', 'c.jpg'],
+      );
+      expect(
+        productPhotos(image: 'a.webp', gallery: const []),
+        ['a.webp'],
+      );
+    });
+
+    test('drops empty values so a gallery can stand alone', () {
+      expect(
+        productPhotos(image: '', gallery: const ['b.jpg', 'b.jpg']),
+        ['b.jpg', 'b.jpg'],
+      );
+      expect(
+        productPhotos(image: '', gallery: const ['']),
+        <String>[],
+      );
+      expect(
+        productPhotos(image: 'a.webp', gallery: const ['']),
+        ['a.webp'],
+      );
+    });
+  });
+
+  group('fitProductPhotoBudget', () {
+    test('keeps an already-fitting list unchanged', () async {
+      final list = ['assets/a.webp', 'data:image/png;base64,AAAA'];
+      final fitted = await fitProductPhotoBudget(list);
+      expect(fitted, list);
+    });
+
+    test('never touches lists that contain no inline photos', () async {
+      final big = 'assets/very/long/name.webp';
+      final list = List<String>.filled(200, big);
+      final fitted = await fitProductPhotoBudget(list);
+      expect(fitted, list);
+    });
+
+    test('drops nothing and stays under the document budget when photos fit',
+        () async {
+      final list = ['assets/a.webp', 'data:image/png;base64,AA=='];
+      final fitted = await fitProductPhotoBudget(list);
+      expect(fitted.length, list.length);
+      expect(fitted, list);
+    });
+  });
 }
 
 /// Renders a flat-colour image and returns its PNG bytes.

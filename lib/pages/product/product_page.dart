@@ -10,10 +10,12 @@ import '../../models/product.dart';
 import '../../state/products_controller.dart';
 import '../../router/routes.dart';
 import '../../state/cart_controller.dart';
+import '../../util/product_image.dart';
 import '../../utils/money.dart';
 import '../../widgets/mx_image.dart';
 import '../../widgets/page.dart';
 import '../../widgets/product_card.dart';
+import '../../widgets/product_share_button.dart';
 import '../../widgets/product_video.dart';
 import '../../widgets/products_scope.dart';
 import '../../widgets/shell.dart';
@@ -68,7 +70,8 @@ class _ProductPageState extends State<ProductPage> {
         cur.name == p.name &&
         cur.weight == p.weight &&
         cur.image == p.image &&
-        cur.description == p.description;
+        cur.description == p.description &&
+        _samePhotos(cur, p);
     if (same) return;
     setState(() {
       _product = p;
@@ -76,6 +79,17 @@ class _ProductPageState extends State<ProductPage> {
         _quantity = math.max(1, p.stock);
       }
     });
+  }
+
+  // Whether two products show the same ordered photos (cover + gallery).
+  static bool _samePhotos(Product a, Product b) {
+    final pa = productPhotos(image: a.image, gallery: a.gallery);
+    final pb = productPhotos(image: b.image, gallery: b.gallery);
+    if (pa.length != pb.length) return false;
+    for (var i = 0; i < pa.length; i++) {
+      if (pa[i] != pb[i]) return false;
+    }
+    return true;
   }
 
   @override
@@ -132,9 +146,11 @@ class _ProductPageState extends State<ProductPage> {
       );
     }
 
-    final gallery = product.gallery.isNotEmpty
-        ? product.gallery
-        : [product.image];
+    // The photos this customer sees: the cover first, then the gallery. Seed
+    // data repeats the cover inside `gallery`, so productPhotos de-duplicates
+    // it; a product with no cover simply shows its gallery.
+    final shown = productPhotos(image: product.image, gallery: product.gallery);
+    final gallery = shown.isNotEmpty ? shown : [product.image];
 
     return MxShell(
       child: Column(
@@ -222,35 +238,41 @@ class _Gallery extends StatelessWidget {
         ),
         if (gallery.length > 1) ...[
           const SizedBox(height: 14),
-          Row(
-            children: [
-              for (var i = 0; i < gallery.length; i++)
-                Padding(
-                  padding: const EdgeInsets.only(right: 10),
-                  child: InkWell(
-                    onTap: () => onSelect(i),
-                    borderRadius: BorderRadius.circular(12),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      width: 68,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: activeImage == i
-                              ? MxColors.moss
-                              : MxColors.line,
-                          width: activeImage == i ? 2 : 1,
+          // Thumbnails scroll sideways on narrow screens, so even a product
+          // with its full set of photos never overflows the page.
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (var i = 0; i < gallery.length; i++)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 10),
+                    child: InkWell(
+                      onTap: () => onSelect(i),
+                      borderRadius: BorderRadius.circular(12),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        width: 68,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: activeImage == i
+                                ? MxColors.moss
+                                : MxColors.line,
+                            width: activeImage == i ? 2 : 1,
+                          ),
                         ),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(11),
-                        child: MxImage(asset: gallery[i], fit: BoxFit.cover),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(11),
+                          child:
+                              MxImage(asset: gallery[i], fit: BoxFit.cover),
+                        ),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ],
       ],
@@ -290,6 +312,14 @@ class _ProductInfo extends StatelessWidget {
         Text(
           formatRupees(product.price),
           style: MxType.displayAlt(width, color: MxColors.moss),
+        ),
+        const SizedBox(height: 14),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: ProductShareButton(
+            productName: product.name,
+            productId: product.id,
+          ),
         ),
         const SizedBox(height: 24),
         Text('About this pack', style: MxType.label(color: MxColors.forest)),

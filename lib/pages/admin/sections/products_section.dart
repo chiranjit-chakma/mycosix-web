@@ -336,71 +336,75 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
   late bool _busy = false;
   String? _error;
 
-  // Optional photo. A photo chosen here is stored inline on the product
-  // document (see util/product_image.dart); an existing product may keep its
-  // bundled asset path, be replaced, or have its photo removed.
-  String? _pickedImage;
-  bool _imageRemoved = false;
-  bool _pickingImage = false;
-  String? _imageError;
+  // Product photos, shown and edited in order. The first photo is the cover
+  // (`image`) the shop shows; the rest are stored in `gallery`. A photo chosen
+  // here is stored inline on the product document (see util/product_image.dart);
+  // an existing product may keep its bundled asset paths, replace any of them,
+  // or remove them. A product holds at most maxProductPhotos photos.
+  late final List<String> _photos = widget.product == null
+      ? <String>[]
+      : productPhotos(
+          image: widget.product!.image,
+          gallery: widget.product!.gallery,
+        );
+  bool _busyPhoto = false;
+  String? _photoError;
 
   static String _num(num? v) => v == null ? '' : v.toString();
 
-  String get _existingImage => widget.product?.image ?? '';
-
-  /// The value `image` should hold when the editor is saved.
-  String get _imageToSave {
-    if (_pickedImage != null) return _pickedImage!;
-    if (_imageRemoved) return '';
-    return _existingImage;
-  }
-
-  /// What the preview box should show right now.
-  String get _previewImage {
-    if (_pickedImage != null) return _pickedImage!;
-    if (_imageRemoved) return '';
-    return _existingImage;
-  }
-
-  Future<void> _pickPhoto() async {
-    if (_pickingImage) return;
+  /// Picks one photo and returns it as a compact inline data URL, or null when
+  /// the admin cancelled the picker or the photo could not be stored.
+  Future<String?> _pickOnePhoto() async {
+    if (_busyPhoto) return null;
     setState(() {
-      _pickingImage = true;
-      _imageError = null;
+      _busyPhoto = true;
+      _photoError = null;
     });
     try {
       final picked = await FilePicker.pickFiles(type: FileType.image);
-      if (picked.isEmpty) return; // admin cancelled the picker
+      if (picked.isEmpty) return null; // admin cancelled the picker
       final bytes = await picked.first.readAsBytes();
       final url = await encodeInlineProductImage(bytes);
       if (url == null) {
-        if (!mounted) return;
-        setState(() {
-          _imageError = 'That photo could not be stored. Choose a JPEG/PNG '
-              'photo under a few MB.';
-        });
-        return;
+        if (mounted) {
+          setState(() {
+            _photoError = 'That photo could not be stored. Choose a JPEG/PNG '
+                'photo under a few MB.';
+          });
+        }
+        return null;
       }
-      if (!mounted) return;
-      setState(() {
-        _pickedImage = url;
-        _imageRemoved = false;
-      });
+      return url;
     } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _imageError = 'The photo could not be read. Choose a JPEG/PNG image.';
-      });
+      if (mounted) {
+        setState(() {
+          _photoError =
+              'The photo could not be read. Choose a JPEG/PNG image.';
+        });
+      }
+      return null;
     } finally {
-      if (mounted) setState(() => _pickingImage = false);
+      if (mounted) setState(() => _busyPhoto = false);
     }
   }
 
-  void _removeImage() {
+  Future<void> _addPhoto() async {
+    if (_photos.length >= maxProductPhotos) return;
+    final url = await _pickOnePhoto();
+    if (url == null || !mounted) return;
     setState(() {
-      _pickedImage = null;
-      _imageRemoved = true;
+      if (_photos.length < maxProductPhotos) _photos.add(url);
     });
+  }
+
+  Future<void> _replacePhoto(int index) async {
+    final url = await _pickOnePhoto();
+    if (url == null || !mounted) return;
+    setState(() => _photos[index] = url);
+  }
+
+  void _removePhoto(int index) {
+    setState(() => _photos.removeAt(index));
   }
 
   @override
@@ -428,10 +432,21 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
       _busy = true;
       _error = null;
     });
+    final actor = context.read<AuthController>().user?.email;
     try {
       final price = double.parse(_price.text.trim());
       final stock = int.parse(_stock.text.trim());
       final sortKey = int.parse(_sortKey.text.trim());
+      var photos = [
+        for (final p in _photos)
+          if (p.trim().isNotEmpty) p,
+      ];
+      // All stored photos of one product must fit under Firestore's per-document
+      // cap together; if they do not, they are shrunk to fit before saving.
+      photos = await fitProductPhotoBudget(photos);
+      final image = photos.isEmpty ? '' : photos.first;
+      final gallery =
+          photos.length > 1 ? photos.sublist(1) : const <String>[];
       final base = <String, Object?>{
         'name': _name.text.trim(),
         'description': _description.text.trim(),
@@ -442,18 +457,17 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
         'stock': stock,
         'sortKey': sortKey,
         'available': _available,
-        'image': _imageToSave,
+        'image': image,
+        'gallery': gallery,
         'videoUrl': _videoUrl.text.trim(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
       final existing = widget.product;
-      final actor = context.read<AuthController>().user?.email;
       if (existing == null) {
         final ref = Fb.products.doc();
         await ref.set({
           ...base,
           'id': ref.id,
-          'gallery': const <String>[],
           'createdAt': FieldValue.serverTimestamp(),
         });
         final label = _name.text.trim() +
@@ -567,7 +581,7 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
                       'product. Leave empty for no video.',
                 ),
                 const SizedBox(height: 12),
-                _photoTile(),
+                _photosSection(),
                 const SizedBox(height: 10),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -625,25 +639,8 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
     );
   }
 
-  Widget _photoTile() {
-    final hasPhoto = _previewImage.isNotEmpty;
-    final preview = SizedBox(
-      width: 88,
-      height: 88,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(MxRadius.sm),
-        child: hasPhoto
-            ? MxImage(asset: _previewImage, width: 88, height: 88)
-            : Container(
-                color: MxColors.creamDeep,
-                child: const Icon(
-                  Icons.image_outlined,
-                  size: 30,
-                  color: MxColors.stoneLight,
-                ),
-              ),
-      ),
-    );
+  Widget _photosSection() {
+    final remaining = maxProductPhotos - _photos.length;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -651,71 +648,156 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
         borderRadius: BorderRadius.circular(MxRadius.md),
         border: Border.all(color: MxColors.line),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          preview,
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Product photo (optional)',
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Product photos',
                   style: MxType.bodySm(
                     color: MxColors.charcoal,
                     weight: FontWeight.w700,
                   ),
                 ),
-                const SizedBox(height: 2),
+              ),
+              if (_photos.isNotEmpty)
                 Text(
-                  hasPhoto
-                      ? 'Shown in the shop. Pick another photo to replace it.'
-                      : 'No photo yet - the shop shows a placeholder. You can '
-                          'add one later.',
-                  style: MxType.bodyXs(color: MxColors.stone),
+                  '${_photos.length}/$maxProductPhotos',
+                  style: MxType.bodyXs(
+                    color: MxColors.stone,
+                    weight: FontWeight.w700,
+                  ),
                 ),
-                if (_imageError != null) ...[
-                  const SizedBox(height: 4),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'The first photo is the main photo shown in the shop; the rest '
+            'appear in the product gallery. Tap a photo to change it, or its X '
+            'to remove it. You can add up to $maxProductPhotos photos.',
+            style: MxType.bodyXs(color: MxColors.stone),
+          ),
+          if (_photoError != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              _photoError!,
+              style: MxType.bodyXs(
+                color: MxColors.danger,
+                weight: FontWeight.w600,
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              for (var i = 0; i < _photos.length; i++) _photoThumb(i),
+              if (remaining > 0) _addPhotoThumb(),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _photoThumb(int index) {
+    final main = index == 0;
+    return SizedBox(
+      width: 88,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Stack(
+            children: [
+              InkWell(
+                onTap:
+                    _busyPhoto || _busy ? null : () => _replacePhoto(index),
+                borderRadius: BorderRadius.circular(MxRadius.sm),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(MxRadius.sm),
+                  child: MxImage(
+                    asset: _photos[index],
+                    width: 88,
+                    height: 80,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+              if (!_busyPhoto)
+                Positioned(
+                  top: 4,
+                  right: 4,
+                  child: _photoRemoveButton(index),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            main ? 'Main photo' : 'Photo ${index + 1}',
+            style: MxType.bodyXs(color: MxColors.stone),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _photoRemoveButton(int index) {
+    return GestureDetector(
+      onTap: _busyPhoto || _busy ? null : () => _removePhoto(index),
+      child: Container(
+        width: 22,
+        height: 22,
+        decoration: const BoxDecoration(
+          color: MxColors.forest,
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(
+          Icons.close_rounded,
+          size: 14,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+
+  Widget _addPhotoThumb() {
+    return InkWell(
+      onTap: _busyPhoto || _busy ? null : _addPhoto,
+      borderRadius: BorderRadius.circular(MxRadius.sm),
+      child: Container(
+        width: 88,
+        height: 80,
+        decoration: BoxDecoration(
+          color: MxColors.creamSoft,
+          borderRadius: BorderRadius.circular(MxRadius.sm),
+          border: Border.all(color: MxColors.moss, width: 1.2),
+        ),
+        child: _busyPhoto
+            ? const Padding(
+                padding: EdgeInsets.all(18),
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.add_a_photo_outlined,
+                    size: 18,
+                    color: MxColors.moss,
+                  ),
+                  const SizedBox(height: 3),
                   Text(
-                    _imageError!,
+                    'Add photo',
                     style: MxType.bodyXs(
-                      color: MxColors.danger,
-                      weight: FontWeight.w600,
+                      color: MxColors.moss,
+                      weight: FontWeight.w700,
                     ),
                   ),
                 ],
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: _pickingImage || _busy ? null : _pickPhoto,
-                      icon: _pickingImage
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.add_a_photo_outlined, size: 16),
-                      label: Text(
-                        _pickingImage
-                            ? 'Preparing...'
-                            : (hasPhoto ? 'Change photo' : 'Add photo'),
-                      ),
-                    ),
-                    if (hasPhoto) ...[
-                      const SizedBox(width: 8),
-                      TextButton(
-                        onPressed: _busy ? null : _removeImage,
-                        child: const Text('Remove'),
-                      ),
-                    ],
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
+              ),
       ),
     );
   }
