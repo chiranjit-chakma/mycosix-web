@@ -18,5 +18,6 @@ class Routes {
   static const cart = '/cart';
   static const checkout = '/checkout';
   static const product = '/product';
+  static const profile = '/profile';
   static const admin = '/admin';
 }

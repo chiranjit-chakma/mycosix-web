@@ -19,6 +19,8 @@ import 'router/app_router.dart';
 import 'router/routes.dart';
 import 'state/admin_reveal.dart';
 import 'state/auth_controller.dart';
+import 'state/cart_sync_controller.dart';
+import 'state/customer_auth_controller.dart';
 import 'services/geo_location_service.dart';
 import 'services/whatsapp_order_service.dart';
 import 'state/cart_controller.dart';
@@ -72,12 +74,29 @@ Future<void> main() async {
   final cartRepository = CartRepository(prefs, productsRepository);
   await cartRepository.load(); // restore cart + location from browser storage
 
+  // Customer accounts + cart sync. Both stay fully dormant when the backend
+  // is offline: the site behaves exactly as the guest-only site did.
+  final customerAuth = CustomerAuthController();
+  final cartController = CartController(
+    cartRepository,
+    siteDeliveryFee: configRepository.deliveryFee,
+  );
+  final cartSync = CartSyncController(
+    repository: cartRepository,
+    cart: cartController,
+    auth: customerAuth,
+    backendAvailable: Fb.enabled,
+  )..start();
+
   runApp(
     MxApp(
       cartRepository: cartRepository,
       productsRepository: productsRepository,
       configRepository: configRepository,
       orderRepository: orderRepository,
+      customerAuth: customerAuth,
+      cartController: cartController,
+      cartSync: cartSync,
     ),
   );
 }
@@ -90,12 +109,18 @@ class MxApp extends StatelessWidget {
     required this.productsRepository,
     required this.configRepository,
     required this.orderRepository,
+    required this.customerAuth,
+    required this.cartController,
+    required this.cartSync,
   });
 
   final CartRepository cartRepository;
   final ProductRepository productsRepository;
   final ConfigRepository configRepository;
   final OrderRepository orderRepository;
+  final CustomerAuthController customerAuth;
+  final CartController cartController;
+  final CartSyncController cartSync;
 
   @override
   Widget build(BuildContext context) {
@@ -104,12 +129,13 @@ class MxApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (_) => ProductsController(productsRepository),
         ),
-        ChangeNotifierProvider(
-          create: (_) => CartController(
-            cartRepository,
-            siteDeliveryFee: configRepository.deliveryFee,
-          ),
+        // App-lifetime singletons created in main() (they cross-reference
+        // each other for cart sync), so they are provided by value.
+        ChangeNotifierProvider<CartController>.value(value: cartController),
+        ChangeNotifierProvider<CustomerAuthController>.value(
+          value: customerAuth,
         ),
+        ChangeNotifierProvider<CartSyncController>.value(value: cartSync),
         ChangeNotifierProvider(
           create: (_) =>
               LocationController(cartRepository, BrowserGeoLocationService()),

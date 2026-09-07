@@ -201,6 +201,64 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // Customer account profiles. A registered customer owns exactly their own
+    // document; nobody else can read it (only an admin may, for the admin
+    // Customers section). The email on the profile must be the email the
+    // auth provider verified for that uid, and a customer document starts
+    // life as 'active' - account status changes are an admin-only decision.
+    match /customers/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow create: if isSignedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly([
+          'email', 'displayName', 'createdAt', 'status'
+        ])
+        && request.resource.data.email is string
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.email.size() <= 120
+        && (!('displayName' in request.resource.data)
+            || (request.resource.data.displayName is string
+                && request.resource.data.displayName.size() <= 120))
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.status == 'active';
+      allow update: if
+        (
+          // The owner may only refresh their display name.
+          isSignedIn() && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['displayName', 'updatedAt'])
+          && (!('displayName' in request.resource.data)
+              || (request.resource.data.displayName is string
+                  && request.resource.data.displayName.size() <= 120))
+        )
+        || (
+          // An admin may only change the account status (active/disabled).
+          isAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['status', 'updatedAt'])
+          && request.resource.data.status in ['active', 'disabled']
+        );
+      allow delete: if false;
+    }
+
+    // Account cart mirror (carts/{uid}). Owner-only: a customer reads and
+    // writes exactly their own cart document, nobody else's, and an admin
+    // cannot read a customer's cart (it is not business data).
+    //
+    // Per-line quantities cannot be bounded field-by-field here (rules have
+    // no iteration), and that is acceptable: only the owner can write their
+    // own cart, every value is re-sanitised and re-clamped against the live
+    // catalogue on read, and prices/stock are decided exclusively by the
+    // order backend at checkout - a tampered cart document buys nothing.
+    match /carts/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow create, update: if isSignedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['items', 'updatedAt'])
+        && request.resource.data.updatedAt is timestamp
+        && request.resource.data.items is map
+        && request.resource.data.items.size() <= 30;
+      allow delete: if isSignedIn() && request.auth.uid == uid;
+    }
+
     // Managed editorial + team records. Read and written by admins only; the
     // public marketing site currently ships its own copy, so nothing here is
     // exposed until a future section reads it on purpose.

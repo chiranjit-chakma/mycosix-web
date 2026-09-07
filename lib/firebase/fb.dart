@@ -30,6 +30,13 @@ class Fb {
   static CollectionReference<Map<String, dynamic>> get siteConfig =>
       db.collection('siteConfig');
 
+  // Customer-account collections. A customer may only ever touch their own
+  // documents here — enforced server-side by the Firestore rules.
+  static CollectionReference<Map<String, dynamic>> get customers =>
+      db.collection('customers');
+  static CollectionReference<Map<String, dynamic>> get carts =>
+      db.collection('carts');
+
   // Zero-budget production data collections. All are admin-only under the
   // security rules: customers can never read or write them.
   static CollectionReference<Map<String, dynamic>> get batches =>
@@ -51,6 +58,13 @@ class Fb {
           return 'That email or password is not correct.';
         case 'user-disabled':
           return 'This account has been disabled.';
+        case 'email-already-in-use':
+          return 'An account with this email already exists. Try signing in '
+              'instead.';
+        case 'invalid-email':
+          return 'That email address does not look valid.';
+        case 'weak-password':
+          return 'Please choose a stronger password (at least 8 characters).';
         case 'too-many-requests':
           return 'Too many attempts. Please wait a moment and try again.';
         case 'network-request-failed':

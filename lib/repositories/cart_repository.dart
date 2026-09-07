@@ -58,6 +58,13 @@ class CartRepository {
     return min(product.stock, MxConfig.maxUnitsPerProduct);
   }
 
+  /// [maxFor] by product id (0 when the product is unknown or unavailable).
+  int capForId(String productId) {
+    final product = _catalog[productId];
+    if (product == null) return 0;
+    return maxFor(product);
+  }
+
   int _cap(Product product) => maxFor(product);
 
   /// Loads catalog + persisted cart/location. Call once at startup.
@@ -148,4 +155,54 @@ class CartRepository {
     _location = null;
     await _prefs.remove(_locationKey);
   }
+
+  /// Replaces the whole cart from an outside source (the account cart mirror).
+  /// Not a customer action: every line is re-validated against the live
+  /// catalogue exactly like a persisted cart restore — unknown or unavailable
+  /// products are dropped, quantities re-clamped.
+  Future<void> replaceAll(Map<String, int> items) async {
+    final next = <String, int>{};
+    items.forEach((id, qty) {
+      final cap = capForId(id);
+      if (cap <= 0 || qty < 1) return;
+      next[id] = min(qty, cap);
+    });
+    _items = next;
+    await _persist();
+  }
+
+  /// Merges the account cart into the local (guest) cart: quantities are
+  /// summed per product and re-clamped to what the live catalogue allows, so a
+  /// stale account cart can never push an unavailable product or an
+  /// over-stock quantity back into this device. Returns the merged map.
+  Future<Map<String, int>> mergeRemote(Map<String, int> remote) async {
+    final merged = mergeCartQuantities(_items, remote, capForId);
+    _items = merged;
+    await _persist();
+    return merged;
+  }
+}
+
+/// Sums two cart item maps per product, clamped to [capFor] (0 = drop the
+/// product entirely: unknown, unavailable, or out of stock). Pure, so the
+/// guest→login merge can be unit-tested without prefs or Firebase.
+Map<String, int> mergeCartQuantities(
+  Map<String, int> guest,
+  Map<String, int> account,
+  int Function(String productId) capFor,
+) {
+  final merged = <String, int>{};
+  for (final entry in guest.entries) {
+    final cap = capFor(entry.key);
+    if (cap <= 0 || entry.value < 1) continue;
+    merged[entry.key] = min(entry.value, cap);
+  }
+  for (final entry in account.entries) {
+    if (entry.value < 1) continue;
+    final cap = capFor(entry.key);
+    if (cap <= 0) continue;
+    final current = merged[entry.key];
+    merged[entry.key] = min((current ?? 0) + entry.value, cap);
+  }
+  return merged;
 }

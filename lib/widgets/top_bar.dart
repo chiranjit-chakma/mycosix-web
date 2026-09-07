@@ -24,6 +24,9 @@ class MxTopBar extends StatelessWidget {
     final width = MediaQuery.of(context).size.width;
     final desktop = width >= 1024;
     final cart = context.watch<CartController>();
+    // The account icon fits the bar from large phones up; on small phones it
+    // lives in the drawer (My Account) so the bar never overflows.
+    final showAccount = width >= 480;
 
     final barColor = scrolled
         ? MxColors.cream.withValues(alpha: 0.94)
@@ -70,6 +73,10 @@ class MxTopBar extends StatelessWidget {
             _NavLink(label: 'Team', route: Routes.team),
             _NavLink(label: 'Contact', route: Routes.contact),
             const SizedBox(width: 8),
+            if (showAccount) ...[
+              _AccountButton(onTap: () => _go(context, Routes.profile)),
+              const SizedBox(width: 2),
+            ],
             _CartButton(
               count: cart.totalQuantity,
               onTap: () => _go(context, Routes.cart),
@@ -77,6 +84,10 @@ class MxTopBar extends StatelessWidget {
             const SizedBox(width: 6),
             _OrderCta(onTap: () => _go(context, Routes.shop)),
           ] else ...[
+            if (showAccount) ...[
+              _AccountButton(onTap: () => _go(context, Routes.profile)),
+              const SizedBox(width: 2),
+            ],
             _CartButton(
               count: cart.totalQuantity,
               onTap: () => _go(context, Routes.cart),
@@ -151,9 +162,29 @@ class _NavLinkState extends State<_NavLink> {
   }
 }
 
+/// Account entry point (sign-in / profile). Present for every visitor —
+/// guests land on the sign-in page, signed-in customers on their account.
+class _AccountButton extends StatelessWidget {
+  const _AccountButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: onTap,
+      tooltip: 'My account',
+      icon: const Icon(
+        Icons.person_outline_rounded,
+        size: 21,
+        color: MxColors.forest,
+      ),
+    );
+  }
+}
+
 class _CartButton extends StatelessWidget {
   const _CartButton({required this.count, required this.onTap});
-
   final int count;
   final VoidCallback onTap;
 
@@ -304,6 +335,22 @@ class MxDrawer extends StatelessWidget {
                   _DrawerLink(label: 'Team', route: Routes.team),
                   _DrawerLink(label: 'Contact', route: Routes.contact),
                   const SizedBox(height: 16),
+                  ListTile(
+                    onTap: () => Navigator.of(context)
+                      ..pop()
+                      ..pushNamed(Routes.profile),
+                    leading: const Icon(
+                      Icons.person_outline_rounded,
+                      color: MxColors.moss,
+                    ),
+                    title: Text(
+                      'My Account',
+                      style: MxType.bodySm(
+                        color: MxColors.charcoal,
+                        weight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                   ListTile(
                     onTap: () => Navigator.of(context).pushNamed(Routes.cart),
                     leading: const Icon(

@@ -25,5 +25,30 @@ class FormValidators {
     return null;
   }
 
+  static String? email(String? value) {
+    final v = value?.trim() ?? '';
+    if (v.isEmpty) return 'Please enter your email';
+    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(v)) {
+      return 'Enter a valid email address';
+    }
+    return null;
+  }
+
+  /// Sign-in: only presence is checked — whether the password is right is
+  /// decided by the auth provider, never locally.
+  static String? password(String? value) {
+    final v = value ?? '';
+    if (v.isEmpty) return 'Please enter your password';
+    return null;
+  }
+
+  /// Registration: the minimum for creating a new credential.
+  static String? newPassword(String? value) {
+    final v = value ?? '';
+    if (v.isEmpty) return 'Please choose a password';
+    if (v.length < 8) return 'Use at least 8 characters';
+    return null;
+  }
+
   static String? optional(String? value) => null;
 }
