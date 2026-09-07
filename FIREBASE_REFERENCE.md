@@ -58,6 +58,8 @@ with: `firebase deploy --only firestore:rules --project mycosix`
 | `siteConfig` (single doc `public`) | read | read + write |
 | `orders` | no read; create ONLY the "captured order" allowlist (checkout fallback); never delete | read; update status-only |
 | `admins` | read own grant only | (grants made via console/admin SDK - rules forbid app writes) |
+| `customers` (per customer `{uid}`) | owner may read their own doc; owner creates it on first sign-in (email pinned, status `active`); owner may only update `displayName` | read all (admin Customers section); may only update `status` (`active`/`disabled`); never delete |
+| `carts` (per customer `{uid}`) | owner-only read/write of their own cart mirror; delete own | no access (not business data) |
 | `team`, `content` | no | admin only (currently unused - future editorial) |
 | `batches`, `inventoryMovements`, `orderRequests` | no | admin only (currently unused - future admin records) |
 
@@ -65,7 +67,11 @@ with: `firebase deploy --only firestore:rules --project mycosix`
 
 ## Collections with live data today (captured 2026-09-07)
 
-Only **4 collections** exist: `products`, `siteConfig`, `orders`, `admins`.
+Only **4 collections held data** at capture time: `products`, `siteConfig`,
+`orders`, `admins`. `customers` and `carts` (customer accounts + cart mirrors,
+added 2026-09-07) start EMPTY: a `customers/{uid}` document is created
+automatically the first time someone registers, and `carts/{uid}` the first
+time that customer changes their cart while signed in.
 `team`, `content`, `batches`, `inventoryMovements`, `orderRequests` are defined in the
 rules for future features but hold **no documents** today.
 
