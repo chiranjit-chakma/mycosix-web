@@ -341,21 +341,6 @@ class _ProductInfo extends StatelessWidget {
           formatRupees(product.price),
           style: MxType.displayAlt(width, color: MxColors.moss),
         ),
-        const SizedBox(height: 14),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              WishlistHeartButton(productId: product.id),
-              const SizedBox(width: 10),
-              ProductShareButton(
-                productName: product.name,
-                productId: product.id,
-              ),
-            ],
-          ),
-        ),
         const SizedBox(height: 24),
         Text('About this pack', style: MxType.label(color: MxColors.forest)),
         const SizedBox(height: 8),

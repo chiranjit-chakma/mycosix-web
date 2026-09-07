@@ -19,6 +19,7 @@ import '../../services/whatsapp_order_service.dart';
 import '../../state/customer_auth_controller.dart';
 import '../../utils/money.dart';
 import '../../widgets/account_locked.dart';
+import '../../widgets/delivery_progress.dart';
 import '../../widgets/page.dart';
 import '../../widgets/shell.dart';
 
@@ -371,6 +372,10 @@ class _OrderDetailState extends State<_OrderDetail> {
                 'Placed ${_when(o.createdAt)}',
                 style: MxType.bodyXs(color: MxColors.stone),
               ),
+              const SizedBox(height: 14),
+              // The line-filling tracker: live status from the admin's last
+              // update, filling up as the order moves forward.
+              DeliveryProgress(status: o.status),
               const SizedBox(height: 18),
               for (final l in o.items)
                 Padding(
@@ -517,7 +522,7 @@ class _StatusPill extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        status.label,
+        status.customerLabel,
         style: MxType.bodyXs(color: c, weight: FontWeight.w700),
       ),
     );

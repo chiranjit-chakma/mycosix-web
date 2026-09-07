@@ -52,8 +52,8 @@ class _LocationSelectorState extends State<LocationSelector> {
           const SizedBox(height: 14),
           Text(
             hasLocation
-                ? 'Move the pin to ${loc.isConfirmed ? 'adjust' : 'choose'} your exact delivery point.'
-                : 'Set your delivery location — drag the map or use your current location.',
+                ? 'Drag the map or use + / − to zoom, then move the pin to your exact delivery point.'
+                : 'Set your delivery location — drag the map, zoom with + / −, or use your current location.',
             style: MxType.bodySm(color: MxColors.charcoalSoft),
           ),
           const SizedBox(height: 16),

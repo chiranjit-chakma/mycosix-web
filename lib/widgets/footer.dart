@@ -110,7 +110,8 @@ class MxFooter extends StatelessWidget {
                 _FooterColumn(
                   title: 'Order',
                   links: const [
-                    ('Cart', Routes.cart),
+                    // The cart lives in the top-right corner of every page —
+                    // it is not repeated here.
                     ('Checkout', Routes.checkout),
                     ('WhatsApp', Routes.contact),
                   ],

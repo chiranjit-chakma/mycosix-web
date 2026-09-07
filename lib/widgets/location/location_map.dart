@@ -14,6 +14,10 @@ import '../../config/mx_type.dart';
 /// layer above the iframe lets the user drag or tap: pixel offsets are
 /// converted to geographic deltas (Web-Mercator) and a fresh embed is centered
 /// on the new coordinate. The pin always marks the exact candidate.
+///
+/// A +/− zoom control (street level 14 .. 20, default 17) re-centers the embed
+/// on the candidate at the new zoom, so customers can zoom right down to their
+/// building and set the pin precisely.
 class LocationMap extends StatefulWidget {
   const LocationMap({
     super.key,
@@ -33,7 +37,12 @@ class LocationMap extends StatefulWidget {
 }
 
 class _LocationMapState extends State<LocationMap> {
-  static const double _zoom = 17;
+  /// Zoom bounds for the embed. 20 is close enough to read a building outline;
+  /// 14 still shows the surrounding streets so the customer can find their
+  /// block first.
+  static const int minZoom = 14;
+  static const int maxZoom = 20;
+  int _zoom = 17;
 
   Offset _dragOffset = Offset.zero;
   bool _dragging = false;
@@ -45,7 +54,7 @@ class _LocationMapState extends State<LocationMap> {
     final src = MxConfig.mapsEmbedUrl
         .replaceAll('{lat}', widget.latitude.toStringAsFixed(6))
         .replaceAll('{lng}', widget.longitude.toStringAsFixed(6))
-        .replaceFirst('z=16', 'z=17');
+        .replaceFirst('z=16', 'z=$_zoom');
 
     return SizedBox(
       height: widget.height,
@@ -111,11 +120,40 @@ class _LocationMapState extends State<LocationMap> {
                 ),
               ),
             ),
-            // Hint pill.
+            // Zoom control (+ / −). Re-centers the embed on the candidate at
+            // the new zoom, so the customer can zoom into their street and set
+            // the pin precisely. Sits above the gesture layer, so taps on it
+            // never drag the map.
             Positioned(
               top: 12,
-              left: 0,
-              right: 0,
+              right: 12,
+              child: Column(
+                children: [
+                  _ZoomButton(
+                    key: const Key('map-zoom-in'),
+                    icon: Icons.add_rounded,
+                    tooltip: 'Zoom in',
+                    onTap: _zoom >= maxZoom
+                        ? null
+                        : () => setState(() => _zoom += 1),
+                  ),
+                  const SizedBox(height: 8),
+                  _ZoomButton(
+                    key: const Key('map-zoom-out'),
+                    icon: Icons.remove_rounded,
+                    tooltip: 'Zoom out',
+                    onTap: _zoom <= minZoom
+                        ? null
+                        : () => setState(() => _zoom -= 1),
+                  ),
+                ],
+              ),
+            ),
+            // Hint pill (kept clear of the zoom control on narrow maps).
+            Positioned(
+              top: 12,
+              left: 52,
+              right: 52,
               child: Center(
                 child: IgnorePointer(
                   child: Container(
@@ -125,7 +163,9 @@ class _LocationMapState extends State<LocationMap> {
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
-                      _dragging ? 'Release to set the pin' : 'Drag the map to move the pin',
+                      _dragging
+                          ? 'Release to set the pin'
+                          : 'Drag the map or use + / − to zoom',
                       style: MxType.bodyXs(
                         color: Colors.white,
                         weight: FontWeight.w600,
@@ -172,6 +212,47 @@ class _LocationMapState extends State<LocationMap> {
     final newLat = (widget.latitude + latDelta).clamp(-85.0, 85.0);
     final newLng = widget.longitude + lngDelta;
     return (newLat, newLng);
+  }
+}
+
+/// A circular zoom button (Google-Maps-style + / −) that floats over the map.
+class _ZoomButton extends StatelessWidget {
+  const _ZoomButton({
+    super.key,
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: MxColors.cream,
+        shape: const CircleBorder(),
+        elevation: 3,
+        shadowColor: MxColors.charcoal.withValues(alpha: 0.25),
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          child: Container(
+            width: 36,
+            height: 36,
+            alignment: Alignment.center,
+            child: Icon(
+              icon,
+              size: 20,
+              color: onTap == null ? MxColors.stoneLight : MxColors.forest,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

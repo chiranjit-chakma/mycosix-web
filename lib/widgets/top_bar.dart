@@ -292,7 +292,6 @@ class MxDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    final cart = context.watch<CartController>();
 
     return Drawer(
       backgroundColor: MxColors.cream,
@@ -350,43 +349,6 @@ class MxDrawer extends StatelessWidget {
                         weight: FontWeight.w600,
                       ),
                     ),
-                  ),
-                  ListTile(
-                    onTap: () => Navigator.of(context).pushNamed(Routes.cart),
-                    leading: const Icon(
-                      Icons.shopping_bag_outlined,
-                      color: MxColors.moss,
-                    ),
-                    title: Text(
-                      'Cart',
-                      style: MxType.bodySm(
-                        color: MxColors.charcoal,
-                        weight: FontWeight.w600,
-                      ),
-                    ),
-                    trailing: cart.totalQuantity > 0
-                        ? Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: const BoxDecoration(
-                              color: MxColors.moss,
-                              borderRadius: BorderRadius.all(
-                                Radius.circular(999),
-                              ),
-                            ),
-                            child: Text(
-                              '${cart.totalQuantity}',
-                              style: const TextStyle(
-                                fontFamily: 'Manrope',
-                                fontSize: 12,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white,
-                              ),
-                            ),
-                          )
-                        : null,
                   ),
                 ],
               ),

@@ -24,9 +24,9 @@ Future<void> _loadFont(String family, String asset) async {
   await loader.load();
 }
 
-/// The product page gains share + wishlist icons on the image's top-right
-/// corner (the compact overlay), while the under-price Share + heart stay —
-/// nothing that existed before is removed or hidden.
+/// The product page carries share + wishlist icons on the image's top-right
+/// corner (the compact overlay). They are the ONLY share/heart on the page —
+/// the old under-price duplicates were removed at the owner's request.
 void main() {
   setUpAll(() async {
     await _loadFont('Manrope', 'assets/fonts/Manrope-Variable.ttf');
@@ -101,10 +101,20 @@ void main() {
       findsOneWidget,
     );
 
-    // The existing under-price Share + heart are still there (two share
-    // buttons total: the new image one + the preserved under-price one).
-    expect(find.byType(ProductShareButton), findsNWidgets(2));
-    expect(find.byType(WishlistHeartButton), findsWidgets);
+    // The image overlay is the only place share + wishlist live now (the
+    // under-price duplicates were removed) — exactly one share button and the
+    // one heart that sits on the overlay.
+    expect(find.byType(ProductShareButton), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('product-image-actions')),
+        matching: find.byType(WishlistHeartButton),
+      ),
+      findsOneWidget,
+    );
+    // No share icon or heart below the price area (no second set anywhere on
+    // the page).
+    expect(find.byIcon(Icons.share_outlined), findsOneWidget);
 
     final exception = tester.takeException();
     expect(exception, isNull, reason: 'layout threw: $exception');
