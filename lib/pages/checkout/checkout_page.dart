@@ -17,7 +17,9 @@ import '../../services/url_launcher.dart';
 import '../../services/whatsapp_order_service.dart';
 import '../../state/cart_controller.dart';
 import '../../state/location_controller.dart';
+import '../../state/site_config_controller.dart';
 import '../../utils/money.dart';
+import '../../widgets/delivery_paused_notice.dart';
 import '../../utils/phone.dart';
 import '../../utils/validators.dart';
 import '../../widgets/location/location_selector.dart';
@@ -147,14 +149,32 @@ class _CheckoutPageState extends State<CheckoutPage> {
   }
 
   /// Places the order: the trusted backend validates and writes it; if that
-  /// backend is unreachable, checkout records a strictly money-free capture so
-  /// the order still reaches the admin workflow. The confirmation is always
-  /// shown on screen — WhatsApp is never opened with the order data itself.
+  /// backend is unreachable, checkout records a captured order (status 'New',
+  /// verified false) carrying the exact amounts the customer was shown and
+  /// agreed at checkout, so the order still reaches the admin workflow and can
+  /// be confirmed on the call. The confirmation is always shown on screen —
+  /// WhatsApp is never opened with the order data itself.
   Future<void> _placeOrder() async {
     final cart = context.read<CartController>();
     final location = context.read<LocationController>();
     final whatsapp = context.read<WhatsAppOrderService>();
     final orderRepo = context.read<OrderRepository>();
+    final config = context.read<SiteConfigController>();
+
+    // Delivery-pause gate (belt and braces behind the disabled button): a live
+    // config update can pause delivery between two renders, so an order is
+    // refused here too. Nothing is ever written while delivery is paused.
+    if (!config.deliveryEnabled) {
+      if (!mounted) return;
+      setState(() {
+        _placing = false;
+        _submitted = true;
+        _orderError =
+            'Deliveries are paused right now, so orders are off. Please check '
+            'back soon.';
+      });
+      return;
+    }
 
     final loc = location.location;
     final canSend =
@@ -209,8 +229,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
       return;
     } on BackendUnavailable {
       // No trusted backend reachable (not deployed yet / offline): record a
-      // money-free capture so the shop still sees the order, then confirm on
-      // screen. No WhatsApp auto-open with the order data — ever.
+      // capture so the shop still sees the order, then confirm on screen. The
+      // capture stores the amounts this customer was shown and agreed at
+      // checkout so a delivered order is a real, analysable sale — status stays
+      // New and verified stays false (only an admin can change those). No
+      // WhatsApp auto-open with the order data — ever.
       final orderId = whatsapp.generateOrderId();
       try {
         await orderRepo.captureNewOrder(
@@ -232,10 +255,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   productId: line.product.id,
                   productName: line.product.name,
                   quantity: line.quantity,
+                  unitPrice: line.product.price,
+                  lineTotal: line.lineTotal,
                   variant: line.product.variant,
                   weight: line.product.weight,
                 ),
             ],
+            subtotal: cart.subtotal,
+            deliveryFee: cart.deliveryFee,
+            total: cart.total,
           ),
         );
       } catch (_) {
@@ -315,7 +343,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
   }
 
   /// Receipt copy for a captured order: built locally from the cart with the
-  /// SAME id that was recorded money-free, so the on-screen confirmation and
+  /// SAME id that was recorded at checkout, so the on-screen confirmation and
   /// the PDF receipt match the order in the admin list. No WhatsApp is opened.
   CustomerOrder _capturedFallbackOrder(
     CartController cart,
@@ -356,10 +384,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
         location.mapsUrl.trim().isNotEmpty;
     final detailsValid = _detailsValid();
     final canSend = !cart.isEmpty && detailsValid && locationReady;
+    final config = context.watch<SiteConfigController>();
+    final paused = !config.deliveryEnabled;
 
     // A short line under the CTA explaining why it is disabled.
     final String? ctaHint;
-    if (!detailsValid) {
+    if (paused) {
+      ctaHint = 'Deliveries are paused right now - orders are off until '
+          'MYCOSIX resumes.';
+    } else if (!detailsValid) {
       ctaHint = _firstFieldHint();
     } else if (location == null) {
       ctaHint = 'Set and confirm your delivery location on the map';
@@ -387,6 +420,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   'WhatsApp message before we deliver.',
                   style: MxType.body(width),
                 ),
+                const SizedBox(height: 22),
+                // The banner appears only when an admin has paused delivery.
+                const DeliveryPausedNotice(),
               ],
             ),
           ),
@@ -426,7 +462,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                           _SummaryCard(),
                           const SizedBox(height: 20),
                           _PlaceOrderCard(
-                            enabled: canSend,
+                            enabled: canSend && !paused,
                             placing: _placing,
                             hint: ctaHint,
                             onPlace: _placeOrder,
@@ -723,10 +759,10 @@ class _CheckoutForm extends StatelessWidget {
   }
 }
 
-/// Place-order card: records the order (trusted backend, or a money-free
-/// capture) and shows the confirmation on screen. The order data itself is
-/// never sent over WhatsApp — the confirmation screen and stored record are
-/// what confirm the order.
+/// Place-order card: records the order (trusted backend, or a captured order
+/// carrying the amounts the customer agreed at checkout) and shows the
+/// confirmation on screen. The order data itself is never sent over WhatsApp —
+/// the confirmation screen and stored record are what confirm the order.
 class _PlaceOrderCard extends StatelessWidget {
   const _PlaceOrderCard({
     required this.enabled,

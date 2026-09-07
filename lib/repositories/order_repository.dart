@@ -6,9 +6,9 @@ import '../models/store_order.dart';
 /// is not on the Blaze plan yet.
 ///
 /// Callers must NOT fake the backend: when this is thrown the order simply is
-/// not recorded by the trusted backend. Checkout then attempts a money-free
-/// capture ([OrderRepository.captureNewOrder]) so the order still reaches the
-/// admin workflow, and if that too fails the order is not recorded anywhere
+/// not recorded by the trusted backend. Checkout then records a capture
+/// ([OrderRepository.captureNewOrder]) so the order still reaches the admin
+/// workflow, and if that too fails the order is not recorded anywhere
 /// server-side and the customer is told honestly.
 class BackendUnavailable implements Exception {
   const BackendUnavailable([
@@ -36,14 +36,20 @@ class OrderRejected implements Exception {
 
 /// One product line for a browser-captured order.
 ///
-/// Deliberately money-free: productName/variant/weight are kept only to help
-/// the admin pack — the admin never trusts them for pricing, and Firestore
-/// rules forbid any price, total or status field on a captured order.
+/// productName/variant/weight help the admin pack, and the unit price the
+/// customer actually saw at checkout is recorded as a reference ([unitPrice],
+/// [lineTotal]) so a delivered capture can be recognised in sales analytics.
+/// The amounts on a capture are never server-authoritative (`verified` is
+/// false) — the admin confirms the cash total with the customer by phone
+/// before packing, and Firestore rules still stop a customer from changing an
+/// order's status or delivering anything themselves.
 class CapturedOrderLine {
   const CapturedOrderLine({
     required this.productId,
     required this.productName,
     required this.quantity,
+    required this.unitPrice,
+    required this.lineTotal,
     this.variant,
     this.weight,
   });
@@ -51,14 +57,24 @@ class CapturedOrderLine {
   final String productId;
   final String productName;
   final int quantity;
+
+  /// The unit price the live catalogue showed at checkout (reference only).
+  final double unitPrice;
+
+  /// unitPrice x quantity (reference only).
+  final double lineTotal;
+
   final String? variant;
   final String? weight;
 }
 
 /// Everything the browser may record about an order while the trusted backend
 /// is unreachable. This is the ONLY path a customer request can write to
-/// Firestore, and it carries no economics and no trust flags — status is forced
-/// to 'New' and verified to false by the write itself AND by security rules.
+/// Firestore. Status is forced to 'New' and verified to false by the write
+/// itself AND by security rules; the amount fields record what the customer
+/// was shown and agreed at checkout (from the live catalogue), so the order
+/// stays a real, analysable sale even while the secure backend is not
+/// deployed — an admin's Delivered action is what makes those amounts count.
 class CapturedOrderData {
   const CapturedOrderData({
     required this.orderId,
@@ -68,6 +84,10 @@ class CapturedOrderData {
     required this.longitude,
     required this.mapsUrl,
     required this.lines,
+    required this.subtotal,
+    required this.deliveryFee,
+    required this.total,
+    this.currency = 'INR',
     this.email,
     this.building,
     this.apartment,
@@ -92,16 +112,25 @@ class CapturedOrderData {
   final String? instructions;
 
   final List<CapturedOrderLine> lines;
+
+  /// Amounts the customer saw and agreed at checkout (subtotal / delivery fee
+  /// / total) and the currency. Reference figures for the admin workflow —
+  /// never server-authoritative, and never counted until an admin delivers.
+  final double subtotal;
+  final double deliveryFee;
+  final double total;
+  final String currency;
 }
 
 /// Order persistence.
 ///
 /// Real orders are created ONLY through a trusted backend
 /// ([FirestoreOrderRepository.createOrder] calls the Cloud Function), so
-/// client-side totals can never reach Firestore. When that backend is
-/// unreachable, [captureNewOrder] may record a strictly money-free copy so the
-/// order still enters the admin workflow — never with customer-supplied
-/// economics.
+/// client-side totals can never reach Firestore as a server-authoritative
+/// order. When that backend is unreachable, [captureNewOrder] may record the
+/// order so it still enters the admin workflow: status is pinned to 'New' and
+/// verified to false, and the amount fields only record what the customer was
+/// shown and agreed at checkout (never server-trusted).
 abstract class OrderRepository {
   /// Creates an order through the trusted backend and returns the authoritative
   /// stored order (trusted prices, totals, order id, server timestamps).
@@ -110,16 +139,18 @@ abstract class OrderRepository {
   /// [OrderRejected] when the backend refuses the order.
   Future<StoreOrder> createOrder(OrderDraft draft);
 
-  /// Records a money-free order document while the trusted backend is
-  /// unreachable, so the order still reaches the admin Orders list and the
-  /// normal confirmation workflow can follow (admin calls the customer,
-  /// confirms the cash total, packs and delivers).
+  /// Records an order document while the trusted backend is unreachable, so
+  /// the order still reaches the admin Orders list and the normal confirmation
+  /// workflow can follow (admin calls the customer, confirms the cash total,
+  /// packs and delivers).
   ///
-  /// The document is written with `status == 'New'`, `verified == false` and a
-  /// server `createdAt`, and NO economic fields — the same enforcement is
-  /// mirrored in Firestore rules. Throws [BackendUnavailable] when no write is
-  /// possible (Firebase offline / rules refuse), in which case the order was
-  /// not recorded and the caller must tell the customer honestly.
+  /// The document is written with `status == 'New'`, `verified == false`, a
+  /// server `createdAt`, and the amounts the customer was shown at checkout —
+  /// the same enforcement is mirrored in Firestore rules (status/verified are
+  /// pinned; the amount fields are bounded numbers; nothing here can change an
+  /// existing order). Throws [BackendUnavailable] when no write is possible
+  /// (Firebase offline / rules refuse), in which case the order was not
+  /// recorded and the caller must tell the customer honestly.
   Future<void> captureNewOrder(CapturedOrderData data);
 }
 

@@ -87,9 +87,11 @@ List<MonthlyRow> buildMonthlyRows({
     final key = _key(at);
     final a = acc.putIfAbsent(key, () => _MonthAcc(at.year, at.month));
     a.deliveredOrderCount += 1;
-    // Only trusted economics count as revenue; a captured (verified == false)
-    // order has no server total.
-    if (order.verified) {
+    // Money counts only when the delivered order carries a recorded total —
+    // from the trusted backend, or the amount agreed at checkout on a captured
+    // order. A delivered order with no recorded amount (legacy money-free
+    // capture) adds an order and its units but never revenue.
+    if (order.total > 0) {
       a.revenue += order.total;
     }
     a.unitsSold += order.totalQuantity;

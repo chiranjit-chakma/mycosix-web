@@ -30,8 +30,10 @@ class _OrdersSectionState extends State<OrdersSection> {
           const SectionHeader(
             title: 'Orders',
             subtitle:
-                'Created by the trusted backend, or captured money-free while '
-                'it is unavailable - browser totals can never reach Firestore.',
+                'Created by the trusted backend, or captured while it is '
+                'unavailable. A captured order records the amount the customer '
+                'agreed at checkout - confirm it by phone; only you can move an '
+                'order or make it count as a sale.',
           ),
           const SizedBox(height: 14),
           _filterBar(),

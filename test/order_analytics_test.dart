@@ -8,6 +8,7 @@ StoreOrder order({
   String orderId = 'MYC-AA000001',
   OrderStatus status = OrderStatus.delivered,
   double total = 100,
+  bool verified = true,
   List<(String, int, double)> lines = const <(String, int, double)>[
     ('Pink Oyster 200g', 1, 100),
   ],
@@ -36,6 +37,7 @@ StoreOrder order({
     longitude: 86.0,
     mapsUrl: 'https://maps.app.goo.gl/xyz',
     status: status,
+    verified: verified,
     createdAt: createdAt,
     updatedAt: createdAt,
     deliveredAt: status == OrderStatus.delivered ? createdAt : null,
@@ -162,6 +164,82 @@ void main() {
       // The real total a delivered customer paid includes the delivery fee.
       expect(metrics.revenue, 199);
       expect(metrics.quantitySold, 1);
+    });
+
+    test('a delivered captured order counts the amount agreed at checkout', () {
+      // verified == false (recorded by the browser while the trusted backend
+      // was unreachable) but it carries the exact amounts the customer was
+      // shown and agreed at checkout, so once the admin marks it Delivered it
+      // is a real sale.
+      final captured = StoreOrder(
+        orderId: 'MYC-CC000001',
+        customerName: 'A Customer',
+        phone: '+91 90000 00000',
+        items: const [
+          StoreOrderLine(
+            productId: 'p1',
+            productName: 'Pink Oyster 200g',
+            quantity: 2,
+            unitPrice: 90,
+            lineTotal: 180,
+          ),
+        ],
+        subtotal: 180,
+        deliveryFee: 19,
+        total: 199,
+        currency: 'INR',
+        latitude: 23.0,
+        longitude: 86.0,
+        mapsUrl: 'https://maps.app.goo.gl/xyz',
+        status: OrderStatus.delivered,
+        verified: false,
+        createdAt: DateTime(2026, 9, 6),
+        deliveredAt: DateTime(2026, 9, 6),
+      );
+      final metrics = computeSalesMetrics([captured]);
+      expect(metrics.deliveredCount, 1);
+      expect(metrics.revenue, 199);
+      expect(metrics.averageOrderValue, 199);
+      expect(metrics.quantitySold, 2);
+      expect(metrics.bestSellers.single.productName, 'Pink Oyster 200g');
+      expect(metrics.bestSellers.single.revenue, 180);
+    });
+
+    test('a delivered legacy money-free capture is a delivery but never revenue',
+        () {
+      // Old capture recorded while the checkout wrote no money at all: it still
+      // counts as a delivered order, but with no recorded total it can never
+      // inflate revenue or best-seller money.
+      final legacy = StoreOrder(
+        orderId: 'MYC-DD000001',
+        customerName: 'A Customer',
+        phone: '+91 90000 00000',
+        items: const [
+          StoreOrderLine(
+            productId: 'p1',
+            productName: 'Pink Oyster 200g',
+            quantity: 1,
+            unitPrice: 0,
+            lineTotal: 0,
+          ),
+        ],
+        subtotal: 0,
+        deliveryFee: 0,
+        total: 0,
+        currency: 'INR',
+        latitude: 23.0,
+        longitude: 86.0,
+        mapsUrl: 'https://maps.app.goo.gl/xyz',
+        status: OrderStatus.delivered,
+        verified: false,
+        createdAt: DateTime(2026, 9, 5),
+        deliveredAt: DateTime(2026, 9, 5),
+      );
+      final metrics = computeSalesMetrics([legacy]);
+      expect(metrics.deliveredCount, 1);
+      expect(metrics.revenue, 0);
+      expect(metrics.averageOrderValue, 0);
+      expect(metrics.bestSellers, isEmpty);
     });
   });
 }

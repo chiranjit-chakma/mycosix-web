@@ -24,6 +24,7 @@ import 'services/whatsapp_order_service.dart';
 import 'state/cart_controller.dart';
 import 'state/location_controller.dart';
 import 'state/products_controller.dart';
+import 'state/site_config_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -114,6 +115,15 @@ class MxApp extends StatelessWidget {
               LocationController(cartRepository, BrowserGeoLocationService()),
         ),
         Provider<ConfigRepository>(create: (_) => configRepository),
+        // Live site configuration: subscribes to siteConfig/public so an admin
+        // toggling "Delivery enabled" off stops customer ordering immediately,
+        // with no reload. Starts at boot (lazy: false) so the value is warm.
+        ChangeNotifierProvider<SiteConfigController>(
+          lazy: false,
+          create: (_) =>
+              SiteConfigController(initial: configRepository.settings)
+                ..start(),
+        ),
         Provider<OrderRepository>(create: (_) => orderRepository),
         Provider<WhatsAppOrderService>(
           create: (context) {

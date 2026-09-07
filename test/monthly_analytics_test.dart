@@ -29,6 +29,7 @@ StoreOrder delivered({
   required DateTime createdAt,
   double total = 100,
   int qty = 1,
+  bool verified = true,
 }) {
   return StoreOrder(
     orderId: orderId,
@@ -51,6 +52,7 @@ StoreOrder delivered({
     longitude: 86.0,
     mapsUrl: 'https://maps.app.goo.gl/xyz',
     status: OrderStatus.delivered,
+    verified: verified,
     createdAt: createdAt,
     updatedAt: createdAt,
     deliveredAt: createdAt,
@@ -178,5 +180,49 @@ void main() {
     );
     // Jan, Feb, Mar, Apr iterated; only Jan and Apr have data.
     expect(rows.map((r) => r.month).toList(), [1, 4]);
+  });
+
+  test('a delivered captured order adds its agreed amount to revenue', () {
+    // verified == false but the order carries the amount agreed at checkout,
+    // so once delivered it is recognised in the monthly revenue.
+    final rows = buildMonthlyRows(
+      batches: const [],
+      deliveredOrders: [
+        delivered(
+          orderId: 'CAP1',
+          createdAt: DateTime(2026, 6, 12, 9),
+          total: 250,
+          qty: 2,
+          verified: false,
+        ),
+      ],
+    );
+    expect(rows, hasLength(1));
+    final row = rows.single;
+    expect(row.deliveredOrderCount, 1);
+    expect(row.revenue, 250);
+    expect(row.unitsSold, 2);
+  });
+
+  test('a delivered legacy money-free capture never adds revenue', () {
+    // Old capture recorded with no money: it is still a delivered order (and
+    // its units are still sold units) but adds zero revenue.
+    final rows = buildMonthlyRows(
+      batches: const [],
+      deliveredOrders: [
+        delivered(
+          orderId: 'LEGACY1',
+          createdAt: DateTime(2026, 7, 3, 10),
+          total: 0,
+          qty: 3,
+          verified: false,
+        ),
+      ],
+    );
+    expect(rows, hasLength(1));
+    final row = rows.single;
+    expect(row.deliveredOrderCount, 1);
+    expect(row.revenue, 0);
+    expect(row.unitsSold, 3);
   });
 }

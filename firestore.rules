@@ -50,20 +50,23 @@ service cloud.firestore {
 
     // A browser-captured order. This is the ONLY shape any client may create in
     // /orders: status pinned to 'New', verified pinned to false, and a strict
-    // key allowlist with NO money keys (subtotal/deliveryFee/total/unitPrice/
-    // lineTotal/currency are simply impossible to write). A manipulated browser
-    // can therefore never write a priced order, choose a status, or stamp a
-    // delivery. Firestore rules have no loops, so per-item field checks are
-    // bounded at the list level here (count + the top-level allowlist); item
-    // contents are product ids/names/quantities only and are reviewed by an
-    // admin before packing. Money is confirmed with the customer on the phone
-    // by the admin workflow, never trusted from this document.
+    // key allowlist. A captured order records the exact amounts the customer saw
+    // and agreed at checkout (subtotal/deliveryFee/total/currency) purely as
+    // reference money, so a capture an admin later marks Delivered counts into
+    // admin revenue; the values are bounded here so a manipulated browser can
+    // never write an unbounded or negative total. Rules have no loops, so
+    // per-item money (unitPrice/lineTotal) is bounded only by the item count
+    // (max 30) and is reviewed by an admin before packing - money is confirmed
+    // with the customer on the phone by the admin workflow. A captured order can
+    // never change its own status or stamp its own delivery: those fields are
+    // admin-only (see the update diff on /orders).
     function isCapturedOrder(res) {
       return res.data.keys().hasOnly([
         'orderId', 'customerName', 'phone', 'email',
         'latitude', 'longitude', 'mapsUrl',
         'building', 'apartment', 'landmark', 'instructions',
-        'items', 'status', 'verified', 'createdAt'
+        'items', 'status', 'verified', 'createdAt',
+        'subtotal', 'deliveryFee', 'total', 'currency'
       ])
       && res.data.status == 'New'
       && res.data.verified == false
@@ -101,6 +104,25 @@ service cloud.firestore {
       && res.data.items is list
       && res.data.items.size() >= 1
       && res.data.items.size() <= 30
+      // Reference money the customer was shown and agreed at checkout. Never
+      // negative, capped, and total must sit between the product sum and the
+      // subtotal + delivery fee the customer saw (slack 1 rupee for rounding).
+      && 'subtotal' in res.data
+      && res.data.subtotal is number
+      && res.data.subtotal >= 0
+      && res.data.subtotal <= 1000000
+      && 'deliveryFee' in res.data
+      && res.data.deliveryFee is number
+      && res.data.deliveryFee >= 0
+      && res.data.deliveryFee <= 100000
+      && 'total' in res.data
+      && res.data.total is number
+      && res.data.total <= 1100000
+      && res.data.total >= res.data.subtotal - 1
+      && res.data.total <= res.data.subtotal + res.data.deliveryFee + 1
+      && 'currency' in res.data
+      && res.data.currency is string
+      && res.data.currency.size() <= 8
       && 'createdAt' in res.data
       && res.data.createdAt is timestamp;
     }
@@ -132,10 +154,12 @@ service cloud.firestore {
 
     // Real orders are created ONLY by the trusted Cloud Function (admin SDK,
     // which bypasses these rules). While that function is not deployed, the
-    // browser may record a strictly money-free captured order (status 'New',
-    // verified false) through the allowlist below - the one exception to "the
-    // browser never writes orders", and it carries no economics. Only admins
-    // may read orders; nobody may delete them.
+    // browser may record a captured order (status 'New', verified false) through
+    // the allowlist below - the one exception to "the browser never writes
+    // orders". A capture stores the reference amounts the customer agreed at
+    // checkout (bounded by isCapturedOrder); it can never change its own status
+    // or stamp its own delivery, and only an admin can mark it Delivered. Only
+    // admins may read orders; nobody may delete them.
     match /orders/{orderId} {
       allow read: if isAdmin();
       allow create: if isCapturedOrder(request.resource);

@@ -6,6 +6,7 @@ import '../../config/mx_type.dart';
 import '../../models/product.dart';
 import '../../state/admin_reveal.dart';
 import '../../state/products_controller.dart';
+import '../../widgets/delivery_paused_notice.dart';
 import '../../widgets/page.dart';
 import '../../widgets/product_card.dart';
 import '../../widgets/shell.dart';
@@ -97,7 +98,10 @@ class _ShopPageState extends State<ShopPage> {
                   'the next harvest is on its way.',
                   style: MxType.body(width),
                 ),
-                const SizedBox(height: 28),
+                const SizedBox(height: 22),
+                // The banner appears only when an admin has paused delivery.
+                const DeliveryPausedNotice(),
+                const SizedBox(height: 22),
                 // Search across the whole catalogue.
                 SizedBox(
                   width: double.infinity,

@@ -6,7 +6,9 @@ import '../../config/mx_type.dart';
 import '../../models/cart_item.dart';
 import '../../router/routes.dart';
 import '../../state/cart_controller.dart';
+import '../../state/site_config_controller.dart';
 import '../../utils/money.dart';
+import '../../widgets/delivery_paused_notice.dart';
 import '../../widgets/mx_image.dart';
 import '../../widgets/page.dart';
 import '../../widgets/shell.dart';
@@ -38,6 +40,9 @@ class CartPage extends StatelessWidget {
                     '${cart.lineCount} item${cart.lineCount == 1 ? '' : 's'} · ${cart.totalQuantity} total',
                     style: MxType.bodySm(color: MxColors.stone),
                   ),
+                const SizedBox(height: 18),
+                // The banner appears only when an admin has paused delivery.
+                const DeliveryPausedNotice(),
               ],
             ),
           ),
@@ -287,6 +292,7 @@ class _SummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cart = context.watch<CartController>();
+    final paused = !context.watch<SiteConfigController>().deliveryEnabled;
     return Container(
       padding: const EdgeInsets.all(26),
       decoration: BoxDecoration(
@@ -320,11 +326,39 @@ class _SummaryCard extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: () => Navigator.of(context).pushNamed(Routes.checkout),
+              onPressed: paused
+                  ? null
+                  : () => Navigator.of(context).pushNamed(Routes.checkout),
               icon: const Icon(Icons.lock_outline_rounded, size: 17),
               label: const Text('Checkout'),
             ),
           ),
+          if (paused) ...[
+            const SizedBox(height: 10),
+            const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 15,
+                  color: MxColors.warn,
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Deliveries are paused right now, so checkout is off. '
+                    'Your cart is safe - check back soon.',
+                    style: TextStyle(
+                      fontFamily: 'Manrope',
+                      fontSize: 12,
+                      height: 1.45,
+                      color: MxColors.charcoalSoft,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 10),
           SizedBox(
             width: double.infinity,

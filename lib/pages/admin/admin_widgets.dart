@@ -275,9 +275,14 @@ bool orderOpen(StoreOrder o) =>
 bool orderNeedsAttention(StoreOrder o) =>
     o.status == OrderStatus.newOrder || o.status == OrderStatus.contacted;
 
-/// Money label for an order row: trusted totals when the backend priced the
-/// order, otherwise a clear "awaiting confirmation" note (a browser-captured
-/// order carries no money and the total is agreed with the customer by phone
-/// before packing).
-String orderMoneyLabel(StoreOrder o) =>
-    o.verified ? rupees(o.total) : 'Awaiting confirmation';
+/// Money label for an order row: the recorded total — from the trusted backend
+/// or the amount the customer agreed at checkout on a captured order (which
+/// the admin confirms by phone and only an admin can mark Delivered). A legacy
+/// money-free capture has no recorded amount and stays a clear confirmation
+/// note.
+String orderMoneyLabel(StoreOrder o) {
+  if (o.verified) return rupees(o.total);
+  return o.total > 0
+      ? '${rupees(o.total)} (confirm on call)'
+      : 'Awaiting confirmation';
+}

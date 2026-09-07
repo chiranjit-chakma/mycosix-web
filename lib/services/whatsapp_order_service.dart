@@ -3,7 +3,7 @@ import 'dart:math';
 /// The one, deliberately simple WhatsApp handoff the website offers.
 ///
 /// The order itself is confirmed on screen and (via a trusted backend, or a
-/// money-free capture when that backend is unreachable) recorded for the admin
+/// captured order when that backend is unreachable) recorded for the admin
 /// workflow. WhatsApp is only an optional, NON-authoritative follow-up: it
 /// opens a chat with MYCOSIX pre-filled with a short notice that carries no
 /// items, prices, addresses or map links. The customer never sends the order

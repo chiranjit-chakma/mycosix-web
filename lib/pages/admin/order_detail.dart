@@ -146,15 +146,16 @@ class _OrderSheetState extends State<_OrderSheet> {
                 title: 'Items',
                 rows: [
                   for (final l in o.items)
-                    if (o.verified)
+                    if (l.lineTotal > 0)
                       _row(
                         '${l.productName}${l.weight == null ? '' : ' (${l.weight})'} × ${l.quantity}',
                         formatRupees(l.lineTotal),
-                        secondary: '₹${l.unitPrice.toStringAsFixed(0)} each',
+                        secondary: '${formatRupees(l.unitPrice)} each',
                       )
                     else
-                      // Packing view: a captured order has no prices, so show
-                      // exactly what needs packing (product x quantity).
+                      // Legacy packing view: an old money-free capture has no
+                      // prices, so show exactly what needs packing
+                      // (product x quantity).
                       _row(
                         '${l.productName}${l.weight == null ? '' : ' (${l.weight})'}',
                         '× ${l.quantity}',
@@ -162,7 +163,7 @@ class _OrderSheetState extends State<_OrderSheet> {
                 ],
               ),
               const SizedBox(height: 12),
-              if (o.verified)
+              if (o.total > 0)
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -176,6 +177,31 @@ class _OrderSheetState extends State<_OrderSheet> {
                       _row('Delivery fee', formatRupees(o.deliveryFee)),
                       const Divider(color: MxColors.line, height: 22),
                       _row('Total', formatRupees(o.total), bold: true),
+                      if (!o.verified) ...[
+                        const SizedBox(height: 10),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(
+                              Icons.info_outline_rounded,
+                              size: 16,
+                              color: MxColors.warn,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'This is the amount the customer agreed at '
+                                'checkout. Confirm it on the call before '
+                                'packing; it is recorded as a sale the moment '
+                                'you mark this order Delivered.',
+                                style: MxType.bodyXs(
+                                  color: MxColors.charcoalSoft,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 )
@@ -211,12 +237,10 @@ class _OrderSheetState extends State<_OrderSheet> {
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              'This order was captured money-free while the '
-                              'secure order service was unavailable. The cash '
-                              'total is agreed with the customer before '
-                              'packing; it will not appear in sales analytics '
-                              'until the trusted backend records a priced '
-                              'total.',
+                              'This is an old order captured without a recorded '
+                              'amount. The cash total is agreed with the '
+                              'customer before packing; it will not add to '
+                              'sales revenue because no amount was recorded.',
                               style: MxType.bodyXs(
                                 color: MxColors.charcoalSoft,
                               ),

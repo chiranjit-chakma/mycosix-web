@@ -112,10 +112,13 @@ class StoreOrder {
   /// the per-line [StoreOrderLine.unitPrice]/[lineTotal] are authoritative.
   ///
   /// A browser-captured order (recorded while the backend is unreachable) is
-  /// deliberately money-free and `verified == false`: no customer-supplied
-  /// price ever reaches Firestore. Admin money screens and sales analytics use
-  /// only verified orders, and admins confirm captured orders by phone before
-  /// packing. Defaults to true so orders constructed in code (which represent
+  /// `verified == false`. It still carries the exact amounts the customer saw
+  /// and agreed at checkout (derived from the live product catalogue), so a
+  /// delivered capture can be recognised in sales analytics — but those amounts
+  /// are only a customer-agreed reference, never server-authoritative. The
+  /// admin confirms the cash total with the customer by phone before packing,
+  /// and a capture can never count as revenue until the admin marks it
+  /// Delivered. Defaults to true so orders constructed in code (which represent
   /// trusted-backend records) behave as before.
   final bool verified;
 
@@ -202,7 +205,8 @@ class StoreOrder {
       status: OrderStatus.fromLabel(map['status'] as String?),
       // True when the economics came from the trusted backend. A money-bearing
       // document written by the backend has no `verified` flag but always a
-      // total; a browser-captured order carries `verified: false` and no money.
+      // total; a browser-captured order carries `verified: false` together with
+      // the exact amounts the customer was shown and agreed at checkout.
       verified: map['verified'] as bool? ?? map.containsKey('total'),
       // Timestamps are converted by the caller (Firestore returns Timestamp
       // objects, which must not be cast straight to DateTime here).

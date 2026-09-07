@@ -14,6 +14,7 @@ import 'package:mycosix/repositories/product_repository.dart';
 import 'package:mycosix/state/admin_reveal.dart';
 import 'package:mycosix/state/cart_controller.dart';
 import 'package:mycosix/state/products_controller.dart';
+import 'package:mycosix/state/site_config_controller.dart';
 
 /// Loads the real bundled fonts so text metrics match production (the default
 /// test font is far too wide and would produce false card overflows).
@@ -59,6 +60,10 @@ void main() {
               cartRepo,
               siteDeliveryFee: MxConfig.deliveryFee,
             ),
+          ),
+          // Delivery is enabled by default (Fb is off in tests).
+          ChangeNotifierProvider<SiteConfigController>(
+            create: (_) => SiteConfigController(),
           ),
         ],
         child: const MaterialApp(home: ShopPage()),

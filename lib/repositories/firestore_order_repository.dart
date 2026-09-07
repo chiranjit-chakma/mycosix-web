@@ -52,9 +52,12 @@ class FirestoreOrderRepository implements OrderRepository {
   @override
   Future<void> captureNewOrder(CapturedOrderData data) async {
     try {
-      // Money-free by construction AND by security rules. status/verified are
-      // pinned here (never read from the customer) and createdAt is the server
-      // clock. Firestore rules re-enforce all of it on the write.
+      // The document records what the customer saw and agreed at checkout.
+      // status/verified are pinned here (never read from the customer) and
+      // createdAt is the server clock; the amount fields are bounded numbers.
+      // Firestore rules re-enforce all of it on the write — a capture can
+      // never be priced by anything but the browser's own checkout, never
+      // change status, and never count as a sale until an admin delivers it.
       await Fb.orders.add({
         'orderId': data.orderId,
         'customerName': data.customerName,
@@ -78,12 +81,18 @@ class FirestoreOrderRepository implements OrderRepository {
               'productId': l.productId,
               'productName': l.productName,
               'quantity': l.quantity,
+              'unitPrice': l.unitPrice,
+              'lineTotal': l.lineTotal,
               if (l.variant != null && l.variant!.trim().isNotEmpty)
                 'variant': l.variant!.trim(),
               if (l.weight != null && l.weight!.trim().isNotEmpty)
                 'weight': l.weight!.trim(),
             },
         ],
+        'subtotal': data.subtotal,
+        'deliveryFee': data.deliveryFee,
+        'total': data.total,
+        'currency': data.currency,
         'status': 'New',
         'verified': false,
         'createdAt': FieldValue.serverTimestamp(),

@@ -50,12 +50,15 @@ class SalesMetrics {
   final int deliveredCount;
   final int cancelledCount;
 
-  /// Sum of Delivered order totals only. Only orders with trusted economics
-  /// ([StoreOrder.verified]) count — a delivered but browser-captured order has
-  /// no server-verified total, so it can never inflate revenue.
+  /// Sum of Delivered order totals only. A delivered order is counted when it
+  /// carries a recorded total — from the trusted backend, or the amounts the
+  /// customer was shown and agreed at checkout on a captured order (which an
+  /// admin confirms by phone and only an admin can mark Delivered). A
+  /// delivered order with no recorded amount (a legacy money-free capture) can
+  /// never inflate revenue, and Cancelled orders are never counted.
   final double revenue;
 
-  /// revenue / number of delivered orders with trusted economics
+  /// revenue / number of delivered orders that carry a recorded total
   /// (0 when nothing delivered yet).
   final double averageOrderValue;
 
@@ -75,11 +78,13 @@ class SalesMetrics {
 SalesMetrics computeSalesMetrics(List<StoreOrder> orders) {
   final delivered =
       orders.where((o) => o.status == OrderStatus.delivered).toList();
-  // Revenue is only ever computed from orders with trusted economics. A
-  // browser-captured order (verified == false) has no server total, so it is
-  // excluded here even if it was delivered.
+  // Money is only ever counted on delivered orders that carry a recorded
+  // total. A captured order is recorded with the amount the customer agreed at
+  // checkout (verified == false, admin confirms by phone) and only an admin
+  // can mark it Delivered; a delivered order with no recorded amount (a legacy
+  // money-free capture) can never add to revenue.
   final moneyDelivered =
-      delivered.where((o) => o.verified).toList();
+      delivered.where((o) => o.total > 0).toList();
   final cancelled =
       orders.where((o) => o.status == OrderStatus.cancelled).toList();
 
