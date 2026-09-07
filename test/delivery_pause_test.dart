@@ -15,6 +15,7 @@ import 'package:mycosix/repositories/product_repository.dart';
 import 'package:mycosix/state/cart_controller.dart';
 import 'package:mycosix/state/products_controller.dart';
 import 'package:mycosix/state/site_config_controller.dart';
+import 'package:mycosix/state/wishlist_controller.dart';
 
 /// Delivery-pause gate: flipping "Delivery enabled" off in admin Settings must
 /// reach the customer site live — a banner appears on the shop/cart and the
@@ -144,6 +145,9 @@ class _Ctx {
         providers: [
           ChangeNotifierProvider<ProductsController>.value(value: products),
           ChangeNotifierProvider<CartController>.value(value: cart),
+          ChangeNotifierProvider<WishlistController>(
+            create: (_) => WishlistController(),
+          ),
           ChangeNotifierProvider<SiteConfigController>.value(value: config),
         ],
         child: MaterialApp(debugShowCheckedModeBanner: false, home: page),

@@ -64,6 +64,8 @@ class FirestoreOrderRepository implements OrderRepository {
         'phone': data.phone,
         if (data.email != null && data.email!.trim().isNotEmpty)
           'email': data.email!.trim(),
+        if (data.customerId != null && data.customerId!.isNotEmpty)
+          'customerId': data.customerId,
         'latitude': data.latitude,
         'longitude': data.longitude,
         'mapsUrl': data.mapsUrl,

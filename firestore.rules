@@ -65,6 +65,7 @@ service cloud.firestore {
         'orderId', 'customerName', 'phone', 'email',
         'latitude', 'longitude', 'mapsUrl',
         'building', 'apartment', 'landmark', 'instructions',
+        'customerId',
         'items', 'status', 'verified', 'createdAt',
         'subtotal', 'deliveryFee', 'total', 'currency'
       ])
@@ -124,7 +125,15 @@ service cloud.firestore {
       && res.data.currency is string
       && res.data.currency.size() <= 8
       && 'createdAt' in res.data
-      && res.data.createdAt is timestamp;
+      && res.data.createdAt is timestamp
+      // When present, the customer the order is linked to must be the
+      // signed-in caller themselves - a customer can never stamp an order
+      // with someone else's (or a made-up) account id.
+      && (!('customerId' in res.data)
+          || (res.data.customerId is string
+              && res.data.customerId.size() <= 80
+              && request.auth != null
+              && res.data.customerId == request.auth.uid));
     }
 
     // Batch quantities must stay sane server-side: nothing negative and never
@@ -161,7 +170,13 @@ service cloud.firestore {
     // or stamp its own delivery, and only an admin can mark it Delivered. Only
     // admins may read orders; nobody may delete them.
     match /orders/{orderId} {
-      allow read: if isAdmin();
+      // Admins read every order. The customer an order is linked to (the
+      // account that was signed in at checkout, stamped by customerId) may
+      // read their own order for the My Orders view - and never anyone
+      // else's. Guest orders carry no customerId, so only the admin workflow
+      // ever sees them.
+      allow read: if isAdmin()
+        || (isSignedIn() && resource.data.customerId == request.auth.uid);
       allow create: if isCapturedOrder(request.resource);
       allow delete: if false;
 
@@ -256,6 +271,21 @@ service cloud.firestore {
         && request.resource.data.updatedAt is timestamp
         && request.resource.data.items is map
         && request.resource.data.items.size() <= 30;
+      allow delete: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Account wishlists (wishlists/{uid}). Owner-only, mirroring carts:
+    // a customer reads and writes exactly their own saved-product list and
+    // nothing else. The list itself is plain product ids (bounded here), and
+    // every id is resolved against the live catalogue when displayed - a
+    // tampered or stale entry simply never renders.
+    match /wishlists/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow create, update: if isSignedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['items', 'updatedAt'])
+        && request.resource.data.updatedAt is timestamp
+        && request.resource.data.items is list
+        && request.resource.data.items.size() <= 120;
       allow delete: if isSignedIn() && request.auth.uid == uid;
     }
 

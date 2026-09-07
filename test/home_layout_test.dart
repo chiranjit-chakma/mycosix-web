@@ -12,6 +12,7 @@ import 'package:mycosix/repositories/cart_repository.dart';
 import 'package:mycosix/repositories/product_repository.dart';
 import 'package:mycosix/state/cart_controller.dart';
 import 'package:mycosix/state/products_controller.dart';
+import 'package:mycosix/state/wishlist_controller.dart';
 
 /// Loads the real bundled fonts so text metrics match production (the default
 /// test font, Ahem, is far too wide and would produce false overflows).
@@ -44,6 +45,9 @@ Future<void> _pumpHome(WidgetTester tester, double w, double h) async {
             cartRepo,
             siteDeliveryFee: MxConfig.deliveryFee,
           ),
+        ),
+        ChangeNotifierProvider<WishlistController>(
+          create: (_) => WishlistController(),
         ),
       ],
       child: const MaterialApp(

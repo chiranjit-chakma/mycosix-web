@@ -10,7 +10,9 @@ import '../pages/journey/journey_page.dart';
 import '../pages/legal/privacy_page.dart';
 import '../pages/legal/terms_page.dart';
 import '../pages/product/product_page.dart';
+import '../pages/profile/my_orders_page.dart';
 import '../pages/profile/profile_page.dart';
+import '../pages/profile/wishlist_page.dart';
 import '../pages/shop/shop_page.dart';
 import '../pages/team/team_page.dart';
 import 'routes.dart';
@@ -74,11 +76,21 @@ class AppRouter {
         final id = settings.arguments as String? ?? '';
         return fadeRoute(ProductPage(productId: id));
       case Routes.profile:
-        // [arguments] is the named route to return to after a successful
-        // sign-in, when the customer was sent here to unlock a feature. Only
-        // in-app named routes are ever passed here — set by our own pages.
-        final returnRoute = settings.arguments as String?;
-        return fadeRoute(ProfilePage(returnRoute: returnRoute));
+        // [arguments] is either a bare returnRoute (String) or a
+        // [ProfileRouteRequest] (returnRoute + which tab to open). Both come
+        // only from our own pages — never from a raw URL.
+        final arg = settings.arguments;
+        final request = arg is ProfileRouteRequest
+            ? arg
+            : ProfileRouteRequest(returnRoute: arg as String?);
+        return fadeRoute(ProfilePage(
+          returnRoute: request.returnRoute,
+          initialMode: request.startMode,
+        ));
+      case Routes.wishlist:
+        return fadeRoute(const WishlistPage());
+      case Routes.myOrders:
+        return fadeRoute(const MyOrdersPage());
       case Routes.admin:
         return fadeRoute(const AdminGate());
       default:

@@ -89,6 +89,7 @@ class CapturedOrderData {
     required this.total,
     this.currency = 'INR',
     this.email,
+    this.customerId,
     this.building,
     this.apartment,
     this.landmark,
@@ -101,6 +102,13 @@ class CapturedOrderData {
   final String customerName;
   final String phone;
   final String? email;
+
+  /// The Firebase Auth uid of the customer account that was signed in at
+  /// checkout, when there was one. Stamped by the caller and pinned to the
+  /// signed-in user by the Firestore rules (a browser can never write someone
+  /// else's id), so the customer's own My Orders view can find their orders
+  /// and nobody else's. Null for guest checkout.
+  final String? customerId;
 
   final double latitude;
   final double longitude;

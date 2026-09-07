@@ -22,6 +22,7 @@ import 'package:mycosix/repositories/product_repository.dart';
 import 'package:mycosix/state/cart_controller.dart';
 import 'package:mycosix/state/products_controller.dart';
 import 'package:mycosix/state/site_config_controller.dart';
+import 'package:mycosix/state/wishlist_controller.dart';
 
 /// Responsive audit harness.
 ///
@@ -94,6 +95,9 @@ Future<void> _sweep(WidgetTester tester, double w, double h, PageBuilder build,
       providers: [
         ChangeNotifierProvider<ProductsController>.value(value: products),
         ChangeNotifierProvider<CartController>.value(value: cart),
+        ChangeNotifierProvider<WishlistController>(
+          create: (_) => WishlistController(),
+        ),
         // Delivery stays enabled by default (Fb is off in tests), so the
         // pause banner renders nothing and the audit is unaffected.
         ChangeNotifierProvider<SiteConfigController>(

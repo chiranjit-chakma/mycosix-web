@@ -36,6 +36,8 @@ class Fb {
       db.collection('customers');
   static CollectionReference<Map<String, dynamic>> get carts =>
       db.collection('carts');
+  static CollectionReference<Map<String, dynamic>> get wishlists =>
+      db.collection('wishlists');
 
   // Zero-budget production data collections. All are admin-only under the
   // security rules: customers can never read or write them.

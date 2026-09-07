@@ -7,6 +7,7 @@ import '../config/mx_type.dart';
 import '../models/product.dart';
 import '../router/routes.dart';
 import '../state/cart_controller.dart';
+import 'wishlist_heart.dart';
 import '../utils/money.dart';
 import 'mx_image.dart';
 
@@ -200,6 +201,16 @@ class _ProductCardState extends State<ProductCard> {
                             ),
                           ),
                         ),
+                      // Wishlist heart (top-right, above any availability
+                      // wash so an out-of-stock product can still be saved).
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: WishlistHeartButton(
+                          productId: product.id,
+                          compact: true,
+                        ),
+                      ),
                     ],
                   ),
                   Padding(

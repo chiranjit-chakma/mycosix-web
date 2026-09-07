@@ -16,6 +16,7 @@ import '../../services/pdf_browser.dart';
 import '../../services/url_launcher.dart';
 import '../../services/whatsapp_order_service.dart';
 import '../../state/cart_controller.dart';
+import '../../state/customer_auth_controller.dart';
 import '../../state/location_controller.dart';
 import '../../state/site_config_controller.dart';
 import '../../utils/money.dart';
@@ -93,6 +94,17 @@ class _CheckoutPageState extends State<CheckoutPage> {
   @override
   void initState() {
     super.initState();
+    // A signed-in customer's name and email come pre-filled from their own
+    // account (both stay editable — they may be ordering for someone else).
+    // Phone and delivery details are never stored on the account, so those
+    // fields always start empty.
+    final auth = context.read<CustomerAuthController>();
+    if (auth.backendAvailable && auth.user != null) {
+      final name = auth.displayName?.trim();
+      if (name != null && name.isNotEmpty) _name.text = name;
+      final email = auth.email?.trim();
+      if (email != null && email.isNotEmpty) _email.text = email;
+    }
     // Rebuild whenever a field changes so the place-order CTA reflects
     // live validity (disabled until the order data is complete and valid).
     for (final c in _fieldControllers) {
@@ -146,6 +158,16 @@ class _CheckoutPageState extends State<CheckoutPage> {
     _landmark.dispose();
     _instructions.dispose();
     super.dispose();
+  }
+
+  /// The signed-in account uid (null for guests). Stamped on a captured order
+  /// so it links to the customer; the trusted backend stamps its own copies
+  /// from the auth token server-side, and the security rules pin the field to
+  /// exactly the signed-in uid — a guest can never claim someone else's order.
+  String? _signedInUid() {
+    final auth = context.read<CustomerAuthController>();
+    if (!auth.backendAvailable || auth.user == null) return null;
+    return auth.uid;
   }
 
   /// Places the order: the trusted backend validates and writes it; if that
@@ -242,6 +264,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
             customerName: draft.customerName,
             phone: draft.phone,
             email: draft.email,
+            customerId: _signedInUid(),
             latitude: loc.latitude,
             longitude: loc.longitude,
             mapsUrl: loc.mapsUrl,

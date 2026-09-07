@@ -8,6 +8,7 @@ import '../../widgets/brand.dart';
 import 'sections/analytics_section.dart';
 import 'sections/batches_section.dart';
 import 'sections/content_team_section.dart';
+import 'sections/customers_section.dart';
 import 'sections/dashboard_section.dart';
 import 'sections/inventory_section.dart';
 import 'sections/orders_section.dart';
@@ -18,6 +19,7 @@ import 'sections/settings_section.dart';
 enum _Area {
   dashboard,
   orders,
+  customers,
   analytics,
   inventory,
   batches,
@@ -43,6 +45,7 @@ class _AdminScaffoldState extends State<AdminScaffold> {
   static const _nav = <(_Area, String, IconData)>[
     (_Area.dashboard, 'Overview', Icons.space_dashboard_outlined),
     (_Area.orders, 'Orders', Icons.receipt_long_outlined),
+    (_Area.customers, 'Customers', Icons.people_outline_rounded),
     (_Area.analytics, 'Analytics', Icons.bar_chart_rounded),
     (_Area.inventory, 'Inventory', Icons.warehouse_outlined),
     (_Area.batches, 'Batches', Icons.agriculture_outlined),
@@ -164,6 +167,7 @@ class _AdminScaffoldState extends State<AdminScaffold> {
       child: switch (_area) {
         _Area.dashboard => const DashboardSection(),
         _Area.orders => const OrdersSection(),
+        _Area.customers => const CustomersSection(),
         _Area.analytics => const AnalyticsSection(),
         _Area.inventory => const InventorySection(),
         _Area.batches => const BatchesSection(),

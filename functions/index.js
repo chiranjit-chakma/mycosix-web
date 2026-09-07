@@ -256,7 +256,7 @@ function cleanse(data) {
 /* ------------------------------------------------------------------ *
  * Core order placement (pure of Functions wiring; transaction over a db).
  * ------------------------------------------------------------------ */
-async function placeOrder(db, data, { now = () => new Date() } = {}) {
+async function placeOrder(db, data, { now = () => new Date(), authUid = null } = {}) {
   const c = cleanse(data);
 
   const ordersCol = db.collection('orders');
@@ -348,6 +348,11 @@ async function placeOrder(db, data, { now = () => new Date() } = {}) {
       createdAt: ts,
       updatedAt: ts,
     };
+    // Link the order to the signed-in account that placed it (stamped from
+    // the callable's auth context, so the browser can never choose or forge
+    // it). The customer's own "My Orders" view and the admin Customers page
+    // read this; guest orders simply have no link.
+    if (authUid) doc.customerId = authUid;
     if (c.email) doc.email = c.email;
     if (c.building) doc.building = c.building;
     if (c.apartment) doc.apartment = c.apartment;
@@ -390,7 +395,9 @@ function getDb() {
 
 exports.createOrder = functions.https.onCall(async (data) => {
   try {
-    return await placeOrder(getDb(), data);
+    return await placeOrder(getDb(), data, {
+      authUid: context.auth ? context.auth.uid : null,
+    });
   } catch (err) {
     if (err instanceof DomainError) {
       throw new functions.https.HttpsError(err.code, err.message);

@@ -56,10 +56,11 @@ with: `firebase deploy --only firestore:rules --project mycosix`
 | --- | --- | --- |
 | `products` | read | read + create/update/delete |
 | `siteConfig` (single doc `public`) | read | read + write |
-| `orders` | no read; create ONLY the "captured order" allowlist (checkout fallback); never delete | read; update status-only |
+| `orders` | owner may read orders linked to their own account (`customerId` == their uid); create ONLY the "captured order" allowlist (checkout fallback); never delete | read; update status-only |
 | `admins` | read own grant only | (grants made via console/admin SDK - rules forbid app writes) |
 | `customers` (per customer `{uid}`) | owner may read their own doc; owner creates it on first sign-in (email pinned, status `active`); owner may only update `displayName` | read all (admin Customers section); may only update `status` (`active`/`disabled`); never delete |
 | `carts` (per customer `{uid}`) | owner-only read/write of their own cart mirror; delete own | no access (not business data) |
+| `wishlists` (per customer `{uid}`) | owner-only read/write of their own saved-product list (bounded, 120 ids max); delete own | no access (not business data) |
 | `team`, `content` | no | admin only (currently unused - future editorial) |
 | `batches`, `inventoryMovements`, `orderRequests` | no | admin only (currently unused - future admin records) |
 
@@ -68,10 +69,11 @@ with: `firebase deploy --only firestore:rules --project mycosix`
 ## Collections with live data today (captured 2026-09-07)
 
 Only **4 collections held data** at capture time: `products`, `siteConfig`,
-`orders`, `admins`. `customers` and `carts` (customer accounts + cart mirrors,
-added 2026-09-07) start EMPTY: a `customers/{uid}` document is created
-automatically the first time someone registers, and `carts/{uid}` the first
-time that customer changes their cart while signed in.
+`orders`, `admins`. `customers`, `carts` and `wishlists` (customer accounts,
+cart mirrors and saved-product lists, added 2026-09-07) start EMPTY: a
+`customers/{uid}` document is created automatically the first time someone
+registers, `carts/{uid}` the first time that customer changes their cart while
+signed in, and `wishlists/{uid}` the first time they save a product.
 `team`, `content`, `batches`, `inventoryMovements`, `orderRequests` are defined in the
 rules for future features but hold **no documents** today.
 
@@ -155,6 +157,7 @@ protect by keeping the Firebase project alive.
 | `items` | list of lines: `productId`, `productName`, `variant?`, `weight?`, `quantity` (+ `unitPrice`, `lineTotal` when verified) |
 | `subtotal`, `deliveryFee`, `total`, `currency` | the amounts shown and agreed at checkout |
 | `verified` | `true` = economics from the trusted backend; `false` = browser-captured reference order (checkout fallback) |
+| `customerId` | (accounts, 2026-09-07) the signed-in customer's Firebase Auth uid, when they placed the order. Stamped by the trusted backend from the auth token (function) and by checkout on a captured order; security rules pin it to `request.auth.uid`, so a browser can never write someone else's id. Absent for guest orders. Lets the customer's "My Orders" view query only their own orders |
 | `status` | one of the canonical labels below |
 | `createdAt`, `updatedAt`, `deliveredAt?` | timestamps; `deliveredAt` stamped only when marked Delivered |
 
@@ -183,7 +186,7 @@ document `admins/<uid>` with `{ "email": "chiranjitc.official@gmail.com" }`.
 | File in this repo | What it is for |
 | --- | --- |
 | `firestore.rules` | Security rules for every collection (the schema tables above come from here) |
-| `firestore.indexes.json` | Firestore composite index (products category+sortKey) |
+| `firestore.indexes.json` | Firestore composite indexes (products category+sortKey; orders customerId+createdAt) |
 | `storage.rules` | Storage rules (deny-all; Storage not enabled today) |
 | `firebase.json` | Hosting config |
 | `functions/scripts/seed_catalog.js` | Re-creates the 6 real products (safe re-run) |

@@ -18,6 +18,7 @@ import '../../widgets/product_card.dart';
 import '../../widgets/product_share_button.dart';
 import '../../widgets/product_video.dart';
 import '../../widgets/products_scope.dart';
+import '../../widgets/wishlist_heart.dart';
 import '../../widgets/shell.dart';
 
 class ProductPage extends StatefulWidget {
@@ -316,9 +317,16 @@ class _ProductInfo extends StatelessWidget {
         const SizedBox(height: 14),
         Align(
           alignment: Alignment.centerLeft,
-          child: ProductShareButton(
-            productName: product.name,
-            productId: product.id,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              WishlistHeartButton(productId: product.id),
+              const SizedBox(width: 10),
+              ProductShareButton(
+                productName: product.name,
+                productId: product.id,
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 24),

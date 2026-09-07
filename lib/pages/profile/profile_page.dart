@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../../config/mx_colors.dart';
 import '../../config/mx_type.dart';
+import '../../router/routes.dart';
+import '../../services/display_mode.dart';
 import '../../state/customer_auth_controller.dart';
 import '../../utils/validators.dart';
 import '../../widgets/page.dart';
@@ -11,17 +13,24 @@ import '../../widgets/shell.dart';
 /// Customer account page.
 ///
 /// Signed out: sign in, create an account, or recover a password — all real
-/// Firebase Auth flows with customer-safe error messages. Signed in: the
-/// session card (verification status, resend link, sign out).
+/// Firebase Auth flows with customer-safe error messages. In an *installed*
+/// app (PWA, standalone display mode) the Wishlist and My Orders sections are
+/// shown below the forms, locked and clearly asking for a sign-in, so an
+/// installed user always sees where they belong; in a normal browser tab
+/// those account sections stay hidden until a customer is signed in.
 ///
-/// [returnRoute] is the page to return to after a successful sign-in when the
-/// customer was sent here to unlock something (a wishlist save, an order
-/// action). It is always a named route in this app's own route table — never
-/// a raw URL from outside.
+/// Signed in: the customer's name is the page — big, front and centre — with
+/// their email small underneath, and one clean card linking to their
+/// Wishlist and My Orders, their account details and sign out.
 class ProfilePage extends StatefulWidget {
-  const ProfilePage({super.key, this.returnRoute});
+  const ProfilePage({super.key, this.returnRoute, this.initialMode});
 
+  /// The named route to return to after a successful sign-in when the
+  /// customer was sent here to unlock something. Always an in-app route.
   final String? returnRoute;
+
+  /// Which auth tab to open with (defaults to sign-in).
+  final AuthStartMode? initialMode;
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
@@ -30,7 +39,7 @@ class ProfilePage extends StatefulWidget {
 enum _AuthMode { signIn, register, reset }
 
 class _ProfilePageState extends State<ProfilePage> {
-  _AuthMode _mode = _AuthMode.signIn;
+  late _AuthMode _mode;
 
   final _formKey = GlobalKey<FormState>();
   final _name = TextEditingController();
@@ -41,6 +50,14 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _busy = false;
 
   @override
+  void initState() {
+    super.initState();
+    _mode = widget.initialMode == AuthStartMode.register
+        ? _AuthMode.register
+        : _AuthMode.signIn;
+  }
+
+  @override
   void dispose() {
     _name.dispose();
     _email.dispose();
@@ -49,29 +66,24 @@ class _ProfilePageState extends State<ProfilePage> {
     super.dispose();
   }
 
-  CustomerAuthController get _auth =>
-      context.read<CustomerAuthController>();
+  CustomerAuthController get _auth => context.read<CustomerAuthController>();
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
     setState(() => _busy = true);
-    bool ok;
-    switch (_mode) {
-      case _AuthMode.signIn:
-        ok = await _auth.signIn(
+    final ok = switch (_mode) {
+      _AuthMode.signIn => await _auth.signIn(
           email: _email.text,
           password: _password.text,
-        );
-      case _AuthMode.register:
-        ok = await _auth.register(
+        ),
+      _AuthMode.register => await _auth.register(
           name: _name.text,
           email: _email.text,
           password: _password.text,
-        );
-      case _AuthMode.reset:
-        ok = await _auth.sendPasswordReset(email: _email.text);
-    }
+        ),
+      _AuthMode.reset => await _auth.sendPasswordReset(email: _email.text),
+    };
     if (!mounted) return;
     setState(() => _busy = false);
     if (!ok) return;
@@ -115,36 +127,49 @@ class _ProfilePageState extends State<ProfilePage> {
                 const SizedBox(height: 12),
                 Text(
                   status == CustomerAuthStatus.signedIn
-                      ? 'Hello ${auth.displayName ?? auth.email ?? 'there'}'
+                      ? _displayName(auth)
                       : _modeTitle,
                   style: MxType.h1(MediaQuery.of(context).size.width),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
                 Text(
                   status == CustomerAuthStatus.signedIn
-                      ? 'You are signed in to your MYCOSIX account.'
+                      ? (auth.email ?? '—')
                       : _modeSubtitle,
-                  style: MxType.bodySm(color: MxColors.stone),
+                  style: MxType.bodyXs(color: MxColors.stone),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 28),
                 switch (status) {
                   CustomerAuthStatus.backendOffline => const _OfflinePanel(),
                   CustomerAuthStatus.resolving => const _ResolvingPanel(),
-                  CustomerAuthStatus.signedOut => _AuthPanel(
-                      mode: _mode,
-                      formKey: _formKey,
-                      name: _name,
-                      email: _email,
-                      password: _password,
-                      confirm: _confirm,
-                      obscure: _obscure,
-                      busy: _busy,
-                      onToggleObscure: () =>
-                          setState(() => _obscure = !_obscure),
-                      onSubmit: _submit,
-                      onSwitchMode: _switchMode,
+                  CustomerAuthStatus.signedOut => Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _AuthPanel(
+                          mode: _mode,
+                          formKey: _formKey,
+                          name: _name,
+                          email: _email,
+                          password: _password,
+                          confirm: _confirm,
+                          obscure: _obscure,
+                          busy: _busy,
+                          onToggleObscure: () =>
+                              setState(() => _obscure = !_obscure),
+                          onSubmit: _submit,
+                          onSwitchMode: _switchMode,
+                        ),
+                        // Installed-app users always see where their Wishlist
+                        // and My Orders live, locked until they sign in. In a
+                        // browser tab these stay out of the signed-out page.
+                        if (isStandaloneDisplay()) ...[
+                          const SizedBox(height: 28),
+                          const _LockedSections(),
+                        ],
+                      ],
                     ),
-                  CustomerAuthStatus.signedIn => _AccountPanel(
+                  CustomerAuthStatus.signedIn => _AccountHub(
+                      auth: auth,
                       onSignOut: () => _auth.signOut(),
                     ),
                 },
@@ -155,6 +180,19 @@ class _ProfilePageState extends State<ProfilePage> {
         ],
       ),
     );
+  }
+
+  /// The customer's name as shown on the account page. Prefers the name they
+  /// gave when registering; older accounts that only have an email show the
+  /// local part of their own email (clearly theirs) rather than a fake name.
+  static String _displayName(CustomerAuthController auth) {
+    final name = auth.displayName?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    final email = auth.email;
+    if (email == null || email.isEmpty) return 'there';
+    final local = email.split('@').first.trim();
+    if (local.isEmpty) return 'there';
+    return local[0].toUpperCase() + local.substring(1);
   }
 
   String get _modeTitle => switch (_mode) {
@@ -382,9 +420,7 @@ class _AuthPanel extends StatelessWidget {
                           const Icon(Icons.lock_outline_rounded, size: 20),
                       suffixIcon: IconButton(
                         onPressed: onToggleObscure,
-                        tooltip: obscure
-                            ? 'Show password'
-                            : 'Hide password',
+                        tooltip: obscure ? 'Show password' : 'Hide password',
                         icon: Icon(
                           obscure
                               ? Icons.visibility_outlined
@@ -527,90 +563,60 @@ class _ModeTab extends StatelessWidget {
   }
 }
 
-class _AccountPanel extends StatelessWidget {
-  const _AccountPanel({required this.onSignOut});
+/// The signed-in account view: name front and centre, email small, and one
+/// clean card linking to the customer's Wishlist, My Orders, details and
+/// sign out.
+class _AccountHub extends StatelessWidget {
+  const _AccountHub({required this.auth, required this.onSignOut});
 
+  final CustomerAuthController auth;
   final Future<void> Function() onSignOut;
 
   @override
   Widget build(BuildContext context) {
-    final auth = context.watch<CustomerAuthController>();
-    final name = auth.displayName;
-    final email = auth.email ?? '—';
-    final initial =
-        (name?.isNotEmpty == true) ? name!.characters.first.toUpperCase() : null;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         MxPanel(
-          padding: const EdgeInsets.all(26),
+          padding: const EdgeInsets.all(20),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 27,
-                    backgroundColor: MxColors.mossSoft,
-                    foregroundColor: MxColors.forest,
-                    child: initial != null
-                        ? Text(
-                            initial,
-                            style: const TextStyle(
-                              fontFamily: 'Fraunces',
-                              fontSize: 22,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          )
-                        : const Icon(Icons.person_rounded, size: 26),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (name?.isNotEmpty == true) ...[
-                          Text(
-                            name!,
-                            style: MxType.h4(color: MxColors.charcoal),
-                          ),
-                          const SizedBox(height: 3),
-                        ],
-                        Text(
-                          email,
-                          style: MxType.bodySm(color: MxColors.stone),
-                        ),
-                      ],
-                    ),
-                  ),
-                  _VerifiedChip(verified: auth.emailVerified),
-                ],
-              ),
-              if (auth.memberSince != null) ...[
-                const SizedBox(height: 14),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Member since ${_monthYear(auth.memberSince!)}',
-                    style: MxType.bodyXs(),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 22),
               if (auth.message != null) ...[
                 _FeedbackBanner(kind: 'error', text: auth.message!),
-                const SizedBox(height: 18),
+                const SizedBox(height: 14),
               ],
               if (auth.notice != null) ...[
                 _FeedbackBanner(kind: 'ok', text: auth.notice!),
-                const SizedBox(height: 18),
+                const SizedBox(height: 14),
               ],
+              _AccountTile(
+                icon: Icons.favorite_border_rounded,
+                title: 'Wishlist',
+                subtitle: 'Products you saved',
+                onTap: () => Navigator.of(context).pushNamed(Routes.wishlist),
+              ),
+              const Divider(color: MxColors.line, height: 1),
+              _AccountTile(
+                icon: Icons.receipt_long_outlined,
+                title: 'My Orders',
+                subtitle: 'Follow your orders',
+                onTap: () => Navigator.of(context).pushNamed(Routes.myOrders),
+              ),
+              const Divider(color: MxColors.line, height: 1),
+              _AccountTile(
+                icon: Icons.email_outlined,
+                title: auth.email ?? 'Email',
+                subtitle: auth.memberSince != null
+                    ? 'Member since ${_monthYear(auth.memberSince!)}'
+                    : 'Your sign-in email',
+                onTap: null,
+              ),
               if (!auth.emailVerified) ...[
-                _UnverifiedCard(auth: auth),
-                const SizedBox(height: 18),
+                const SizedBox(height: 14),
+                const _UnverifiedCard(),
               ],
-              const _CartSyncNote(),
-              const SizedBox(height: 22),
+              const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
@@ -635,57 +641,81 @@ class _AccountPanel extends StatelessWidget {
   }
 }
 
-class _VerifiedChip extends StatelessWidget {
-  const _VerifiedChip({required this.verified});
+class _AccountTile extends StatelessWidget {
+  const _AccountTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
 
-  final bool verified;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: verified
-            ? MxColors.ok.withValues(alpha: 0.12)
-            : MxColors.earth.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-      ),
+    final tile = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            verified
-                ? Icons.verified_outlined
-                : Icons.mark_email_unread_outlined,
-            size: 13,
-            color: verified ? MxColors.ok : MxColors.earth,
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: MxColors.mossTint,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, size: 21, color: MxColors.moss),
           ),
-          const SizedBox(width: 5),
-          Text(
-            verified ? 'Verified' : 'Not verified',
-            style: TextStyle(
-              fontFamily: 'Manrope',
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: verified ? MxColors.ok : MxColors.earth,
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: MxType.bodySm(
+                    color: MxColors.charcoal,
+                    weight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: MxType.bodyXs(color: MxColors.stone),
+                ),
+              ],
             ),
           ),
+          if (onTap != null)
+            const Icon(Icons.chevron_right_rounded,
+                size: 22, color: MxColors.stone),
         ],
       ),
+    );
+    if (onTap == null) return tile;
+    return Semantics(
+      button: true,
+      label: title,
+      hint: subtitle,
+      child: InkWell(onTap: onTap, child: tile),
     );
   }
 }
 
 class _UnverifiedCard extends StatelessWidget {
-  const _UnverifiedCard({required this.auth});
-
-  final CustomerAuthController auth;
+  const _UnverifiedCard();
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.read<CustomerAuthController>();
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: MxColors.mossTint,
         border: Border.all(color: MxColors.mossSoft),
@@ -701,13 +731,13 @@ class _UnverifiedCard extends StatelessWidget {
               weight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Text(
             'Tap the link we emailed you to confirm this address. It only '
             'affects account notifications — you can keep ordering meanwhile.',
             style: MxType.bodyXs(color: MxColors.charcoalSoft),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           Row(
             children: [
               TextButton(
@@ -726,24 +756,108 @@ class _UnverifiedCard extends StatelessWidget {
   }
 }
 
-class _CartSyncNote extends StatelessWidget {
-  const _CartSyncNote();
+/// Locked Wishlist / My Orders cards shown to installed-app users before
+/// sign-in, so the sections always exist there — locked, never fake.
+class _LockedSections extends StatelessWidget {
+  const _LockedSections();
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final page = context.findAncestorStateOfType<_ProfilePageState>();
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Icon(Icons.sync_rounded, size: 16, color: MxColors.moss),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            'Your cart is saved to your account, so it follows you between '
-            'this browser and the installed app.',
-            style: MxType.bodyXs(color: MxColors.stone),
-          ),
+        Text('On this app', style: MxType.label(color: MxColors.earth)),
+        const SizedBox(height: 12),
+        _LockedTile(
+          icon: Icons.favorite_border_rounded,
+          title: 'Wishlist',
+          subtitle:
+              'Save products while you browse, and find them again on any '
+              'device.',
+          onSignIn: () => page?._switchMode(_AuthMode.signIn),
+          onCreate: () => page?._switchMode(_AuthMode.register),
+        ),
+        const SizedBox(height: 10),
+        _LockedTile(
+          icon: Icons.receipt_long_outlined,
+          title: 'My Orders',
+          subtitle:
+              'Follow your orders from confirmation to your door.',
+          onSignIn: () => page?._switchMode(_AuthMode.signIn),
+          onCreate: () => page?._switchMode(_AuthMode.register),
         ),
       ],
+    );
+  }
+}
+
+class _LockedTile extends StatelessWidget {
+  const _LockedTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onSignIn,
+    required this.onCreate,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onSignIn;
+  final VoidCallback onCreate;
+
+  @override
+  Widget build(BuildContext context) {
+    return MxPanel(
+      padding: const EdgeInsets.all(18),
+      child: Row(
+        children: [
+          Icon(icon, size: 26, color: MxColors.stone),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: MxType.bodySm(
+                    color: MxColors.charcoal,
+                    weight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: MxType.bodyXs(color: MxColors.stone),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: onSignIn,
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      child: const Text('Sign in'),
+                    ),
+                    const SizedBox(width: 4),
+                    TextButton(
+                      onPressed: onCreate,
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      child: const Text('Create account'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.lock_outline_rounded,
+              size: 18, color: MxColors.stoneLight),
+        ],
+      ),
     );
   }
 }

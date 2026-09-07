@@ -27,6 +27,7 @@ import 'state/cart_controller.dart';
 import 'state/location_controller.dart';
 import 'state/products_controller.dart';
 import 'state/site_config_controller.dart';
+import 'state/wishlist_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -88,6 +89,14 @@ Future<void> main() async {
     backendAvailable: Fb.enabled,
   )..start();
 
+  // Wishlist: the account's saved products, synced to `wishlists/{uid}`.
+  // Dormant for guests (hearts prompt a sign-in) and fully inert when the
+  // backend is offline.
+  final wishlistController = WishlistController(
+    auth: customerAuth,
+    backendAvailable: Fb.enabled,
+  )..start();
+
   runApp(
     MxApp(
       cartRepository: cartRepository,
@@ -97,6 +106,7 @@ Future<void> main() async {
       customerAuth: customerAuth,
       cartController: cartController,
       cartSync: cartSync,
+      wishlistController: wishlistController,
     ),
   );
 }
@@ -112,6 +122,7 @@ class MxApp extends StatelessWidget {
     required this.customerAuth,
     required this.cartController,
     required this.cartSync,
+    required this.wishlistController,
   });
 
   final CartRepository cartRepository;
@@ -121,6 +132,7 @@ class MxApp extends StatelessWidget {
   final CustomerAuthController customerAuth;
   final CartController cartController;
   final CartSyncController cartSync;
+  final WishlistController wishlistController;
 
   @override
   Widget build(BuildContext context) {
@@ -136,6 +148,9 @@ class MxApp extends StatelessWidget {
           value: customerAuth,
         ),
         ChangeNotifierProvider<CartSyncController>.value(value: cartSync),
+        ChangeNotifierProvider<WishlistController>.value(
+          value: wishlistController,
+        ),
         ChangeNotifierProvider(
           create: (_) =>
               LocationController(cartRepository, BrowserGeoLocationService()),

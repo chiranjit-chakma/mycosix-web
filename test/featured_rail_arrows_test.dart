@@ -12,6 +12,7 @@ import 'package:mycosix/repositories/cart_repository.dart';
 import 'package:mycosix/repositories/product_repository.dart';
 import 'package:mycosix/state/cart_controller.dart';
 import 'package:mycosix/state/products_controller.dart';
+import 'package:mycosix/state/wishlist_controller.dart';
 
 /// Desktop prev/next arrows on the home 'Featured Mushrooms' rail.
 ///
@@ -44,6 +45,9 @@ Future<void> _pump(WidgetTester tester, double w, double h) async {
       providers: [
         ChangeNotifierProvider<ProductsController>.value(value: products),
         ChangeNotifierProvider<CartController>.value(value: cart),
+        ChangeNotifierProvider<WishlistController>(
+          create: (_) => WishlistController(),
+        ),
       ],
       child: const MaterialApp(
         debugShowCheckedModeBanner: false,

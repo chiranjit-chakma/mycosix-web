@@ -15,6 +15,7 @@ import 'package:mycosix/state/admin_reveal.dart';
 import 'package:mycosix/state/cart_controller.dart';
 import 'package:mycosix/state/products_controller.dart';
 import 'package:mycosix/state/site_config_controller.dart';
+import 'package:mycosix/state/wishlist_controller.dart';
 
 /// Loads the real bundled fonts so text metrics match production (the default
 /// test font is far too wide and would produce false card overflows).
@@ -60,6 +61,9 @@ void main() {
               cartRepo,
               siteDeliveryFee: MxConfig.deliveryFee,
             ),
+          ),
+          ChangeNotifierProvider<WishlistController>(
+            create: (_) => WishlistController(),
           ),
           // Delivery is enabled by default (Fb is off in tests).
           ChangeNotifierProvider<SiteConfigController>(
