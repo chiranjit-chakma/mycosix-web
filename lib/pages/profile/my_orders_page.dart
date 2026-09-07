@@ -523,7 +523,7 @@ class _StatusPill extends StatelessWidget {
       ),
       child: Text(
         status.customerLabel,
-        style: MxType.bodyXs(color: c, weight: FontWeight.w700),
+        style: MxType.bodySm(color: c, weight: FontWeight.w700),
       ),
     );
   }

@@ -37,6 +37,39 @@ CustomerAuthStatus resolveCustomerAuthStatus({
   return CustomerAuthStatus.signedIn;
 }
 
+
+/// Maps a Google sign-in failure to a short, human-safe message. Kept free of
+/// Firebase state so it can be unit-tested without a live backend. The
+/// "operation-not-allowed" case is expected until the owner enables the
+/// Google sign-in method once in the Firebase console.
+String friendlyGoogleSignInError(Object error) {
+  if (error is FirebaseAuthException) {
+    switch (error.code) {
+      case 'operation-not-allowed':
+        return 'Google sign-in is not switched on for MYCOSIX yet - the '
+            'owner needs to enable it once in the Firebase console. You can '
+            'still sign in with email + password.';
+      case 'popup-closed-by-user':
+        return 'The Google window was closed before sign-in finished. '
+            'Try again when you are ready.';
+      case 'popup-blocked':
+        return 'Your browser blocked the Google window. Allow pop-ups for '
+            'this site and try again.';
+      case 'account-exists-with-different-credential':
+        return 'An account with this email already exists with a password. '
+            'Sign in with your email + password instead.';
+      case 'invalid-credential':
+      case 'user-not-found':
+        return 'Google could not confirm this account. Try again, or use '
+            'email + password.';
+      default:
+        return Fb.friendlyMessage(error);
+    }
+  }
+  return Fb.friendlyMessage(error);
+}
+
+
 /// Customer authentication state — registration, sign-in, sign-out, password
 /// recovery and email verification, all through Firebase Auth's own secure
 /// mechanisms.
@@ -152,6 +185,24 @@ class CustomerAuthController extends ChangeNotifier implements CartSyncAuth {
       return true;
     } catch (e) {
       _message = Fb.friendlyMessage(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Signs the customer in with their Google account (a popup window). A first
+  /// Google sign-in also creates the account. The Firestore rules treat the
+  /// Google-verified email exactly like a password-account email, so no rules
+  /// change is needed. Failures surface as a customer-safe message.
+  Future<bool> signInWithGoogle() async {
+    if (!_backendAvailable) return false;
+    _clearFeedback();
+    notifyListeners();
+    try {
+      await Fb.auth.signInWithPopup(GoogleAuthProvider());
+      return true;
+    } catch (e) {
+      _message = friendlyGoogleSignInError(e);
       notifyListeners();
       return false;
     }

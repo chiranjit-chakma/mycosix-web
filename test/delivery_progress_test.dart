@@ -82,4 +82,29 @@ void main() {
     expect(find.text('Order cancelled'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('step labels are body-size and stay readable', (tester) async {
+    await tester.pumpWidget(wrap(OrderStatus.newOrder));
+
+    // The step label is the body-sm text size (13.5), up from the old tiny
+    // caption - the owner reported the tracker was hard to read.
+    final placed = tester.widget<Text>(find.text('Placed'));
+    expect(placed.style?.fontSize, 13.5);
+    expect(placed.maxLines, 2, reason: 'labels may wrap instead of clipping');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('tracker fits a narrow phone without overflow', (tester) async {
+    tester.view.physicalSize = const Size(320, 700);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(wrap(OrderStatus.outForDelivery));
+
+    expect(find.byKey(const Key('delivery-progress')), findsOneWidget);
+    for (final label in ['Placed', 'Confirmed', 'On the way', 'Delivered']) {
+      expect(find.text(label), findsOneWidget);
+    }
+    expect(tester.takeException(), isNull);
+  });
 }

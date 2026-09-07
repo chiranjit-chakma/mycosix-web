@@ -95,7 +95,7 @@ class DeliveryProgress extends StatelessWidget {
               final trackWidth = constraints.maxWidth - (trackLeft * 2);
               final fill = trackWidth * ((progress - 1) / 3);
               return SizedBox(
-                height: 62,
+                height: 78,
                 child: Stack(
                   alignment: Alignment.topCenter,
                   children: [
@@ -104,7 +104,7 @@ class DeliveryProgress extends StatelessWidget {
                       top: 10,
                       left: trackLeft,
                       width: trackWidth,
-                      height: 3,
+                      height: 4,
                       child: _Line(color: MxColors.line),
                     ),
                     if (fill > 0)
@@ -112,7 +112,7 @@ class DeliveryProgress extends StatelessWidget {
                         top: 10,
                         left: trackLeft,
                         width: fill,
-                        height: 3,
+                        height: 4,
                         child: _Line(color: MxColors.moss),
                       ),
                     // The four stages: a dot above each label.
@@ -191,7 +191,11 @@ class _Step extends StatelessWidget {
             shape: BoxShape.circle,
             color: done ? color : MxColors.cream,
             border: Border.all(
-              color: current ? MxColors.forest : MxColors.line,
+              color: current
+                  ? MxColors.forest
+                  : done
+                      ? MxColors.moss
+                      : MxColors.stone,
               width: current ? 2 : 1.5,
             ),
           ),
@@ -199,15 +203,21 @@ class _Step extends StatelessWidget {
               ? const Icon(Icons.check_rounded, size: 13, color: Colors.white)
               : null,
         ),
-        const SizedBox(height: 7),
+        const SizedBox(height: 8),
         Text(
           label,
-          maxLines: 1,
+          maxLines: 2,
           overflow: TextOverflow.ellipsis,
           textAlign: TextAlign.center,
-          style: MxType.bodyXs(
-            color: current || done ? MxColors.forest : MxColors.stone,
-            weight: current ? FontWeight.w800 : FontWeight.w600,
+          style: MxType.bodySm(
+            color: current || done
+                ? MxColors.forest
+                : MxColors.charcoalSoft,
+            weight: current
+                ? FontWeight.w800
+                : done
+                    ? FontWeight.w700
+                    : FontWeight.w600,
           ),
         ),
       ],

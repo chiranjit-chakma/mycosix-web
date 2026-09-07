@@ -439,6 +439,13 @@ class _AdminSignInViewState extends State<AdminSignInView> {
                   child: const Text('Forgot password?'),
                 ),
               ),
+              const SizedBox(height: 6),
+              Text(
+                'A signed-in session stays on this device until you sign out. '
+                'On a shared device, always sign out when you finish.',
+                textAlign: TextAlign.center,
+                style: MxType.bodyXs(color: MxColors.stoneLight),
+              ),
             ],
           ),
         ),

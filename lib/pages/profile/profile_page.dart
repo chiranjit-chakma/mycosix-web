@@ -7,6 +7,7 @@ import '../../router/routes.dart';
 import '../../services/display_mode.dart';
 import '../../state/customer_auth_controller.dart';
 import '../../utils/validators.dart';
+import '../../widgets/google_sign_in_button.dart';
 import '../../widgets/page.dart';
 import '../../widgets/shell.dart';
 
@@ -67,6 +68,20 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   CustomerAuthController get _auth => context.read<CustomerAuthController>();
+
+  Future<void> _googleSignIn() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    final ok = await _auth.signInWithGoogle();
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (!ok) return;
+    // The session is live; go back to wherever sent the customer here (or the
+    // account hub appears below).
+    if (widget.returnRoute != null) {
+      Navigator.of(context).pushReplacementNamed(widget.returnRoute!);
+    }
+  }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
@@ -157,6 +172,7 @@ class _ProfilePageState extends State<ProfilePage> {
                           onToggleObscure: () =>
                               setState(() => _obscure = !_obscure),
                           onSubmit: _submit,
+                          onGoogleSignIn: _googleSignIn,
                           onSwitchMode: _switchMode,
                         ),
                         // Installed-app users always see where their Wishlist
@@ -311,6 +327,7 @@ class _AuthPanel extends StatelessWidget {
     required this.busy,
     required this.onToggleObscure,
     required this.onSubmit,
+    required this.onGoogleSignIn,
     required this.onSwitchMode,
   });
 
@@ -324,6 +341,7 @@ class _AuthPanel extends StatelessWidget {
   final bool busy;
   final VoidCallback onToggleObscure;
   final Future<void> Function() onSubmit;
+  final Future<void> Function() onGoogleSignIn;
   final void Function(_AuthMode) onSwitchMode;
 
   @override
@@ -333,6 +351,30 @@ class _AuthPanel extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Continue with Google - shown for both sign-in and create-account;
+        // reset is reached from a link under the sign-in form.
+        if (mode != _AuthMode.reset) ...[
+          GoogleSignInButton(
+            onPressed: busy ? null : onGoogleSignIn,
+            busy: busy,
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              const Expanded(child: Divider(color: MxColors.line)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  'or continue with email',
+                  style: MxType.label(color: MxColors.stone),
+                ),
+              ),
+              const Expanded(child: Divider(color: MxColors.line)),
+            ],
+          ),
+          const SizedBox(height: 22),
+        ],
+
         // Mode tabs (reset is reached from a link under the sign-in form).
         if (mode != _AuthMode.reset)
           Row(
@@ -499,6 +541,15 @@ class _AuthPanel extends StatelessWidget {
                     child: TextButton(
                       onPressed: () => onSwitchMode(_AuthMode.reset),
                       child: const Text('Forgot your password?'),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Center(
+                    child: Text(
+                      'Sessions stay signed in on this device until you sign '
+                      'out.',
+                      textAlign: TextAlign.center,
+                      style: MxType.bodyXs(color: MxColors.stoneLight),
                     ),
                   ),
                 ],
