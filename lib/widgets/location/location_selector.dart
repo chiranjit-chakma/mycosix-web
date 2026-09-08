@@ -95,7 +95,7 @@ class _LocationSelectorState extends State<LocationSelector> {
             LocationMap(
               latitude: current.latitude,
               longitude: current.longitude,
-              height: widget.compact ? 240 : 300,
+              height: widget.compact ? 300 : 420,
               onChanged: (latLng) => loc.setCandidate(latLng.$1, latLng.$2),
             ),
             const SizedBox(height: 16),

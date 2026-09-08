@@ -189,11 +189,11 @@ class _LocationMapState extends State<LocationMap> {
     tip.dy.clamp(2.0, math.max(2.0, _size.height - 2)),
   );
 
-  /// Canvas margin for paper travel on each axis: 35% of that axis, so a
+  /// Canvas margin for paper travel on each axis: 60% of that axis, so a
   /// whole generous drag can slide before resistance builds. The embed
   /// viewport is larger than the map's clip by one band on every side.
-  double get _paperBandX => _size.width * 0.35;
-  double get _paperBandY => _size.height * 0.35;
+  double get _paperBandX => _size.width * 0.60;
+  double get _paperBandY => _size.height * 0.60;
 
   /// Elastic bound on paper travel: the paper eases toward the canvas edge
   /// as the finger keeps pushing, and can never pass it — real imagery
