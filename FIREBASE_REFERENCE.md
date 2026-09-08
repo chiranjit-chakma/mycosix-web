@@ -39,7 +39,7 @@
 | Project id | `mycosix` |
 | Live site | https://mycosix.web.app (Firebase Hosting) |
 | Web app config (apiKey, authDomain, ...) | Already in the repo: `lib/firebase/firebase_options.dart` - a rebuild reads it from there |
-| Sign-in method enabled | Email/Password + Google (both verified live on 2026-09-08 via the project management API and a live sign-in probe) |
+| Sign-in method enabled | Email/Password + Google + **Phone (SMS one-time codes)** - verified 2026-09-08/09 via the Identity Toolkit management API. Phone was switched on on 2026-09-08 for the checkout WhatsApp-number verification (no code, no SMS template change needed - Firebase sends `%LOGIN_CODE% is your verification code for %APP_NAME%.`); email + Google were already on and are untouched |
 | Authorized domains | `localhost`, `mycosix.firebaseapp.com`, `mycosix.web.app` (verified live 2026-09-08) |
 | Admin sign-in email | `chiranjitc.official@gmail.com` |
 | Admin password | **Not stored anywhere in this repo.** If forgotten: Firebase console > Authentication > user > reset password |
@@ -57,7 +57,7 @@ with: `firebase deploy --only firestore:rules --project mycosix`
 | --- | --- | --- |
 | `products` | read | read + create/update/delete |
 | `siteConfig` (single doc `public`) | read | read + write |
-| `orders` | owner may read orders linked to their own account (`customerId` == their uid); create ONLY the "captured order" allowlist (checkout fallback); never delete | read; update status-only |
+| `orders` | owner may read orders linked to their own account (`customerId` == their uid); create ONLY the "captured order" allowlist (checkout fallback); never delete. Since 2026-09-08 a captured order's `phone` must be the **canonical `+91XXXXXXXXXX`** number on the caller's own Firebase auth token (`phone_number` claim, `phoneVerified: true`) - the browser can never write an unverified number or forge the marker | read; update status-only |
 | `admins` | read own grant only | (grants made via console/admin SDK - rules forbid app writes) |
 | `customers` (per customer `{uid}`) | owner may read their own doc; owner creates it on first sign-in (email pinned, status `active`); owner may only update `displayName` | read all (admin Customers section); may only update `status` (`active`/`disabled`); never delete |
 | `carts` (per customer `{uid}`) | owner-only read/write of their own cart mirror; delete own | no access (not business data) |
@@ -69,7 +69,7 @@ with: `firebase deploy --only firestore:rules --project mycosix`
 
 ## Collections with live data today (captured 2026-09-08)
 
-At re-capture (2026-09-08) six collections hold live data: `products` (8 documents), `siteConfig` (1), `orders` (11), `admins` (1), and - new since the first capture - the customer-account collections `customers`, `carts` and `wishlists` (3 documents each; rows are private customer data and are deliberately NOT reproduced in this file). The account collections are still auto-created on first use: `customers/{uid}` the first time someone registers, `carts/{uid}` the first time that customer changes their cart while signed in, and `wishlists/{uid}` the first time they save a product. `team`, `content`, `batches`, `inventoryMovements`, `orderRequests` remain defined in the rules for future features and hold **no documents** today. What changed since 2026-09-07: the admin restocked `oyster-pickle-250` (0 -> 6), one `New Trending Mushroom` sold (5 -> 4), the `chandan mushroom` admin test entry was deleted from the Products screen, and 6 new orders arrived (5 -> 11 total; 4 of 11 are linked to signed-in customer accounts). No schema or security-rules changes.
+At re-capture (2026-09-08) six collections hold live data: `products` (8 documents), `siteConfig` (1), `orders` (11), `admins` (2 - the second admin `mycosixmushroom@gmail.com` was granted on 2026-09-08), and - new since the first capture - the customer-account collections `customers`, `carts` and `wishlists` (3 documents each; rows are private customer data and are deliberately NOT reproduced in this file). The account collections are still auto-created on first use: `customers/{uid}` the first time someone registers, `carts/{uid}` the first time that customer changes their cart while signed in, and `wishlists/{uid}` the first time they save a product. `team`, `content`, `batches`, `inventoryMovements`, `orderRequests` remain defined in the rules for future features and hold **no documents** today. What changed since 2026-09-07: the admin restocked `oyster-pickle-250` (0 -> 6), one `New Trending Mushroom` sold (5 -> 4), the `chandan mushroom` admin test entry was deleted from the Products screen, and 6 new orders arrived (5 -> 11 total; 4 of 11 are linked to signed-in customer accounts). No schema or security-rules changes.
 
 ### 1) `products` - 8 documents
 
@@ -139,6 +139,14 @@ real order rows are deliberately not copied here or into GitHub.** If Firebase i
 deleted, past order history cannot be rebuilt - that is the one data type you must
 protect by keeping the Firebase project alive.
 
+Schema change on 2026-09-08 (checkout WhatsApp verification): every NEW order's
+`phone` is stored canonical (`+91XXXXXXXXXX`) and gains `phoneVerified: true` - the
+security rules only accept that when the number is the `phone_number` claim on the
+caller's own Firebase auth token, i.e. the customer proved the number with a one-time
+SMS code. Older orders keep whatever format they were saved in and are unaffected;
+admins never see OTPs or tokens (none exist - codes go straight from the customer's
+browser to Firebase).
+
 **Schema** (for reference when re-creating the rules or pasting into an AI):
 
 | Field | Meaning |
@@ -158,19 +166,23 @@ protect by keeping the Firebase project alive.
 `New` -> `Contacted` -> `Confirmed` -> `Preparing` -> `Out for Delivery` -> `Delivered`
 (terminal). `Cancelled` (terminal) at any earlier step.
 
-### 4) `admins` - 1 document
+### 4) `admins` - 2 documents
 
 The admin grant. A signed-in user is an admin only if a document exists at
 `admins/<their Firebase Auth uid>`. Rules forbid the app from creating it - it is made
-by the project owner.
+by the project owner (console or an admin-SDK script).
 
 | Document id (= Auth uid) | Fields |
 | --- | --- |
 | `JhLVvcXJLZepu8ABW1gC5ZqMKjA2` | `email`: `chiranjitc.official@gmail.com`; `grantedAt`: timestamp 2026-09-05; `note`: "granted by project owner (free-plan provisioning)" |
+| `qRPwFKd78cd7FPRB1LdJdw6CIi52` | `email`: `mycosixmushroom@gmail.com`; `grantedAt`: timestamp 2026-09-08; `note`: "granted by project owner (free-plan provisioning)" |
 
 To re-grant after a rebuild: in Firebase console > Authentication, make sure the user
-`chiranjitc.official@gmail.com` exists (Email/Password), copy its **uid**, then create a
-document `admins/<uid>` with `{ "email": "chiranjitc.official@gmail.com" }`.
+exists (Email/Password or Google - the uid stays the same across providers on one
+email once linked), copy its **uid**, then create a document `admins/<uid>` with
+`{ "email": "<that email>" }`. The second admin (`mycosixmushroom@gmail.com`) was
+provisioned on 2026-09-08 the same way from the Auth record (no password needed from
+the owner - the account already existed).
 
 ---
 
@@ -178,7 +190,7 @@ document `admins/<uid>` with `{ "email": "chiranjitc.official@gmail.com" }`.
 
 | File in this repo | What it is for |
 | --- | --- |
-| `firestore.rules` | Security rules for every collection (the schema tables above come from here) |
+| `firestore.rules` | Security rules for every collection (the schema tables above come from here). Since 2026-09-08 the orders `create` gate also pins the canonical phone to the caller's auth-token `phone_number` claim |
 | `firestore.indexes.json` | Firestore composite indexes (products category+sortKey; orders customerId+createdAt) |
 | `storage.rules` | Storage rules (deny-all; Storage not enabled today) |
 | `firebase.json` | Hosting config |

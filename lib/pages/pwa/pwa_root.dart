@@ -106,6 +106,12 @@ class _MxPwaRootState extends State<MxPwaRoot>
   final Map<int, _PwaSectionState> _sectionStates = <int, _PwaSectionState>{};
   final _back = BackPressController();
 
+  /// Whether an editable text field currently holds keyboard focus — the
+  /// universal sign that the platform keyboard is (or is about to be) open
+  /// over the bottom of the screen. The dock is hidden then: it must never
+  /// float above the keyboard or fight it for the tap that dismisses it.
+  bool _editingFocus = false;
+
   /// Page-scroll compression of the floating dock: 0 expanded at the top of
   /// the page, 1 fully compressed once scrolled down. It follows the visible
   /// section's scroll position while the user scrolls, and eases to the new
@@ -124,10 +130,35 @@ class _MxPwaRootState extends State<MxPwaRoot>
     _rootNavigator = context.findAncestorStateOfType<NavigatorState>();
     PwaRegistry.switchToSection = _switchToRoute;
     PwaRegistry.scrollVisibleToTop = _scrollVisibleToTop;
+    FocusManager.instance.addListener(_onFocusChanged);
+  }
+
+  /// True when the focused widget is (or is inside) an editable text field.
+  static bool _hasEditableFocus() {
+    final ctx = FocusManager.instance.primaryFocus?.context;
+    if (ctx == null) return false;
+    if (ctx.widget is EditableText || ctx.widget is TextField) return true;
+    var editing = false;
+    ctx.visitAncestorElements((e) {
+      if (e.widget is EditableText || e.widget is TextField) {
+        editing = true;
+        return false;
+      }
+      return true;
+    });
+    return editing;
+  }
+
+  void _onFocusChanged() {
+    final editing = _hasEditableFocus();
+    if (editing != _editingFocus && mounted) {
+      setState(() => _editingFocus = editing);
+    }
   }
 
   @override
   void dispose() {
+    FocusManager.instance.removeListener(_onFocusChanged);
     if (PwaRegistry.switchToSection == _switchToRoute) {
       PwaRegistry.switchToSection = null;
     }
@@ -234,6 +265,12 @@ class _MxPwaRootState extends State<MxPwaRoot>
 
   @override
   Widget build(BuildContext context) {
+    // Dock is hidden while the keyboard is over the bottom of the screen.
+    // Two independent signals: primary focus sits on an editable text field
+    // (any platform, any browser), or the platform itself reports a deep
+    // keyboard inset inside the layout viewport.
+    final keyboardOpen =
+        _editingFocus || MediaQuery.viewInsetsOf(context).bottom > 80.0;
     return PopScope(
       // The pager owns the system back button while it is the top route.
       canPop: false,
@@ -270,27 +307,45 @@ class _MxPwaRootState extends State<MxPwaRoot>
                 },
               ),
             ),
-            // Floating carousel dock: safe-area aware, floating just above
-            // the bottom inset, capped in width so the strip stays a
-            // comfortable centred capsule on wide phones.
+            // Floating dock: safe-area aware, floating just above the bottom
+            // inset, capped in width so the strip stays a centred band on
+            // wide phones. While the keyboard is open the dock slips away
+            // (fade + slide, touches ignored) and returns untouched when the
+            // keyboard closes; the page scroll that owns its expanded or
+            // compressed state is never disturbed, so there is no layout
+            // jump and no navigation reset.
             Positioned(
               left: 0,
               right: 0,
               bottom: 0,
-              child: SafeArea(
-                top: false,
-                minimum: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 620),
-                    child: PwaDock(
-                      key: const Key('pwa-dock'),
-                      index: _index,
-                      labels: kPwaSectionLabels,
-                      icons: kPwaSectionIcons,
-                      onSelect: _switchTo,
-                      compression: _dockT,
+              child: IgnorePointer(
+                ignoring: keyboardOpen,
+                child: AnimatedSlide(
+                  offset: keyboardOpen ? const Offset(0, 0.4) : Offset.zero,
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOut,
+                  child: AnimatedOpacity(
+                    key: const Key('pwa-keyboard-veil'),
+                    opacity: keyboardOpen ? 0.0 : 1.0,
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOut,
+                    child: SafeArea(
+                      top: false,
+                      minimum: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                      child: Align(
+                        alignment: Alignment.bottomCenter,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 620),
+                          child: PwaDock(
+                            key: const Key('pwa-dock'),
+                            index: _index,
+                            labels: kPwaSectionLabels,
+                            icons: kPwaSectionIcons,
+                            onSelect: _switchTo,
+                            compression: _dockT,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),

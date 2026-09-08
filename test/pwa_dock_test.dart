@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mycosix/config/mx_colors.dart';
 import 'package:mycosix/config/mx_config.dart';
 import 'package:mycosix/pages/pwa/pwa_root.dart';
 import 'package:mycosix/repositories/cart_repository.dart';
@@ -45,11 +46,53 @@ class _PlainSection extends StatelessWidget {
   }
 }
 
+/// A pager page with a text field at the top, so the keyboard focus path
+/// (the dock hiding while an editable field is open) can be exercised.
+class _InputSection extends StatelessWidget {
+  const _InputSection(this.index);
+
+  final int index;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 1600,
+      color: Colors.primaries[index % Colors.primaries.length].withValues(
+        alpha: 0.25,
+      ),
+      // Align keeps the field at its natural size near the top; without it
+      // the tall slab would stretch the field the full 1600px and the dock
+      // would cover its centre.
+      child: Align(
+        alignment: Alignment.topLeft,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 160, left: 24, right: 24),
+          child: SizedBox(
+            width: 300,
+            child: TextField(
+              decoration: InputDecoration(
+                hintText: 'type here',
+                filled: true,
+                fillColor: MxColors.creamSoft,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Pumps [MxPwaRoot] inside the same provider scope the real app uses, with
 /// stand-in sections so the dock behavior is exercised in isolation.
 Future<void> _pumpPager(
   WidgetTester tester, {
   int initialIndex = 0,
+  List<Widget>? sections,
 }) async {
   SharedPreferences.setMockInitialValues({});
   final prefs = await SharedPreferences.getInstance();
@@ -77,7 +120,9 @@ Future<void> _pumpPager(
         debugShowCheckedModeBanner: false,
         home: MxPwaRoot(
           initialIndex: initialIndex,
-          sections: <Widget>[for (var i = 0; i < 5; i++) _PlainSection(i)],
+          sections:
+              sections ??
+              <Widget>[for (var i = 0; i < 5; i++) _PlainSection(i)],
         ),
       ),
     ),
@@ -276,18 +321,109 @@ void main() {
     await _pumpPager(tester);
     final dock = find.byKey(const Key('pwa-dock'));
     expect(tester.getSize(dock).height, 78.0);
+    // Expanded: the strip spans almost the full width (480 - 24 margins).
+    final expandedWidth = tester.getSize(dock).width;
+    expect(expandedWidth, closeTo(456.0, 0.5));
 
-    // Scroll the section down: the dock compresses, never abruptly hides.
+    // Scroll the section down: the dock compresses on BOTH axes — shorter
+    // and narrower — never abruptly hides.
     await tester.drag(find.text('S0'), const Offset(0, -300));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     expect(tester.getSize(dock).height, 58.0);
+    expect(tester.getSize(dock).width, closeTo(456.0 * 0.66, 0.5));
+    expect(tester.getSize(dock).width, lessThan(expandedWidth - 100));
 
-    // Scroll back up: the dock expands again.
+    // Scroll back up: the dock expands again on both axes.
     await tester.drag(find.text('S0'), const Offset(0, 300));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     expect(tester.getSize(dock).height, 78.0);
+    expect(tester.getSize(dock).width, closeTo(expandedWidth, 0.5));
+  });
+
+  testWidgets('the dock is a containerless icon row: no glass box, no cells', (
+    tester,
+  ) async {
+    await _pumpPager(tester);
+    final dock = find.byKey(const Key('pwa-dock'));
+    // No frosted-glass card, no per-icon material cell, no clipping shell,
+    // no divider — the glyphs float directly over the page.
+    expect(
+      find.descendant(of: dock, matching: find.byType(BackdropFilter)),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: dock, matching: find.byType(Material)),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: dock, matching: find.byType(ClipRRect)),
+      findsNothing,
+    );
+    // The icons themselves are there and the active one is marked.
+    expect(find.byIcon(Icons.storefront_rounded), findsOneWidget);
+    expect(_navSelected(tester, 'Home'), isTrue);
+  });
+
+  testWidgets('focusing a text field hides the dock; leaving it restores it', (
+    tester,
+  ) async {
+    await _pumpPager(
+      tester,
+      sections: <Widget>[
+        const _InputSection(0),
+        const _PlainSection(1),
+        const _PlainSection(2),
+        const _PlainSection(3),
+        const _PlainSection(4),
+      ],
+    );
+    final veil = find.byKey(const Key('pwa-keyboard-veil'));
+    expect(tester.widget<AnimatedOpacity>(veil).opacity, 1.0);
+
+    // An editable field takes focus -> the dock slips away.
+    await tester.tap(find.byType(TextField), warnIfMissed: false);
+    await tester.pump();
+    expect(tester.widget<AnimatedOpacity>(veil).opacity, 0.0);
+
+    // Focus leaves -> the dock returns untouched.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(tester.widget<AnimatedOpacity>(veil).opacity, 1.0);
+  });
+
+  testWidgets('a keyboard inset hides the dock and restoring it keeps the page', (
+    tester,
+  ) async {
+    await _pumpPager(tester);
+    // Scroll the section down first so there is state to preserve.
+    await tester.drag(find.text('S0'), const Offset(0, -300));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    final scroll = _sectionScroll(tester, 0);
+    final pixels = scroll.position.pixels;
+    expect(pixels, greaterThan(0));
+
+    final veil = find.byKey(const Key('pwa-keyboard-veil'));
+    expect(tester.widget<AnimatedOpacity>(veil).opacity, 1.0);
+
+    // The platform reports a deep keyboard inset inside the layout viewport.
+    tester.view.viewInsets = FakeViewPadding(bottom: 320);
+    addTearDown(() => tester.view.viewInsets = FakeViewPadding());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(tester.widget<AnimatedOpacity>(veil).opacity, 0.0);
+    // No layout jump, no navigation reset: the page stays exactly where it was.
+    expect(scroll.position.pixels, pixels);
+
+    // Keyboard dismissed: the dock returns, page still undisturbed.
+    tester.view.viewInsets = FakeViewPadding();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(tester.widget<AnimatedOpacity>(veil).opacity, 1.0);
+    expect(scroll.position.pixels, pixels);
   });
 
   testWidgets('tapping a dock item selects it, even near the strip edge', (

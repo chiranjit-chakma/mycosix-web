@@ -80,6 +80,7 @@ class CapturedOrderData {
     required this.orderId,
     required this.customerName,
     required this.phone,
+    this.phoneVerified = false,
     required this.latitude,
     required this.longitude,
     required this.mapsUrl,
@@ -101,6 +102,13 @@ class CapturedOrderData {
 
   final String customerName;
   final String phone;
+
+  /// True only when this capture was made after the number was proven on the
+  /// caller's own Firebase auth session (one-time-code verification). The
+  /// Firestore rules pin this marker to the auth token's phone_number claim
+  /// server-side, so a client can never stamp it on by itself.
+  final bool phoneVerified;
+
   final String? email;
 
   /// The Firebase Auth uid of the customer account that was signed in at

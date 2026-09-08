@@ -9,7 +9,17 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { _test } = require('../index.js');
-const { placeOrder, cleanse, DEFAULTS } = _test;
+const { placeOrder: placeOrderImpl, cleanse, DEFAULTS } = _test;
+
+// The verified phone every simulated caller carries on their own auth token
+// (mirror of production, where the callable passes
+// context.auth.token.phone_number). Tests that exercise the mismatch pin
+// call placeOrderImpl directly with their own authPhone.
+const PHONE = '+919876543210';
+
+function placeOrder(db, data, opts) {
+  return placeOrderImpl(db, data, Object.assign({ authPhone: PHONE }, opts));
+}
 
 /* ------------------------------------------------------------------ *
  * Minimal in-memory Firestore
@@ -166,7 +176,9 @@ test('places a valid order with trusted pricing and stock', async () => {
   assert.match(res.order.orderId, /^MYC-[A-HJ-NP-Z2-9]{8}$/);
   assert.equal(res.order.orderId.length, 12);
   assert.equal(res.order.customerName, 'Test Customer');
-  assert.equal(res.order.phone, '919876543210');
+  // Cleanse normalises to canonical '+91XXXXXXXXXX' (never digits-only).
+  assert.equal(res.order.phone, '+919876543210');
+  assert.equal(res.order.phoneVerified, true);
   assert.equal(res.order.email, 'customer@example.com');
   assert.equal(typeof res.order.createdAt, 'string');
   assert.equal(typeof res.order.updatedAt, 'string');
@@ -271,7 +283,7 @@ test('rejects a malformed phone number', () => {
   return expectRejected(
     placeOrder(db, draft({ phone: '123' })),
     'invalid-argument',
-    /valid phone number/,
+    /valid 10-digit WhatsApp number/,
   );
 });
 
@@ -331,6 +343,40 @@ test('omits blank optional fields from the stored order', async () => {
   assert.equal(res.order.building, undefined);
   assert.equal(res.order.instructions, undefined);
   assert.equal(res.order.email, undefined);
+});
+
+test('rejects when the order phone is not on the caller token', () => {
+  const db = seededDb();
+  return expectRejected(
+    placeOrderImpl(db, draft(), { authPhone: '+919876543211' }),
+    'permission-denied',
+    /verify your WhatsApp number/,
+  );
+});
+
+test('rejects when the caller has no verified phone at all', () => {
+  const db = seededDb();
+  return expectRejected(
+    placeOrderImpl(db, draft(), { authPhone: null }),
+    'permission-denied',
+    /verify your WhatsApp number/,
+  );
+});
+
+test('rejects a phone that is not a 10-digit Indian mobile', () => {
+  const db = seededDb();
+  return expectRejected(
+    placeOrder(db, draft({ phone: '+91 12345 67890' })), // starts with 1
+    'invalid-argument',
+    /valid 10-digit WhatsApp number/,
+  );
+});
+
+test('cleanse accepts dial-prefixed forms of the same number', () => {
+  assert.equal(cleanse(draft({ phone: '+91 98765 43210' })).phone, PHONE);
+  assert.equal(cleanse(draft({ phone: '09876543210' })).phone, PHONE);
+  assert.equal(cleanse(draft({ phone: '919876543210' })).phone, PHONE);
+  assert.equal(cleanse(draft({ phone: '9876543210' })).phone, PHONE);
 });
 
 test('cleanse rejects a completely empty order', () => {

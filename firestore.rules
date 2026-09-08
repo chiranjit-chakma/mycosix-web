@@ -65,7 +65,7 @@ service cloud.firestore {
         'orderId', 'customerName', 'phone', 'email',
         'latitude', 'longitude', 'mapsUrl',
         'building', 'apartment', 'landmark', 'instructions',
-        'customerId',
+        'customerId', 'phoneVerified',
         'items', 'status', 'verified', 'createdAt',
         'subtotal', 'deliveryFee', 'total', 'currency'
       ])
@@ -79,10 +79,18 @@ service cloud.firestore {
       && res.data.customerName is string
       && res.data.customerName.size() >= 1
       && res.data.customerName.size() <= 120
+      // Contact phone: canonical '+91XXXXXXXXXX' AND proven. The one-time
+      // code was verified by Firebase itself, which only then puts the
+      // phone_number claim on the caller's auth token; pinning the order's
+      // phone to that claim is the server's proof - a browser can never
+      // write an unverified number or forge the marker.
       && 'phone' in res.data
       && res.data.phone is string
-      && res.data.phone.size() >= 6
-      && res.data.phone.size() <= 20
+      && res.data.phone.matches('^[+]91[6-9][0-9]{9}$')
+      && 'phoneVerified' in res.data
+      && res.data.phoneVerified == true
+      && request.auth != null
+      && request.auth.token.phone_number == res.data.phone
       && 'latitude' in res.data
       && res.data.latitude is number
       && 'longitude' in res.data

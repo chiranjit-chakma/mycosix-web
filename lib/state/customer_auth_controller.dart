@@ -104,6 +104,11 @@ class CustomerAuthController extends ChangeNotifier implements CartSyncAuth {
 
   String? get displayName => _user?.displayName;
 
+  /// The phone number Firebase has verified on this account ('+91...'),
+  /// when the customer has linked one. Read at checkout: an order contact
+  /// number the account already carries needs no new one-time code.
+  String? get phoneNumber => _user?.phoneNumber;
+
   bool get emailVerified => _user?.emailVerified ?? false;
 
   /// Account creation time as reported by the provider, when known.

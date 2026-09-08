@@ -23,6 +23,7 @@ import 'state/cart_sync_controller.dart';
 import 'state/customer_auth_controller.dart';
 import 'services/geo_location_service.dart';
 import 'services/whatsapp_order_service.dart';
+import 'services/whatsapp_otp.dart';
 import 'state/cart_controller.dart';
 import 'state/location_controller.dart';
 import 'state/products_controller.dart';
@@ -166,6 +167,9 @@ class MxApp extends StatelessWidget {
                 ..start(),
         ),
         Provider<OrderRepository>(create: (_) => orderRepository),
+        // One-time-code WhatsApp verification for checkout (Firebase Phone
+        // Auth). A plain value service: no state of its own.
+        Provider<WhatsAppOtpService>(create: (_) => const WhatsAppOtpService()),
         Provider<WhatsAppOrderService>(
           create: (context) {
             final config = context.read<ConfigRepository>();

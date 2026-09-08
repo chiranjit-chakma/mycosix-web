@@ -1,4 +1,8 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/mx_colors.dart';
@@ -16,6 +20,7 @@ import '../../services/order_receipt_pdf.dart';
 import '../../services/pdf_browser.dart';
 import '../../services/url_launcher.dart';
 import '../../services/whatsapp_order_service.dart';
+import '../../services/whatsapp_otp.dart';
 import '../../state/cart_controller.dart';
 import '../../state/customer_auth_controller.dart';
 import '../../state/location_controller.dart';
@@ -25,19 +30,26 @@ import '../../widgets/delivery_paused_notice.dart';
 import '../../utils/phone.dart';
 import '../../utils/validators.dart';
 import '../../widgets/location/location_selector.dart';
+import '../../widgets/whatsapp_verify_panel.dart';
 import '../../widgets/page.dart';
 import '../../widgets/shell.dart';
 
 /// Shared field validators — the form fields and the place-order button
 /// use exactly the same rules so they can never disagree.
 String? _validatePhone(String? value) {
-  final v = value?.trim() ?? '';
-  if (v.isEmpty) return 'Please enter your phone number';
-  final digits = v.replaceAll(RegExp(r'\D'), '');
-  if (!isValidIndianPhone(digits)) {
-    return 'Enter a valid 10-digit Indian mobile number';
+  switch (checkPhoneInput(value?.trim() ?? '')) {
+    case PhoneInputCheck.empty:
+      return 'Please enter your WhatsApp number.';
+    case PhoneInputCheck.incomplete:
+      return 'That number is incomplete - please enter the full 10-digit '
+          'mobile number.';
+    case PhoneInputCheck.badStart:
+      return 'Indian mobile numbers start with 6, 7, 8 or 9.';
+    case PhoneInputCheck.invalid:
+      return 'That does not look like an Indian mobile number.';
+    case PhoneInputCheck.valid:
+      return null;
   }
-  return null;
 }
 
 String? _validateEmail(String? value) {
@@ -82,6 +94,30 @@ class _CheckoutPageState extends State<CheckoutPage> {
   bool _placing = false;
   String? _orderError;
 
+  /// The checkout's own live Firebase auth session, captured in initState so
+  /// cleanup can still sign out a throwaway session after the widget leaves
+  /// the tree (dispose cannot use context).
+  CustomerAuthController? _auth;
+
+  /// Canonical '+91...' number already proven for this checkout - either the
+  /// signed-in account carries it (Firebase verified it when it was linked)
+  /// or it was verified here with a one-time code.
+  String? _verifiedPhone;
+
+  /// Canonical number the open verification panel is proving, or null when no
+  /// panel is open. Closing it (or the number changing) clears this.
+  String? _otpPhone;
+
+  /// Frozen copy of everything the customer agreed at the moment the CTA
+  /// passed validation; placing later always uses this snapshot.
+  _FrozenOrder? _pending;
+  String? _pendingPhone;
+
+  /// True once a throwaway phone sign-in session was created by the
+  /// verification step (guest checkout). The page signs that session back out
+  /// once the order is placed - or when the checkout is abandoned.
+  bool _sessionFresh = false;
+
   List<TextEditingController> get _fieldControllers => [
     _name,
     _phone,
@@ -99,7 +135,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
     // account (both stay editable — they may be ordering for someone else).
     // Phone and delivery details are never stored on the account, so those
     // fields always start empty.
-    final auth = context.read<CustomerAuthController>();
+    _auth = context.read<CustomerAuthController>();
+    final auth = _auth!;
     if (auth.backendAvailable && auth.user != null) {
       final name = auth.displayName?.trim();
       if (name != null && name.isNotEmpty) _name.text = name;
@@ -115,6 +152,14 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   void _fieldsChanged() {
     if (mounted) setState(() {});
+    // Editing the number while the verify panel is open invalidates what it
+    // is proving: close the panel silently (nothing was sent by doing so).
+    // Tapping the place-order CTA re-opens it for the number now in the field.
+    final otp = _otpPhone;
+    if (otp != null && canonicalWhatsAppPhone(_phone.text) != otp) {
+      _otpPhone = null;
+      if (mounted) setState(() {});
+    }
   }
 
   /// True only when name/phone/email and the optional delivery details are all
@@ -133,7 +178,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
       return 'Add your name to continue';
     }
     if (_validatePhone(_phone.text) != null) {
-      return 'Add a valid 10-digit mobile number to continue';
+      return 'Add your WhatsApp number to continue';
     }
     if (_validateEmail(_email.text) != null) {
       return 'That email address does not look right';
@@ -150,6 +195,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
   void dispose() {
     for (final c in _fieldControllers) {
       c.removeListener(_fieldsChanged);
+    }
+    // A verification session created for a guest checkout that never placed
+    // its order: sign it back out so no throwaway account lingers signed in.
+    if (_sessionFresh && _placed == null) {
+      _signOutFreshSession();
     }
     _name.dispose();
     _phone.dispose();
@@ -171,26 +221,23 @@ class _CheckoutPageState extends State<CheckoutPage> {
     return auth.uid;
   }
 
-  /// Places the order: the trusted backend validates and writes it; if that
-  /// backend is unreachable, checkout records a captured order (status 'New',
-  /// verified false) carrying the exact amounts the customer was shown and
-  /// agreed at checkout, so the order still reaches the admin workflow and can
-  /// be confirmed on the call. The confirmation is always shown on screen —
-  /// WhatsApp is never opened with the order data itself.
+  /// Place-order CTA. If the WhatsApp number is already proven for this
+  /// session (the signed-in account carries it, or it was verified here
+  /// earlier), the order is placed immediately. Otherwise the inline
+  /// verification panel opens first - the order is NEVER created before the
+  /// number is proven, and everything the customer agreed to is frozen at this
+  /// point so the later steps (including a guest sign-in/out) cannot disturb
+  /// it.
   Future<void> _placeOrder() async {
-    final cart = context.read<CartController>();
-    final location = context.read<LocationController>();
-    final whatsapp = context.read<WhatsAppOrderService>();
-    final orderRepo = context.read<OrderRepository>();
-    final config = context.read<SiteConfigController>();
+    if (_placing) return;
 
     // Delivery-pause gate (belt and braces behind the disabled button): a live
     // config update can pause delivery between two renders, so an order is
     // refused here too. Nothing is ever written while delivery is paused.
+    final config = context.read<SiteConfigController>();
     if (!config.deliveryEnabled) {
       if (!mounted) return;
       setState(() {
-        _placing = false;
         _submitted = true;
         _orderError =
             'Deliveries are paused right now, so orders are off. Please check '
@@ -199,46 +246,117 @@ class _CheckoutPageState extends State<CheckoutPage> {
       return;
     }
 
-    final loc = location.location;
+    final cart = context.read<CartController>();
+    final loc = context.read<LocationController>().location;
     final canSend =
         !cart.isEmpty &&
         loc != null &&
         loc.confirmed &&
         loc.mapsUrl.trim().isNotEmpty;
 
-    setState(() => _submitted = true);
+    setState(() {
+      _submitted = true;
+      _orderError = null;
+    });
 
     if (!(_formKey.currentState?.validate() ?? false) || !canSend) return;
+
+    final canonical = canonicalWhatsAppPhone(_phone.text);
+    if (canonical == null) return; // the validator above already explains
+
+    // Freeze the order exactly as agreed right now: canonical phone, the
+    // cart lines and the amounts shown in the summary. Placing later (after
+    // the verification panel) always uses this snapshot, so the recorded
+    // order can never disagree with what the customer saw and agreed.
+    if (_pendingPhone != canonical || _pending == null) {
+      _pending = _FrozenOrder(
+        draft: OrderDraft(
+          customerName: _name.text.trim(),
+          phone: canonical,
+          email: _email.text.trim().isEmpty ? null : _email.text.trim(),
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+          mapsUrl: loc.mapsUrl,
+          building:
+              _building.text.trim().isEmpty ? null : _building.text.trim(),
+          apartment:
+              _apartment.text.trim().isEmpty ? null : _apartment.text.trim(),
+          landmark:
+              _landmark.text.trim().isEmpty ? null : _landmark.text.trim(),
+          instructions: _instructions.text.trim().isEmpty
+              ? null
+              : _instructions.text.trim(),
+          lines: [
+            for (final line in cart.lines)
+              OrderDraftLine(productId: line.product.id, quantity: line.quantity),
+          ],
+        ),
+        items: List.of(cart.lines),
+        subtotal: cart.subtotal,
+        deliveryFee: cart.deliveryFee,
+        total: cart.total,
+      );
+      _pendingPhone = canonical;
+    }
+
+    // Number proven in this session already? Place the order.
+    if (_verifiedPhone == canonical) {
+      await _createOrderNow();
+      return;
+    }
+    // The signed-in account itself carries this exact number (Firebase
+    // verified it when it was linked, and every auth token since then carries
+    // the phone_number claim): no new code is needed.
+    final auth = context.read<CustomerAuthController>();
+    if (auth.backendAvailable &&
+        auth.user != null &&
+        auth.phoneNumber == canonical) {
+      _verifiedPhone = canonical;
+      await _createOrderNow();
+      return;
+    }
+    // The number still needs proving: open the verification panel.
+    if (!mounted) return;
+    setState(() => _otpPhone = canonical);
+  }
+
+  /// Records the frozen order: the trusted backend validates and writes it;
+  /// if that backend is unreachable, checkout records a captured order (status
+  /// 'New', verified false, phone marked verified - the Firestore rules pin
+  /// that marker to the phone number on the caller's own auth token, so it is
+  /// never a client claim) carrying the exact amounts the customer was shown
+  /// and agreed at checkout. The confirmation is always shown on screen -
+  /// WhatsApp is never opened with the order data itself.
+  Future<void> _createOrderNow() async {
     if (_placing) return;
+    final run = _pending;
+    if (run == null) return;
+
+    // Belt and braces pause re-check: a live config update can pause delivery
+    // while the verification panel was open. Nothing is written while paused.
+    if (!context.read<SiteConfigController>().deliveryEnabled) {
+      if (!mounted) return;
+      setState(() {
+        _orderError =
+            'Deliveries are paused right now, so orders are off. Please check '
+            'back soon.';
+      });
+      return;
+    }
+
+    final cart = context.read<CartController>();
+    final whatsapp = context.read<WhatsAppOrderService>();
+    final orderRepo = context.read<OrderRepository>();
 
     setState(() {
       _placing = true;
       _orderError = null;
     });
 
-    final draft = OrderDraft(
-      customerName: _name.text.trim(),
-      phone: _phone.text.trim(),
-      email: _email.text.trim().isEmpty ? null : _email.text.trim(),
-      latitude: loc.latitude,
-      longitude: loc.longitude,
-      mapsUrl: loc.mapsUrl,
-      building: _building.text.trim().isEmpty ? null : _building.text.trim(),
-      apartment: _apartment.text.trim().isEmpty ? null : _apartment.text.trim(),
-      landmark: _landmark.text.trim().isEmpty ? null : _landmark.text.trim(),
-      instructions: _instructions.text.trim().isEmpty
-          ? null
-          : _instructions.text.trim(),
-      lines: [
-        for (final line in cart.lines)
-          OrderDraftLine(productId: line.product.id, quantity: line.quantity),
-      ],
-    );
-
     CustomerOrder order;
     try {
       // Trusted backend: validates the draft and writes the order itself.
-      final stored = await orderRepo.createOrder(draft);
+      final stored = await orderRepo.createOrder(run.draft);
       order = _orderFromStored(stored);
     } on OrderRejected catch (e) {
       // The backend refused the order (e.g. a product became unavailable or is
@@ -254,27 +372,31 @@ class _CheckoutPageState extends State<CheckoutPage> {
       // No trusted backend reachable (not deployed yet / offline): record a
       // capture so the shop still sees the order, then confirm on screen. The
       // capture stores the amounts this customer was shown and agreed at
-      // checkout so a delivered order is a real, analysable sale — status stays
-      // New and verified stays false (only an admin can change those). No
-      // WhatsApp auto-open with the order data — ever.
+      // checkout so a delivered order is a real, analysable sale — status
+      // stays New and verified stays false (only an admin can change those).
+      // phoneVerified is written true ONLY because the number was proven on
+      // the caller's auth token before this point; the security rules verify
+      // that token server-side regardless. No WhatsApp auto-open with the
+      // order data — ever.
       final orderId = whatsapp.generateOrderId();
       try {
         await orderRepo.captureNewOrder(
           CapturedOrderData(
             orderId: orderId,
-            customerName: draft.customerName,
-            phone: draft.phone,
-            email: draft.email,
+            customerName: run.draft.customerName,
+            phone: run.draft.phone,
+            phoneVerified: true,
+            email: run.draft.email,
             customerId: _signedInUid(),
-            latitude: loc.latitude,
-            longitude: loc.longitude,
-            mapsUrl: loc.mapsUrl,
-            building: draft.building,
-            apartment: draft.apartment,
-            landmark: draft.landmark,
-            instructions: draft.instructions,
+            latitude: run.draft.latitude,
+            longitude: run.draft.longitude,
+            mapsUrl: run.draft.mapsUrl,
+            building: run.draft.building,
+            apartment: run.draft.apartment,
+            landmark: run.draft.landmark,
+            instructions: run.draft.instructions,
             lines: [
-              for (final line in cart.lines)
+              for (final line in run.items)
                 CapturedOrderLine(
                   productId: line.product.id,
                   productName: line.product.name,
@@ -285,15 +407,16 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   weight: line.product.weight,
                 ),
             ],
-            subtotal: cart.subtotal,
-            deliveryFee: cart.deliveryFee,
-            total: cart.total,
+            subtotal: run.subtotal,
+            deliveryFee: run.deliveryFee,
+            total: run.total,
           ),
         );
       } catch (_) {
         // The capture failed too, so the order was not recorded anywhere
         // server-side. Tell the customer honestly and keep the cart so they
-        // can retry.
+        // can retry. (The verified phone session stays signed in, so a retry
+        // needs no new code.)
         if (!mounted) return;
         setState(() {
           _placing = false;
@@ -303,7 +426,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         });
         return;
       }
-      order = _capturedFallbackOrder(cart, loc, orderId);
+      order = _capturedFallbackOrder(run, orderId);
     }
 
     if (!mounted) return;
@@ -327,6 +450,34 @@ class _CheckoutPageState extends State<CheckoutPage> {
     } catch (_) {
       // Best-effort: a persistence failure must not undo an accepted order.
     }
+
+    // A throwaway phone session proved the number; its job is done.
+    _signOutFreshSession();
+  }
+
+  /// Best-effort sign-out of a throwaway verification session (guest
+  /// checkout, or an account session the guest number replaced). The order is
+  /// already recorded at this point, so a failure here only leaves the phone
+  /// number signed in - never blocks or retries anything.
+  void _signOutFreshSession() {
+    if (!_sessionFresh) return;
+    _sessionFresh = false;
+    final auth = _auth;
+    if (auth == null) return;
+    unawaited(auth.signOut());
+  }
+
+  /// Called by the verification panel once Firebase verified the code for
+  /// [canonical]: mark the number proven (a fresh session is signed out again
+  /// after the order) and place the frozen order.
+  void _onNumberVerified(String canonical, {required bool fresh}) {
+    if (!mounted) return;
+    setState(() {
+      _verifiedPhone = canonical;
+      _otpPhone = null;
+      if (fresh) _sessionFresh = true;
+    });
+    unawaited(_createOrderNow());
   }
 
   /// Maps the authoritative stored order into a [CustomerOrder] whose values
@@ -373,33 +524,31 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
-  /// Receipt copy for a captured order: built locally from the cart with the
-  /// SAME id that was recorded at checkout, so the on-screen confirmation and
-  /// the PDF receipt match the order in the admin list. No WhatsApp is opened.
-  CustomerOrder _capturedFallbackOrder(
-    CartController cart,
-    DeliveryLocation loc,
-    String orderId,
-  ) {
-    String? clean(String v) {
-      final t = v.trim();
-      return t.isEmpty ? null : t;
-    }
-
+  /// Receipt copy for a captured order: built from the FROZEN checkout run
+  /// with the SAME id that was recorded at checkout, so the on-screen
+  /// confirmation and the PDF receipt match the order in the admin list -
+  /// even if the cart or fields changed while the number was being verified.
+  /// No WhatsApp is opened.
+  CustomerOrder _capturedFallbackOrder(_FrozenOrder run, String orderId) {
     return CustomerOrder(
       orderId: orderId,
-      customerName: _name.text.trim(),
-      phone: _phone.text.trim(),
-      location: loc,
-      items: List.of(cart.lines), // copy: the cart is cleared after placement
-      subtotal: cart.subtotal,
-      deliveryFee: cart.deliveryFee,
-      total: cart.total,
-      email: clean(_email.text),
-      building: clean(_building.text),
-      apartment: clean(_apartment.text),
-      landmark: clean(_landmark.text),
-      instructions: clean(_instructions.text),
+      customerName: run.draft.customerName,
+      phone: run.draft.phone,
+      location: DeliveryLocation(
+        latitude: run.draft.latitude,
+        longitude: run.draft.longitude,
+        mapsUrl: run.draft.mapsUrl,
+        confirmed: true,
+      ),
+      items: List.of(run.items), // copy: the cart is cleared after placement
+      subtotal: run.subtotal,
+      deliveryFee: run.deliveryFee,
+      total: run.total,
+      email: run.draft.email,
+      building: run.draft.building,
+      apartment: run.draft.apartment,
+      landmark: run.draft.landmark,
+      instructions: run.draft.instructions,
       createdAt: DateTime.now(),
     );
   }
@@ -418,6 +567,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
     final config = context.watch<SiteConfigController>();
     final paused = !config.deliveryEnabled;
 
+    // The verification panel target number: only while the field still holds
+    // that exact number (edits close the panel via _fieldsChanged).
+    final otpCanonical =
+        (_otpPhone != null && _otpPhone == canonicalWhatsAppPhone(_phone.text))
+            ? _otpPhone
+            : null;
+
     // A short line under the CTA explaining why it is disabled.
     final String? ctaHint;
     if (paused) {
@@ -430,6 +586,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
       ctaHint = 'Set and confirm your delivery location on the map';
     } else if (!locationReady) {
       ctaHint = 'Confirm the delivery location pin on the map';
+    } else if (otpCanonical != null) {
+      ctaHint =
+          'Complete the WhatsApp verification above to place your order.';
     } else {
       ctaHint = null;
     }
@@ -488,13 +647,30 @@ class _CheckoutPageState extends State<CheckoutPage> {
                         landmark: _landmark,
                         instructions: _instructions,
                       );
+                      final auth = _auth;
                       final aside = Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           _SummaryCard(),
+                          if (otpCanonical != null) ...[
+                            const SizedBox(height: 20),
+                            WhatsAppVerifyPanel(
+                              key: ValueKey<String>('verify-$otpCanonical'),
+                              service: context.read<WhatsAppOtpService>(),
+                              canonicalPhone: otpCanonical,
+                              sessionPhone: auth?.phoneNumber,
+                              sessionEmail: auth?.email,
+                              onVerified: ({required bool freshSession}) =>
+                                  _onNumberVerified(otpCanonical,
+                                      fresh: freshSession),
+                              onCancel: () {
+                                if (mounted) setState(() => _otpPhone = null);
+                              },
+                            ),
+                          ],
                           const SizedBox(height: 20),
                           _PlaceOrderCard(
-                            enabled: canSend && !paused,
+                            enabled: canSend && !paused && otpCanonical == null,
                             placing: _placing,
                             hint: ctaHint,
                             onPlace: _placeOrder,
@@ -673,11 +849,19 @@ class _CheckoutForm extends StatelessWidget {
             controller: phone,
             textInputAction: TextInputAction.next,
             keyboardType: TextInputType.phone,
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9+() -]')),
+            ],
             autovalidateMode: AutovalidateMode.onUserInteraction,
             decoration: const InputDecoration(
-              labelText: 'Phone / WhatsApp *',
+              labelText: 'WhatsApp Number *',
               hintText: '10-digit mobile number',
               prefixIcon: Icon(Icons.phone_outlined, size: 20),
+              suffixIcon: _PhoneInfoButton(),
+              helperText:
+                  'Please enter a working WhatsApp number. We will use this '
+                  'number for important delivery updates and to contact you '
+                  'regarding your order.',
             ),
             validator: _validatePhone,
           ),
@@ -1102,6 +1286,187 @@ class _SuccessPanelState extends State<_SuccessPanel> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Everything a checkout run agreed to, frozen the moment the CTA passed
+/// validation: the draft (canonical '+91' phone, no prices - the backend and
+/// rules never trust browser amounts) plus the exact cart lines and summary
+/// amounts. Placing later - after the verification panel, possibly across a
+/// guest sign-in/out - always uses this snapshot, so the recorded order can
+/// never disagree with what the customer saw and agreed at checkout.
+class _FrozenOrder {
+  const _FrozenOrder({
+    required this.draft,
+    required this.items,
+    required this.subtotal,
+    required this.deliveryFee,
+    required this.total,
+  });
+
+  final OrderDraft draft;
+
+  /// Copy of the cart lines (the cart itself is cleared after placement).
+  final List<CartItem> items;
+
+  final double subtotal;
+  final double deliveryFee;
+  final double total;
+}
+
+/// The small red "why do we need this?" control beside the WhatsApp field. It
+/// opens a tiny popover anchored at the field (never a page navigation, never
+/// a modal) explaining why the number is asked for. It closes on tap anywhere
+/// else, or with the close button; it is positioned inside the page overlay so
+/// it is never clipped by the form.
+class _PhoneInfoButton extends StatefulWidget {
+  const _PhoneInfoButton();
+
+  @override
+  State<_PhoneInfoButton> createState() => _PhoneInfoButtonState();
+}
+
+class _PhoneInfoButtonState extends State<_PhoneInfoButton> {
+  final _anchor = GlobalKey();
+  OverlayEntry? _entry;
+
+  bool get _open => _entry != null;
+
+  @override
+  void dispose() {
+    _entry?.remove();
+    super.dispose();
+  }
+
+  void _toggle() {
+    if (_open) {
+      _close();
+    } else {
+      _openPopup();
+    }
+  }
+
+  void _close() {
+    _entry?.remove();
+    _entry = null;
+    if (mounted) setState(() {});
+  }
+
+  void _openPopup() {
+    final box = _anchor.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached) return;
+    final overlay = Overlay.of(context);
+    final origin = box.localToGlobal(Offset.zero);
+    final screen = MediaQuery.sizeOf(context);
+    const side = 12.0;
+    const width = 320.0;
+    final w = math.min(width, screen.width - side * 2);
+    final left = (origin.dx + 8 - w)
+        .clamp(side, screen.width - w - side)
+        .toDouble();
+    const estCardHeight = 180.0;
+    final below = origin.dy + box.size.height + 8;
+    final top = below + estCardHeight < screen.height - side
+        ? below
+        : origin.dy - 8 - estCardHeight;
+
+    _entry = OverlayEntry(
+      builder: (context) => Stack(
+        children: [
+          // Full-screen transparent barrier: tapping anywhere dismisses the
+          // popover (and never leaks into the page underneath).
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _close,
+            ),
+          ),
+          Positioned(
+            key: const Key('phone-why-popover'),
+            left: left,
+            top: top.clamp(side, screen.height - estCardHeight - side),
+            width: w,
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: MxColors.creamSoft,
+                borderRadius: BorderRadius.circular(MxRadius.md),
+                border: Border.all(color: MxColors.line),
+                boxShadow: [
+                  BoxShadow(
+                    color: MxColors.forest.withValues(alpha: 0.10),
+                    blurRadius: 22,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.info_outline_rounded,
+                        size: 16,
+                        color: MxColors.danger,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Why do we need this?',
+                          style: MxType.bodySm(
+                            color: MxColors.charcoal,
+                            weight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      InkWell(
+                        onTap: _close,
+                        borderRadius: BorderRadius.circular(999),
+                        child: const Padding(
+                          padding: EdgeInsets.all(4),
+                          child: Icon(
+                            Icons.close_rounded,
+                            size: 15,
+                            color: MxColors.stone,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'We confirm your order and send delivery updates over '
+                    'WhatsApp, so a quick message to this number is the '
+                    'fastest, safest way to reach you. We never share your '
+                    'number with anyone else.',
+                    style: MxType.bodyXs(color: MxColors.charcoalSoft),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    overlay.insert(_entry!);
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      key: _anchor,
+      onPressed: _toggle,
+      tooltip: 'Why do we need this?',
+      visualDensity: VisualDensity.compact,
+      icon: const Icon(
+        Icons.info_outline_rounded,
+        size: 19,
+        color: MxColors.danger,
       ),
     );
   }

@@ -1,58 +1,72 @@
 import 'dart:math' as math;
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 
 import '../../config/mx_colors.dart';
 import '../../config/mx_type.dart';
 
-/// Focus of an item at distance [d] slots from the strip's center: 1 at the
-/// center, falling to 0 once it is about two slots away. Linear, so the
+/// Share of the horizontal geometry (slot pitch and strip width) that is
+/// removed as the dock compresses from its expanded state to its compact one.
+const double _kCompress = 0.34;
+
+/// Focus of an item at distance [d] slots from the strip's centre: 1 at the
+/// centre, falling to 0 once it is about two slots away. Linear, so the
 /// strip's motion stays even while dragged.
 double _focusFor(double d) => math.max(0.0, 1.0 - d.abs() * 0.45);
 
-/// Carousel emphasis: the center item reads 1.18x, far items shrink toward
-/// 0.86x — progressive, never a dramatic zoom.
+/// Carousel emphasis: the centred item reads about 1.16x, far items settle
+/// toward 0.9x — progressive, never a dramatic zoom.
 double _itemScale(double frac, int i) {
-  return 0.86 + 0.32 * _focusFor(i - frac);
+  return 0.9 + 0.26 * _focusFor(i - frac);
 }
 
-/// Prominence: the center item is fully opaque, far items dim toward 0.55,
-/// and an item sliding past the capsule's own edge melts away instead of
-/// hitting a hard clip boundary.
+/// Prominence: the centred item is fully opaque, far items dim slightly, and
+/// an item sliding past the strip's own edge melts away instead of hitting a
+/// hard clip boundary.
 double _itemOpacity(double frac, int i, double capsuleWidth, double slot) {
   final f = _focusFor(i - frac);
   final screenX = (i - frac) * slot;
   final edge = (capsuleWidth / 2 - screenX.abs() + 24) / 24;
   final edgeFade = math.min(1.0, math.max(0.0, edge));
-  return (0.55 + 0.45 * f) * edgeFade;
+  return (0.78 + 0.22 * f) * edgeFade;
 }
 
-/// Labels fade out as the dock compresses, over the upper stretch of the
-/// scroll range so the icon-only state is reached smoothly.
+/// The caption under the active item fades out as the dock compresses, over
+/// the upper stretch of the scroll range, so the icon-only compact state is
+/// reached smoothly.
 double _labelOpacity(double t) {
   if (t <= 0.55) return 1.0;
   if (t >= 0.9) return 0.0;
   return (0.9 - t) / 0.35;
 }
 
-/// The installed phone app's primary navigation: a floating frosted-glass
-/// dock that behaves like a carousel, not a static bar.
+/// The installed phone app's primary navigation: a containerless floating
+/// icon row that behaves like a carousel, not a static bar.
+///
+/// There is no pill, no glass card, no icon box and no background panel: the
+/// five destinations float directly over the page as bare glyphs. Only the
+/// active destination is enlarged and tinted deep forest with a small brand
+/// underline and its caption; inactive destinations sit smaller, muted and
+/// plain, and the strip slides so the selected glyph is always the largest,
+/// centred one. Emphasis comes from spacing, scale and restraint — not from
+/// effects.
 ///
 /// Five destinations ride a strip that tracks the finger 1:1 while dragged
-/// horizontally. The item nearest the strip's center is the live selection;
-/// releasing springs that item into the center and opens its section. A
-/// quick tap on any destination (or on the empty glass around it, which
-/// maps to the nearest item) works exactly like the old bottom bar.
+/// horizontally. The item nearest the strip's centre is the live selection;
+/// releasing springs that item into the centre and opens its section. A
+/// quick tap on any destination (or on the empty space around it, which maps
+/// to the nearest item) works exactly like the old bottom bar.
 ///
-/// The strip owns *only* horizontal drags. Its hit-testing is translucent,
-/// so a vertical gesture over the dock falls straight through to the page's
-/// own scroll — the dock can never swallow a vertical scroll. In-page
-/// horizontal carousels, maps, forms and text selection are untouched.
+/// The strip owns *only* horizontal drags. Its hit-testing is translucent, so
+/// a vertical gesture over the dock falls straight through to the page's own
+/// scroll — the dock can never swallow a vertical scroll. In-page horizontal
+/// carousels, maps, forms and text selection are untouched.
 ///
 /// The dock is sized along a 0..1 [compression] animation driven by the
-/// page's scroll position: taller and airier at the top of the page,
-/// shorter and tighter once the user scrolls down, always smoothly.
+/// page's scroll position. It compresses in BOTH directions: taller, airier
+/// and wider at the top of the page, shorter and tighter once the user
+/// scrolls down — the band shrinks, the slots pull the destinations closer
+/// and the icons shrink — always smoothly, never a crude scale transform.
 ///
 /// This widget is built only for the installed phone-size PWA
 /// ([isStandaloneMobile]). Browser tabs and desktop keep the ordinary
@@ -67,7 +81,7 @@ class PwaDock extends StatefulWidget {
     required this.compression,
   });
 
-  /// The section to center. May change from outside the dock (back gliding
+  /// The section to centre. May change from outside the dock (back gliding
   /// Home, a deep link, a More link) — the strip glides to match.
   final int index;
 
@@ -87,8 +101,8 @@ class PwaDock extends StatefulWidget {
 
 class _PwaDockState extends State<PwaDock>
     with SingleTickerProviderStateMixin {
-  /// Continuous carousel position: 0 = first label centered, n-1 = last
-  /// centered. Fractions are the strip mid-slide between two sections.
+  /// Continuous carousel position: 0 = first label centred, n-1 = last
+  /// centred. Fractions are the strip mid-slide between two sections.
   double _frac = 0;
 
   bool _dragging = false;
@@ -103,9 +117,10 @@ class _PwaDockState extends State<PwaDock>
   double _snapStart = 0;
   double _snapEnd = 0;
 
-  /// Last laid-out capsule width; the drag math reads it so a gesture that
-  /// starts mid-frame still uses the current geometry.
+  /// Last laid-out strip width and pixel-per-slot pitch; the gesture math
+  /// reads them so a gesture that starts mid-frame uses the current geometry.
   double _capsuleWidth = 456;
+  double _slotPx = 66;
 
   int get _last => widget.labels.length - 1;
 
@@ -136,17 +151,6 @@ class _PwaDockState extends State<PwaDock>
     super.dispose();
   }
 
-  /// Mirrors the dock's placement: SafeArea minimum 12 left/right, capped
-  /// at the desktop pill width.
-  double _computeCapsuleWidth(BuildContext context) {
-    final w = MediaQuery.sizeOf(context).width - 24.0;
-    return math.min(w, 620.0).clamp(240.0, 620.0).toDouble();
-  }
-
-  double _slot(double capsuleWidth) {
-    return math.min(70.0, (capsuleWidth - 24.0) / widget.labels.length);
-  }
-
   void _onSnapTick() {
     final t = Curves.easeOutBack.transform(_snap.value);
     setState(() => _frac = _snapStart + (_snapEnd - _snapStart) * t);
@@ -164,9 +168,8 @@ class _PwaDockState extends State<PwaDock>
   }
 
   void _updateDrag(DragUpdateDetails d) {
-    final slot = _slot(_capsuleWidth);
     setState(() {
-      _frac = (_frac - d.delta.dx / slot).clamp(0.0, _last.toDouble());
+      _frac = (_frac - d.delta.dx / _slotPx).clamp(0.0, _last.toDouble());
     });
   }
 
@@ -174,11 +177,11 @@ class _PwaDockState extends State<PwaDock>
     _dragging = false;
     final v = d.velocity.pixelsPerSecond.dx;
     // A deliberate fling carries momentum across the next slot; a slow drag
-    // simply snaps to whichever item is nearest the center.
+    // simply snaps to whichever item is nearest the centre.
     final nudge = v.abs() > 800 ? -v.sign * 0.3 : 0.0;
     final target = (_frac + nudge).round().clamp(0, _last);
     if (target == widget.index) {
-      // Released back where we started: spring the strip to the center but
+      // Released back where we started: spring the strip to the centre but
       // leave the page alone — no surprise scroll-to-top from a nudge.
       _animateTo(target.toDouble());
     } else {
@@ -197,38 +200,47 @@ class _PwaDockState extends State<PwaDock>
     widget.onSelect(index);
   }
 
-  /// A tap anywhere on the dock (item or the glass around it) picks the
-  /// nearest item — the strip position tells us which.
+  /// A tap anywhere on the dock (glyph or the empty space around it) picks
+  /// the nearest item — the strip position tells us which.
   void _tapAt(double localDx) {
-    final slot = _slot(_capsuleWidth);
     final index =
-        (_frac + (localDx - _capsuleWidth / 2) / slot).round().clamp(0, _last);
+        (_frac + (localDx - _capsuleWidth / 2) / _slotPx)
+            .round()
+            .clamp(0, _last);
     _select(index);
   }
 
   @override
   Widget build(BuildContext context) {
-    _capsuleWidth = _computeCapsuleWidth(context);
-    // The compression animation drives the whole capsule's metrics, so the
-    // strip rebuilds only when it ticks (never on every page-scroll frame).
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    // The compression animation drives the whole strip's metrics, so the
+    // dock rebuilds only when it ticks (never on every page-scroll frame).
     return ListenableBuilder(
       listenable: widget.compression,
       builder: (context, _) {
         final t = widget.compression.value.clamp(0.0, 1.0);
-        final slot = _slot(_capsuleWidth);
-        final gap = 6.0 + (4.0 - 6.0) * t;
-        final itemWidth = slot - gap;
-        final height = 78.0 + (58.0 - 78.0) * t;
-    final active = _frac.round().clamp(0, _last);
 
-        // Paint order: farthest from the center first, so the scaled-up
-        // center item sits on top where it overlaps its neighbours.
+        // Geometry compresses on BOTH axes as the page scrolls down: the
+        // strip shortens and narrows, the slots pull the destinations closer,
+        // and the band tightens toward a compact floating cluster. Neither
+        // axis is a scale transform — real spacing and sizes change, so touch
+        // targets and rendering stay crisp at every compression.
+        final slotE = math.min(66.0, (screenWidth - 24.0) / 5);
+        final slot = slotE * (1.0 - _kCompress * t);
+        final wideWidth = (screenWidth - 24.0).clamp(240.0, 620.0);
+        _capsuleWidth = wideWidth * (1.0 - _kCompress * t);
+        _slotPx = slot;
+        final height = 78.0 + (58.0 - 78.0) * t;
+        final active = _frac.round().clamp(0, _last);
+
+        // Paint order: farthest from the centre first, so the scaled-up
+        // centred item sits on top where it overlaps its neighbours.
         final order = List<int>.generate(widget.labels.length, (i) => i)
           ..sort((a, b) => (a - _frac).abs().compareTo((b - _frac).abs()));
 
         // The strip is the ONLY hit-testable surface: it joins the hit path
         // as translucent (added to the result but reporting no hit), and the
-        // entire visual capsule is wrapped in IgnorePointer, so a touch over
+        // purely visual glyphs are wrapped in IgnorePointer, so a touch over
         // the dock also reaches the page beneath. Vertical drags scroll the
         // page, horizontal drags navigate, and taps map to the nearest item;
         // the dock never swallows a page gesture.
@@ -240,78 +252,41 @@ class _PwaDockState extends State<PwaDock>
           onHorizontalDragEnd: _endDrag,
           onHorizontalDragCancel: _cancelDrag,
           child: IgnorePointer(
-            child: Container(
+            child: SizedBox(
               width: _capsuleWidth,
               height: height,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(26),
-                boxShadow: [
-                  BoxShadow(
-                    color: MxColors.charcoal.withValues(alpha: 0.14),
-                    blurRadius: 26,
-                    offset: const Offset(0, 10),
-                  ),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  for (final i in order)
+                    Positioned.fill(
+                      child: Align(
+                        alignment: Alignment(
+                          ((i - _frac) * slot) / (_capsuleWidth / 2),
+                          0,
+                        ),
+                        child: _DockItem(
+                          key: Key(
+                            'pwa-nav-${widget.labels[i].toLowerCase()}',
+                          ),
+                          label: widget.labels[i],
+                          icon: widget.icons[i],
+                          selected: i == active,
+                          iconSize: 24.0 + (19.0 - 24.0) * t,
+                          labelOpacity: _labelOpacity(t),
+                          slot: slot,
+                          stripHeight: height,
+                          opacity: _itemOpacity(
+                            _frac,
+                            i,
+                            _capsuleWidth,
+                            slot,
+                          ),
+                          scale: _itemScale(_frac, i),
+                        ),
+                      ),
+                    ),
                 ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(26),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    // Frosted backing: soft blur of whatever scrolls beneath,
-                    // under a translucent cream surface with a hairline border.
-                    // The glass is decorative and pointer-invisible.
-                    Positioned.fill(
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                        child: const ColoredBox(color: Colors.transparent),
-                      ),
-                    ),
-                    Positioned.fill(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: MxColors.cream.withValues(alpha: 0.88),
-                          borderRadius: BorderRadius.circular(26),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.6),
-                            width: 1,
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Destinations, painted farthest from the center first so
-                    // the scaled-up center item sits on top of its neighbours.
-                    // Purely visual: pointer input lives on the strip.
-                    for (final i in order)
-                      Positioned.fill(
-                        child: Align(
-                          alignment: Alignment(
-                            ((i - _frac) * slot) / (_capsuleWidth / 2),
-                            0,
-                          ),
-                          child: _DockItem(
-                            key: Key(
-                              'pwa-nav-${widget.labels[i].toLowerCase()}',
-                            ),
-                            label: widget.labels[i],
-                            icon: widget.icons[i],
-                            selected: i == active,
-                            iconSize: 20.0 + (17.0 - 20.0) * t,
-                            labelOpacity: _labelOpacity(t),
-                            width: itemWidth,
-                            height: height - 12,
-                            opacity: _itemOpacity(
-                              _frac,
-                              i,
-                              _capsuleWidth,
-                              slot,
-                            ),
-                            scale: _itemScale(_frac, i),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
               ),
             ),
           ),
@@ -321,9 +296,11 @@ class _PwaDockState extends State<PwaDock>
   }
 }
 
-/// One destination inside the dock: a forest-filled glass cell that lights
-/// up when it is the live selection. Purely visual — pointer input lives on
-/// the strip so the dock never swallows a page gesture.
+/// One destination: a bare glyph that floats over the page. The active item
+/// is tinted deep forest and carries a small brand underline and caption;
+/// every other item is a plain muted glyph. There is no cell, no pill and no
+/// background panel around any of them. Purely visual — pointer input lives
+/// on the strip so the dock never swallows a page gesture.
 class _DockItem extends StatelessWidget {
   const _DockItem({
     super.key,
@@ -332,8 +309,8 @@ class _DockItem extends StatelessWidget {
     required this.selected,
     required this.iconSize,
     required this.labelOpacity,
-    required this.width,
-    required this.height,
+    required this.slot,
+    required this.stripHeight,
     required this.opacity,
     required this.scale,
   });
@@ -343,12 +320,10 @@ class _DockItem extends StatelessWidget {
   final bool selected;
   final double iconSize;
   final double labelOpacity;
-  final double width;
-  final double height;
+  final double slot;
+  final double stripHeight;
   final double opacity;
   final double scale;
-
-  static const _radius = 16.0;
 
   @override
   Widget build(BuildContext context) {
@@ -360,57 +335,64 @@ class _DockItem extends StatelessWidget {
         opacity: opacity,
         child: Transform.scale(
           scale: scale,
-          child: TweenAnimationBuilder<double>(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOut,
-            tween: Tween<double>(end: selected ? 1 : 0),
-            builder: (context, s, _) {
-              // The chosen section fills its cell with deep forest and lifts
-              // it with a soft glow; the fill retargets smoothly as the
-              // selection moves between items while dragging.
-              final fill =
-                  Color.lerp(Colors.transparent, MxColors.forest, s) ??
-                  Colors.transparent;
-              final content =
-                  Color.lerp(
-                    selected ? MxColors.charcoalSoft : MxColors.stone,
-                    Colors.white,
-                    s,
-                  ) ??
-                  Colors.white;
-              return Material(
-                color: fill,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(_radius),
-                ),
-                elevation: 4 * s,
-                shadowColor: MxColors.forest.withValues(alpha: 0.45),
-                clipBehavior: Clip.antiAlias,
-                child: SizedBox(
-                  width: width,
-                  height: height,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(icon, size: iconSize, color: content),
-                      const SizedBox(height: 3),
-                      Opacity(
-                        opacity: labelOpacity,
+          child: SizedBox(
+            width: slot,
+            height: stripHeight,
+            child: TweenAnimationBuilder<double>(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+              tween: Tween<double>(end: selected ? 1 : 0),
+              builder: (context, s, _) {
+                // The active glyph warms from muted stone to deep forest; the
+                // retarget eases as the selection moves between items while
+                // dragging.
+                final iconColor =
+                    Color.lerp(MxColors.stone, MxColors.forest, s) ??
+                    MxColors.stone;
+                // The caption band is reserved on every item so glyphs sit on
+                // one line; the caption itself appears only under the active
+                // one, fading with the strip's compression.
+                final captionOn = labelOpacity > 0.02;
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, size: iconSize, color: iconColor),
+                    const SizedBox(height: 6),
+                    // A short brand underline grows beneath the active glyph.
+                    SizedBox(
+                      height: 3,
+                      child: Opacity(
+                        opacity: s,
+                        child: Container(
+                          width: 22,
+                          height: 3,
+                          decoration: BoxDecoration(
+                            color: MxColors.forest,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    SizedBox(
+                      height: captionOn ? 16.0 : 0.0,
+                      child: Opacity(
+                        opacity: s * labelOpacity,
                         child: Text(
                           label,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: MxType.label(
-                            color: content,
-                            weight: FontWeight.w700,
+                            color: MxColors.forest,
+                            weight: FontWeight.w800,
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                ),
-              );
-            },
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),

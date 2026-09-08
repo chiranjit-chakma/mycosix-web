@@ -62,6 +62,9 @@ class FirestoreOrderRepository implements OrderRepository {
         'orderId': data.orderId,
         'customerName': data.customerName,
         'phone': data.phone,
+        // Number proven on the caller's own auth session? The rules pin this
+        // marker to the token's phone_number claim; a forged flag is rejected.
+        'phoneVerified': data.phoneVerified,
         if (data.email != null && data.email!.trim().isNotEmpty)
           'email': data.email!.trim(),
         if (data.customerId != null && data.customerId!.isNotEmpty)

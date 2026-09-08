@@ -147,6 +147,19 @@ function toIso(v) {
 /* ------------------------------------------------------------------ *
  * Input cleansing + validation. Throws DomainError on any problem.
  * ------------------------------------------------------------------ */
+
+// Normalise a contact phone to canonical '+91XXXXXXXXXX' - the same rule the
+// checkout and the Firestore rules use. Returns null when the input is not an
+// Indian 10-digit mobile (with optional leading 0 or 91).
+function canonicalIndianWhatsApp(raw) {
+  if (typeof raw !== 'string') return null;
+  let digits = raw.replace(/[^0-9]/g, '');
+  if (digits.length === 11 && digits[0] === '0') digits = digits.slice(1);
+  if (digits.length === 12 && digits.startsWith('91')) digits = digits.slice(2);
+  if (!/^[6-9][0-9]{9}$/.test(digits)) return null;
+  return '+91' + digits;
+}
+
 function cleanse(data) {
   if (data === null || typeof data !== 'object' || Array.isArray(data)) {
     throw fail('invalid-argument', 'The order data was not understood. Please try again.');
@@ -159,11 +172,17 @@ function cleanse(data) {
     throw fail('invalid-argument', 'Please enter your name.');
   }
 
-  const phone = typeof data.phone === 'string'
-    ? data.phone.replace(/[^0-9]/g, '')
-    : '';
-  if (phone.length < 10 || phone.length > 13) {
-    throw fail('invalid-argument', 'Please enter a valid phone number.');
+  // Canonical '+91XXXXXXXXXX'; the checkout only ever sends numbers its own
+  // session already verified. cleanse alone is not the security boundary -
+  // placeOrder also pins the phone to the caller's token claim below.
+  const phone = canonicalIndianWhatsApp(
+    typeof data.phone === 'string' ? data.phone : '',
+  );
+  if (phone === null) {
+    throw fail(
+      'invalid-argument',
+      'Please enter a valid 10-digit WhatsApp number.',
+    );
   }
 
   let email;
@@ -256,8 +275,23 @@ function cleanse(data) {
 /* ------------------------------------------------------------------ *
  * Core order placement (pure of Functions wiring; transaction over a db).
  * ------------------------------------------------------------------ */
-async function placeOrder(db, data, { now = () => new Date(), authUid = null } = {}) {
+async function placeOrder(
+  db,
+  data,
+  { now = () => new Date(), authUid = null, authPhone = null } = {},
+) {
   const c = cleanse(data);
+
+  // The order's phone must be the one Firebase verified on the caller's own
+  // auth session (the token's phone_number claim - Firebase only adds that
+  // claim after it verified the one-time code itself). A browser flag is
+  // never trusted here.
+  if (authPhone !== c.phone) {
+    throw fail(
+      'permission-denied',
+      'Please verify your WhatsApp number before placing the order.',
+    );
+  }
 
   const ordersCol = db.collection('orders');
   const productsCol = db.collection('products');
@@ -336,6 +370,7 @@ async function placeOrder(db, data, { now = () => new Date(), authUid = null } =
       orderId: makeOrderId(),
       customerName: c.customerName,
       phone: c.phone,
+      phoneVerified: true,
       items: lines,
       subtotal,
       deliveryFee,
@@ -397,6 +432,9 @@ exports.createOrder = functions.https.onCall(async (data) => {
   try {
     return await placeOrder(getDb(), data, {
       authUid: context.auth ? context.auth.uid : null,
+      authPhone: context.auth && context.auth.token
+        ? context.auth.token.phone_number
+        : null,
     });
   } catch (err) {
     if (err instanceof DomainError) {
@@ -410,4 +448,4 @@ exports.createOrder = functions.https.onCall(async (data) => {
   }
 });
 
-exports._test = { placeOrder, cleanse, DEFAULTS, toIso, makeOrderId };
+exports._test = { placeOrder, cleanse, canonicalIndianWhatsApp, DEFAULTS, toIso, makeOrderId };
