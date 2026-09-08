@@ -7,6 +7,7 @@ import '../../models/cart_item.dart';
 import '../../router/app_nav.dart';
 import '../../router/routes.dart';
 import '../../state/cart_controller.dart';
+import '../../state/cart_sync_controller.dart';
 import '../../state/site_config_controller.dart';
 import '../../utils/money.dart';
 import '../../widgets/delivery_paused_notice.dart';
@@ -44,6 +45,10 @@ class CartPage extends StatelessWidget {
                 const SizedBox(height: 18),
                 // The banner appears only when an admin has paused delivery.
                 const DeliveryPausedNotice(),
+                // The saved-items offer: visible only while the signed-in
+                // account holds items different from this cart, and it never
+                // adds or removes anything by itself (see the banner class).
+                const _SavedCartBanner(),
               ],
             ),
           ),
@@ -426,6 +431,141 @@ class _SummaryRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The account-cart offer: appears only while the signed-in account holds
+/// saved items that differ from the cart on this device, and only ever loads
+/// them when the customer taps the button — a login, logout or background
+/// sync never adds or removes anything by itself. Dismissing the offer hides
+/// it until the cart or the account knowledge changes again.
+class _SavedCartBanner extends StatefulWidget {
+  const _SavedCartBanner();
+
+  @override
+  State<_SavedCartBanner> createState() => _SavedCartBannerState();
+}
+
+class _SavedCartBannerState extends State<_SavedCartBanner> {
+  bool _dismissed = false;
+  bool? _lastHas;
+  bool _loading = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final sync = context.watch<CartSyncController>();
+    final has = sync.hasSavedCart;
+    if (has != _lastHas) {
+      _lastHas = has;
+      if (!has) _dismissed = false;
+    }
+    if (!has || _dismissed) return const SizedBox.shrink();
+    final count = sync.accountCart!.values.fold<int>(0, (sum, q) => sum + q);
+
+    Future<void> load() async {
+      setState(() => _loading = true);
+      await sync.loadAccountCart();
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+
+    return Container(
+      key: const Key('saved-cart-banner'),
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: MxColors.creamSoft,
+        borderRadius: BorderRadius.circular(MxRadius.lg),
+        border: Border.all(color: MxColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: const BoxDecoration(
+                  color: MxColors.moss,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.shopping_bag_outlined,
+                  size: 18,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Saved items on this account',
+                      style: MxType.bodySm(
+                        color: MxColors.charcoal,
+                        weight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Your account has $count item'
+                      '${count == 1 ? '' : 's'} saved from another device or '
+                      'an earlier visit. They are not in this cart and '
+                      'nothing is added or removed by itself - tap Load to '
+                      'combine them with this cart.',
+                      style: MxType.bodyXs(color: MxColors.stone),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // Wrap, not Row: on a narrow phone the two actions flow onto a
+          // second line instead of overflowing.
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                height: 38,
+                child: FilledButton.icon(
+                  key: const Key('saved-cart-load'),
+                  onPressed: _loading ? null : load,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: MxColors.forest,
+                    foregroundColor: Colors.white,
+                  ),
+                  icon: _loading
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.add_shopping_cart_rounded, size: 16),
+                  label: const Text('Load saved items'),
+                ),
+              ),
+              TextButton(
+                key: const Key('saved-cart-dismiss'),
+                onPressed: _loading
+                    ? null
+                    : () => setState(() => _dismissed = true),
+                child: const Text('Not now'),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

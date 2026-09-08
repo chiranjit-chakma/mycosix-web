@@ -8,6 +8,8 @@ import '../../services/display_mode.dart';
 import '../../state/customer_auth_controller.dart';
 import '../../utils/validators.dart';
 import '../../widgets/google_sign_in_button.dart';
+import '../../widgets/twitter_sign_in_button.dart';
+import '../../widgets/yahoo_sign_in_button.dart';
 import '../../widgets/page.dart';
 import '../../widgets/shell.dart';
 import '../../widgets/sign_out_confirm.dart';
@@ -80,10 +82,20 @@ class _ProfilePageState extends State<ProfilePage> {
 
   CustomerAuthController get _auth => context.read<CustomerAuthController>();
 
-  Future<void> _googleSignIn() async {
+  Future<void> _googleSignIn() => _providerSignIn(_auth.signInWithGoogle);
+
+  Future<void> _twitterSignIn() => _providerSignIn(_auth.signInWithTwitter);
+
+  Future<void> _yahooSignIn() => _providerSignIn(_auth.signInWithYahoo);
+
+  /// Runs one social popup sign-in (Google / Twitter / Yahoo) under the
+  /// shared busy state, then sends the customer back wherever they came from
+  /// on success (the account hub appears below when there is no return
+  /// route).
+  Future<void> _providerSignIn(Future<bool> Function() signIn) async {
     if (_busy) return;
     setState(() => _busy = true);
-    final ok = await _auth.signInWithGoogle();
+    final ok = await signIn();
     if (!mounted) return;
     setState(() => _busy = false);
     if (!ok) return;
@@ -192,6 +204,8 @@ class _ProfilePageState extends State<ProfilePage> {
                           setState(() => _obscure = !_obscure),
                       onSubmit: _submit,
                       onGoogleSignIn: _googleSignIn,
+                      onTwitterSignIn: _twitterSignIn,
+                      onYahooSignIn: _yahooSignIn,
                       onSwitchMode: _switchMode,
                     ),
                     // Installed phone-size app users always see where their
@@ -350,6 +364,8 @@ class _AuthPanel extends StatelessWidget {
     required this.onToggleObscure,
     required this.onSubmit,
     required this.onGoogleSignIn,
+    required this.onTwitterSignIn,
+    required this.onYahooSignIn,
     required this.onSwitchMode,
   });
 
@@ -364,6 +380,8 @@ class _AuthPanel extends StatelessWidget {
   final VoidCallback onToggleObscure;
   final Future<void> Function() onSubmit;
   final Future<void> Function() onGoogleSignIn;
+  final Future<void> Function() onTwitterSignIn;
+  final Future<void> Function() onYahooSignIn;
   final void Function(_AuthMode) onSwitchMode;
 
   @override
@@ -373,11 +391,21 @@ class _AuthPanel extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Continue with Google - shown for both sign-in and create-account;
-        // reset is reached from a link under the sign-in form.
+        // Continue with Google / Twitter / Yahoo - shown for both sign-in and
+        // create-account; reset is reached from a link under the sign-in form.
         if (mode != _AuthMode.reset) ...[
           GoogleSignInButton(
             onPressed: busy ? null : onGoogleSignIn,
+            busy: busy,
+          ),
+          const SizedBox(height: 10),
+          TwitterSignInButton(
+            onPressed: busy ? null : onTwitterSignIn,
+            busy: busy,
+          ),
+          const SizedBox(height: 10),
+          YahooSignInButton(
+            onPressed: busy ? null : onYahooSignIn,
             busy: busy,
           ),
           const SizedBox(height: 16),

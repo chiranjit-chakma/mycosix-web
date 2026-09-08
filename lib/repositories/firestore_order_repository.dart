@@ -62,8 +62,11 @@ class FirestoreOrderRepository implements OrderRepository {
         'orderId': data.orderId,
         'customerName': data.customerName,
         'phone': data.phone,
-        // Number proven on the caller's own auth session? The rules pin this
-        // marker to the token's phone_number claim; a forged flag is rejected.
+        // Marked proven by checkout only after the customer proved the number
+        // (a real SMS code on a Firebase session, an admin attestation on
+        // their own profile, or - while the owner's temporary-code flag is
+        // on - the published 123456 code). The write-side rules gate who may
+        // carry the marker; a forged flag never reaches Firestore.
         'phoneVerified': data.phoneVerified,
         if (data.email != null && data.email!.trim().isNotEmpty)
           'email': data.email!.trim(),

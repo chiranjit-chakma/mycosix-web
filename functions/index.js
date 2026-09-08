@@ -286,6 +286,9 @@ async function placeOrder(
   const configRef = db.collection('siteConfig').doc('public');
 
   const outcome = await db.runTransaction(async (tx) => {
+    const cfgSnap = await tx.get(configRef);
+    const cfg = cfgSnap.exists ? cfgSnap.data() || {} : {};
+
     // The order's phone must be proven server-side - a browser flag is never
     // trusted: either Firebase's own phone_number claim on the caller's auth
     // token (Firebase only adds that claim after IT verified the one-time
@@ -293,7 +296,12 @@ async function placeOrder(
     // (customers/{uid}: phone + phoneVerified - attestation fields only an
     // admin may write, mirrored by the Firestore rules). The check runs
     // inside the transaction, so an attestation cannot change between the
-    // check and the write.
+    // check and the write. While the owner's temporary-code fallback is
+    // switched on (siteConfig/public whatsappCodeFallback, same document
+    // read above), the checkout's phoneVerified marker - stamped only after
+    // the customer entered the published temporary code - is accepted
+    // instead, so guests can order too; flipping the flag back off restores
+    // the strict proof and every order must be proven as before.
     let phoneProven = authPhone === c.phone;
     if (!phoneProven && authUid) {
       const custRef = db.collection('customers').doc(authUid);
@@ -301,14 +309,15 @@ async function placeOrder(
       const cust = custSnap.exists ? custSnap.data() || {} : {};
       phoneProven = cust.phoneVerified === true && cust.phone === c.phone;
     }
+    if (!phoneProven && cfg.whatsappCodeFallback === true) {
+      phoneProven = true;
+    }
     if (!phoneProven) {
       throw fail(
         'permission-denied',
         'Please verify your WhatsApp number before placing the order.',
       );
     }
-    const cfgSnap = await tx.get(configRef);
-    const cfg = cfgSnap.exists ? cfgSnap.data() || {} : {};
 
     if (cfg.deliveryEnabled === false) {
       throw fail(

@@ -20,9 +20,15 @@ import 'package:mycosix/pages/team/team_page.dart';
 import 'package:mycosix/repositories/cart_repository.dart';
 import 'package:mycosix/repositories/product_repository.dart';
 import 'package:mycosix/state/cart_controller.dart';
+import 'package:mycosix/state/cart_sync_controller.dart';
 import 'package:mycosix/state/products_controller.dart';
 import 'package:mycosix/state/site_config_controller.dart';
 import 'package:mycosix/state/wishlist_controller.dart';
+
+class _NullAuth extends ChangeNotifier implements CartSyncAuth {
+  @override
+  String? get uid => null;
+}
 
 /// Responsive audit harness.
 ///
@@ -84,6 +90,13 @@ Future<void> _sweep(WidgetTester tester, double w, double h, PageBuilder build,
   final products = ProductsController(productsRepo);
   await products.fetchAll();
   final cart = CartController(cartRepo, siteDeliveryFee: MxConfig.deliveryFee);
+  // Dormant (no backend, no uid): CartPage hosts the saved-items banner which
+  // needs the controller present but idle for the sweep.
+  final sync = CartSyncController(
+    repository: cartRepo,
+    cart: cart,
+    auth: _NullAuth(),
+  );
 
   tester.view.physicalSize = Size(w, h);
   tester.view.devicePixelRatio = 1.0;
@@ -103,6 +116,7 @@ Future<void> _sweep(WidgetTester tester, double w, double h, PageBuilder build,
         ChangeNotifierProvider<SiteConfigController>(
           create: (_) => SiteConfigController(),
         ),
+        ChangeNotifierProvider<CartSyncController>.value(value: sync),
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,

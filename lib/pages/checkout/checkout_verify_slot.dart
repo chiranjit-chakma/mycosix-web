@@ -31,6 +31,7 @@ class CheckoutVerifySlot extends StatelessWidget {
     required this.service,
     this.sessionPhone,
     this.sessionEmail,
+    this.fallbackAvailable = false,
     required this.onVerified,
     required this.onOpenPanel,
     required this.onDismiss,
@@ -59,6 +60,11 @@ class CheckoutVerifySlot extends StatelessWidget {
   /// signed in under a DIFFERENT number (guest-handoff disclosure copy).
   final String? sessionPhone;
   final String? sessionEmail;
+
+  /// Passed to the panel: true while the owner's temporary-code fallback is
+  /// on, so the panel offers the published temporary code (123456) next to
+  /// the SMS path. The compact offer below also mentions it.
+  final bool fallbackAvailable;
 
   /// Called once Firebase verified the code ([freshSession] tells the page
   /// whether a throwaway session was created and must be signed out again).
@@ -112,6 +118,7 @@ class CheckoutVerifySlot extends StatelessWidget {
         sessionPhone: sessionPhone,
         sessionEmail: sessionEmail,
         autoRequestCode: autoRequestCode,
+        fallbackAvailable: fallbackAvailable,
         onVerified: onVerified,
         onCancel: onDismiss,
       );
@@ -159,9 +166,14 @@ class CheckoutVerifySlot extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'A 6-digit code is sent by SMS to '
-            '${humanizeWhatsAppPhone(c)} to confirm this number before your '
-            'order is placed.',
+            fallbackAvailable
+                ? 'A 6-digit code is sent by SMS to '
+                      '${humanizeWhatsAppPhone(c)} - or use the temporary code '
+                      '123456, switched on for now - to confirm this number '
+                      'before your order is placed.'
+                : 'A 6-digit code is sent by SMS to '
+                      '${humanizeWhatsAppPhone(c)} to confirm this number before your '
+                      'order is placed.',
             style: MxType.bodyXs(color: MxColors.stone),
           ),
           const SizedBox(height: 10),

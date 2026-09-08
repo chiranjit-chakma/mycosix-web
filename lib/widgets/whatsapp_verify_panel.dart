@@ -14,6 +14,11 @@ const _kResendCooldown = Duration(seconds: 30);
 /// Wrong-code attempts allowed before a new code is forced.
 const _kMaxAttempts = 5;
 
+/// The published temporary code while the owner's fallback is switched on
+/// (real SMS codes are not available yet). Accepted entirely client-side; the
+/// orders rules/functions accept the phoneVerified marker while the flag is on.
+const _kTempCode = '123456';
+
 /// Phases of the verification mini-flow inside the panel.
 enum _Phase { intro, sending, code, verifying }
 
@@ -36,6 +41,7 @@ class WhatsAppVerifyPanel extends StatefulWidget {
     this.sessionPhone,
     this.sessionEmail,
     this.autoRequestCode = false,
+    this.fallbackAvailable = false,
   });
 
   /// The gateway that talks to Firebase Phone Auth (injected so tests can
@@ -69,6 +75,13 @@ class WhatsAppVerifyPanel extends StatefulWidget {
   /// normal mount (default false) still waits for the customer to tap send.
   final bool autoRequestCode;
 
+  /// True while the owner's temporary-code fallback is switched on
+  /// (siteConfig/public whatsappCodeFallback). The intro then offers the
+  /// published temporary code (123456) next to the SMS button, and an
+  /// auto-requested open lands on the temp-code entry instead of firing a
+  /// doomed SMS request.
+  final bool fallbackAvailable;
+
   @override
   State<WhatsAppVerifyPanel> createState() => _WhatsAppVerifyPanelState();
 }
@@ -79,6 +92,7 @@ class _WhatsAppVerifyPanelState extends State<WhatsAppVerifyPanel> {
   String? _notice;
   String? _errorMessage;
   int _attemptsLeft = _kMaxAttempts;
+  bool _tempCodeMode = false;
   Timer? _ticker;
   int _secondsLeft = 0;
   final _code = TextEditingController();
@@ -90,14 +104,45 @@ class _WhatsAppVerifyPanelState extends State<WhatsAppVerifyPanel> {
 
   bool get _coolingDown => _secondsLeft > 0;
 
+  /// Switches the panel to the temporary-code path: no SMS is requested or
+  /// sent; the customer enters the published code and the panel reports
+  /// verified with freshSession false (no auth session is created, so a
+  /// guest placing an order this way stays a guest and a signed-in customer
+  /// keeps their session - the orders gate accepts the marker while the
+  /// owner's fallback flag is on).
+  void _enterTempCode() {
+    setState(() {
+      _tempCodeMode = true;
+      _phase = _Phase.code;
+      _notice =
+          'Temporary mode is on: enter the 6-digit code 123456 below. No '
+          'SMS will arrive - your order is placed as soon as the code '
+          'matches.';
+      _errorMessage = null;
+      _attemptsLeft = _kMaxAttempts;
+      _code.clear();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _codeFocus.requestFocus();
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     _code.addListener(_codeChanged);
-    if (widget.autoRequestCode) {
+    // While the owner's fallback is on, a freshly mounted panel goes straight
+    // to the temporary-code entry - the SMS path cannot work yet, so no
+    // dead 'Send verification code' button is ever shown. With the flag off
+    // this block is inert and behaviour is exactly as before.
+    if (widget.fallbackAvailable || widget.autoRequestCode) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _phase != _Phase.intro) return;
-        _sendCode();
+        if (widget.fallbackAvailable) {
+          _enterTempCode();
+        } else {
+          _sendCode();
+        }
       });
     }
   }
@@ -167,6 +212,26 @@ class _WhatsAppVerifyPanelState extends State<WhatsAppVerifyPanel> {
   Future<void> _verify() async {
     final code = _code.text.trim();
     if (code.length < 6 || _phase == _Phase.verifying) return;
+    // Temporary-code mode: never touches the service - the published code is
+    // accepted locally and the orders rules/functions accept the marker
+    // while the owner's fallback flag is on. No resend exists in this mode,
+    // so the attempt budget resets instead of locking a customer out.
+    if (_tempCodeMode) {
+      if (code == _kTempCode) {
+        widget.onVerified(freshSession: false);
+        return;
+      }
+      setState(() {
+        _attemptsLeft -= 1;
+        if (_attemptsLeft <= 0) _attemptsLeft = _kMaxAttempts;
+        _errorMessage =
+            'That code is not right. The temporary code is 123456 - '
+            '$_attemptsLeft attempt${_attemptsLeft == 1 ? '' : 's'} left.';
+        _code.clear();
+      });
+      _codeFocus.requestFocus();
+      return;
+    }
     final id = _verificationId;
     if (id == null) return;
     setState(() {
@@ -276,13 +341,17 @@ class _WhatsAppVerifyPanelState extends State<WhatsAppVerifyPanel> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Before we take your order we need to confirm this number is '
-            'reachable. A 6-digit code is sent by SMS to '
-            '${humanizeWhatsAppPhone(widget.canonicalPhone)} - your order is '
-            'placed only after the code is verified. Nothing is charged.',
+            _tempCodeMode
+                ? 'Temporary mode is on for now: enter the 6-digit code '
+                      '123456 below to place your order - no SMS is needed and '
+                      'nothing is charged.'
+                : 'Before we take your order we need to confirm this number is '
+                      'reachable. A 6-digit code is sent by SMS to '
+                      '${humanizeWhatsAppPhone(widget.canonicalPhone)} - your order is '
+                      'placed only after the code is verified. Nothing is charged.',
             style: MxType.bodySm(color: MxColors.stone),
           ),
-          if (_guestHandoff) ...[
+          if (_guestHandoff && !_tempCodeMode) ...[
             const SizedBox(height: 10),
             Container(
               width: double.infinity,
@@ -321,7 +390,11 @@ class _WhatsAppVerifyPanelState extends State<WhatsAppVerifyPanel> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.sms_outlined, size: 15, color: MxColors.moss),
+                Icon(
+                  _tempCodeMode ? Icons.bolt_rounded : Icons.sms_outlined,
+                  size: 15,
+                  color: MxColors.moss,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -410,7 +483,7 @@ class _WhatsAppVerifyPanelState extends State<WhatsAppVerifyPanel> {
                 ),
               ),
             ),
-            if (_phase == _Phase.code && !busy) ...[
+            if (_phase == _Phase.code && !busy && !_tempCodeMode) ...[
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton.icon(
@@ -427,6 +500,22 @@ class _WhatsAppVerifyPanelState extends State<WhatsAppVerifyPanel> {
                 ),
               ),
             ],
+          ],
+          if (widget.fallbackAvailable &&
+              _phase == _Phase.intro &&
+              !_tempCodeMode) ...[
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                key: const Key('whatsapp-otp-use-temp-code'),
+                onPressed: _enterTempCode,
+                icon: const Icon(Icons.bolt_rounded, size: 16),
+                label: const Text(
+                  'SMS not working? Use the temporary code 123456 for now',
+                ),
+              ),
+            ),
           ],
           const SizedBox(height: 6),
           Row(

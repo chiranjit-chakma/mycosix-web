@@ -89,16 +89,10 @@ class CartController extends ChangeNotifier {
 
   Future<void> hydrate() => _repo.load();
 
-  /// Applies the account cart (re-clamped by the repository) after a remote
-  /// snapshot arrives. Not a customer action — the cart sync calls it.
-  Future<void> applyRemoteCart(Map<String, int> items) async {
-    await _repo.replaceAll(items);
-    notifyListeners();
-  }
-
-  /// Merges the account cart into the local guest cart after sign-in.
-  /// Quantities are summed and re-clamped by the repository. Returns the
-  /// merged item map so the caller can push it to the account.
+  /// Merges the account cart into the local cart on the customer's explicit
+  /// request (the cart page's load button). Quantities are summed and
+  /// re-clamped by the repository. Returns the merged item map so the caller
+  /// can mirror it back to the account.
   Future<Map<String, int>> mergeRemoteCart(Map<String, int> remote) async {
     final merged = await _repo.mergeRemote(remote);
     notifyListeners();

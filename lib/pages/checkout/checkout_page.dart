@@ -440,11 +440,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   /// Records the frozen order: the trusted backend validates and writes it;
   /// if that backend is unreachable, checkout records a captured order (status
-  /// 'New', verified false, phone marked verified - the Firestore rules pin
-  /// that marker to the phone number on the caller's own auth token, so it is
-  /// never a client claim) carrying the exact amounts the customer was shown
-  /// and agreed at checkout. The confirmation is always shown on screen -
-  /// WhatsApp is never opened with the order data itself.
+  /// 'New', verified false, phone marked verified - marked only after a proof
+  /// step: a code Firebase itself verified, an admin attestation, or - while
+  /// the owner's temporary-code flag is on - the published temporary code;
+  /// the Firestore rules gate that marker server-side regardless, so it is
+  /// never a bare client claim) carrying the exact amounts the customer was
+  /// shown and agreed at checkout. The confirmation is always shown on
+  /// screen - WhatsApp is never opened with the order data itself.
   Future<void> _createOrderNow() async {
     if (_placing) return;
     final run = _pending;
@@ -492,9 +494,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
       // capture stores the amounts this customer was shown and agreed at
       // checkout so a delivered order is a real, analysable sale — status
       // stays New and verified stays false (only an admin can change those).
-      // phoneVerified is written true ONLY because the number was proven on
-      // the caller's auth token before this point; the security rules verify
-      // that token server-side regardless. No WhatsApp auto-open with the
+      // phoneVerified is written true ONLY because the number was proven
+      // before this point (a code Firebase itself verified on the caller's
+      // token, an admin attestation, or - while the owner's temporary-code
+      // flag is on - the published temporary code); the security rules gate
+      // that marker server-side regardless. No WhatsApp auto-open with the
       // order data — ever.
       final orderId = whatsapp.generateOrderId();
       try {
@@ -704,9 +708,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
     } else if (!locationReady) {
       ctaHint = 'Confirm the delivery location pin on the map';
     } else if (phoneCanonical != null && !_provenNow(phoneCanonical)) {
-      ctaHint =
-          'Send the OTP and enter the 6-digit code next to your number to '
-          'place your order.';
+      ctaHint = config.whatsappCodeFallback
+          ? 'Verify your number under the field (temporary code 123456 is '
+                'on for now) and your order goes through.'
+          : 'Send the OTP and enter the 6-digit code next to your number to '
+                'place your order.';
     } else {
       ctaHint = null;
     }
@@ -772,6 +778,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                   _verifyOpen ||
                                   _dismissedFor != phoneCanonical,
                               autoRequestCode: _autoRequest,
+                              fallbackAvailable: config.whatsappCodeFallback,
                               service: context.read<WhatsAppOtpService>(),
                               sessionPhone: auth?.phoneNumber,
                               sessionEmail: auth?.email,

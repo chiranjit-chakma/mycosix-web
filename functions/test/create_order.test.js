@@ -435,3 +435,59 @@ test('cleanse accepts dial-prefixed forms of the same number', () => {
 test('cleanse rejects a completely empty order', () => {
   assert.throws(() => cleanse({}), (err) => err.code === 'invalid-argument');
 });
+
+/* ------------------------------------------------------------------ *
+ * Temporary-code fallback: while siteConfig/public whatsappCodeFallback is
+ * true, an otherwise unproven phone is accepted (the checkout stamps
+ * phoneVerified only after the customer entered the published temporary
+ * code). Mirrors the rules' phoneFallbackOn gate. Flipping the flag off
+ * restores the strict proof below.
+ * ------------------------------------------------------------------ */
+test('fallback accepts an unproven phone while whatsappCodeFallback is on', async () => {
+  const db = seededDb({
+    'siteConfig/public': Object.assign({}, CONFIG, { whatsappCodeFallback: true }),
+  });
+  const res = await placeOrderImpl(db, draft(), { authPhone: null });
+  assert.equal(res.order.phone, PHONE);
+  assert.equal(res.order.phoneVerified, true);
+});
+
+test('fallback accepts an unproven guest phone (no caller at all)', async () => {
+  const db = seededDb({
+    'siteConfig/public': Object.assign({}, CONFIG, { whatsappCodeFallback: true }),
+  });
+  const res = await placeOrderImpl(db, draft(), { authUid: null, authPhone: null });
+  assert.equal(res.order.phone, PHONE);
+});
+
+test('fallback still rejects when the flag is off (strict proof restored)', () => {
+  const db = seededDb(); // CONFIG has no whatsappCodeFallback - absent = off.
+  return expectRejected(
+    placeOrderImpl(db, draft(), { authPhone: null }),
+    'permission-denied',
+    /verify your WhatsApp number/,
+  );
+});
+
+test('fallback still rejects when the flag is off even for a signed-in caller', () => {
+  const db = seededDb({ 'customers/u-1': { phone: PHONE, phoneVerified: false } });
+  return expectRejected(
+    placeOrderImpl(db, draft(), { authUid: 'u-1', authPhone: null }),
+    'permission-denied',
+    /verify your WhatsApp number/,
+  );
+});
+
+test('fallback flag never overrides delivery pause or pricing defaults', async () => {
+  const db = seededDb({
+    'siteConfig/public': Object.assign({}, CONFIG, {
+      whatsappCodeFallback: true,
+      deliveryEnabled: false,
+    }),
+  });
+  return expectRejected(
+    placeOrderImpl(db, draft(), { authPhone: null }),
+    'failed-precondition',
+    /not accepting delivery orders/,
+  );
+});

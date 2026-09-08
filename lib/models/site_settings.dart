@@ -15,6 +15,7 @@ class SiteSettings {
     this.deliveryFee = MxConfig.deliveryFee,
     this.currency = 'INR',
     this.deliveryEnabled = true,
+    this.whatsappCodeFallback = false,
     this.serviceArea = MxConfig.serviceArea,
     this.orderLeadTime = MxConfig.orderLeadTime,
     this.mapsEmbedUrl = MxConfig.mapsEmbedUrl,
@@ -32,6 +33,13 @@ class SiteSettings {
   /// When false the site should not offer delivery (checkout stays open for
   /// pick-up only once that flow exists).
   final bool deliveryEnabled;
+
+  /// Temporary-code fallback while real SMS codes are not available: when an
+  /// admin sets this true on siteConfig/public, the checkout accepts the
+  /// published temporary code (123456) and the orders rules/functions accept
+  /// the phoneVerified marker as the proof. Defaults false; a doc that omits
+  /// the field means fallback off.
+  final bool whatsappCodeFallback;
   final String serviceArea;
   final String orderLeadTime;
   final String mapsEmbedUrl;
@@ -61,6 +69,7 @@ class SiteSettings {
     double? deliveryFee,
     String? currency,
     bool? deliveryEnabled,
+    bool? whatsappCodeFallback,
     String? serviceArea,
     String? orderLeadTime,
     String? mapsEmbedUrl,
@@ -75,6 +84,7 @@ class SiteSettings {
       deliveryFee: deliveryFee ?? this.deliveryFee,
       currency: currency ?? this.currency,
       deliveryEnabled: deliveryEnabled ?? this.deliveryEnabled,
+      whatsappCodeFallback: whatsappCodeFallback ?? this.whatsappCodeFallback,
       serviceArea: serviceArea ?? this.serviceArea,
       orderLeadTime: orderLeadTime ?? this.orderLeadTime,
       mapsEmbedUrl: mapsEmbedUrl ?? this.mapsEmbedUrl,
@@ -86,19 +96,20 @@ class SiteSettings {
   /// Maps for storage. Known values are always written; unknown optional
   /// values are omitted (or null) so "unset" is distinguishable from empty.
   Map<String, Object?> toMap() => {
-        'businessName': businessName,
-        'tagline': tagline,
-        'whatsappNumber': whatsappNumber,
-        'instagramUrl': instagramUrl,
-        'deliveryFee': deliveryFee,
-        'currency': currency,
-        'deliveryEnabled': deliveryEnabled,
-        'serviceArea': serviceArea,
-        'orderLeadTime': orderLeadTime,
-        'mapsEmbedUrl': mapsEmbedUrl,
-        'supportEmail': supportEmail,
-        'phoneNumber': phoneNumber,
-      };
+    'businessName': businessName,
+    'tagline': tagline,
+    'whatsappNumber': whatsappNumber,
+    'instagramUrl': instagramUrl,
+    'deliveryFee': deliveryFee,
+    'currency': currency,
+    'deliveryEnabled': deliveryEnabled,
+    'whatsappCodeFallback': whatsappCodeFallback,
+    'serviceArea': serviceArea,
+    'orderLeadTime': orderLeadTime,
+    'mapsEmbedUrl': mapsEmbedUrl,
+    'supportEmail': supportEmail,
+    'phoneNumber': phoneNumber,
+  };
 
   factory SiteSettings.fromMap(Map<String, dynamic> map) {
     String? clean(String? v) {
@@ -107,17 +118,17 @@ class SiteSettings {
     }
 
     return SiteSettings(
-      businessName:
-          clean(map['businessName'] as String?) ?? MxConfig.brandFull,
+      businessName: clean(map['businessName'] as String?) ?? MxConfig.brandFull,
       tagline: clean(map['tagline'] as String?) ?? MxConfig.tagline,
-      whatsappNumber: clean(map['whatsappNumber'] as String?) ??
-          MxConfig.whatsappNumber,
+      whatsappNumber:
+          clean(map['whatsappNumber'] as String?) ?? MxConfig.whatsappNumber,
       instagramUrl:
           clean(map['instagramUrl'] as String?) ?? MxConfig.instagramUrl,
       deliveryFee: ((map['deliveryFee'] ?? MxConfig.deliveryFee) as num)
           .toDouble(),
       currency: clean(map['currency'] as String?) ?? 'INR',
       deliveryEnabled: map['deliveryEnabled'] as bool? ?? true,
+      whatsappCodeFallback: map['whatsappCodeFallback'] as bool? ?? false,
       serviceArea: clean(map['serviceArea'] as String?) ?? MxConfig.serviceArea,
       orderLeadTime:
           clean(map['orderLeadTime'] as String?) ?? MxConfig.orderLeadTime,

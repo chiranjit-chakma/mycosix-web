@@ -42,25 +42,42 @@ CustomerAuthStatus resolveCustomerAuthStatus({
 /// Firebase state so it can be unit-tested without a live backend. The
 /// "operation-not-allowed" case is expected until the owner enables the
 /// Google sign-in method once in the Firebase console.
-String friendlyGoogleSignInError(Object error) {
+String friendlyGoogleSignInError(Object error) =>
+    friendlyOAuthSignInError(error, method: 'Google');
+
+/// Maps a Twitter/X sign-in failure the same way (Twitter must be switched on
+/// once in the Firebase console before it works).
+String friendlyTwitterSignInError(Object error) =>
+    friendlyOAuthSignInError(error, method: 'Twitter');
+
+/// Maps a Yahoo sign-in failure the same way (Yahoo must be switched on once
+/// in the Firebase console before it works).
+String friendlyYahooSignInError(Object error) =>
+    friendlyOAuthSignInError(error, method: 'Yahoo');
+
+/// Shared core behind the Google / Twitter / Yahoo friendly mappers: a short,
+/// human-safe message naming the provider. The "operation-not-allowed" case
+/// is expected until the owner enables that provider once in the Firebase
+/// console; anything unrecognised falls back to [Fb.friendlyMessage].
+String friendlyOAuthSignInError(Object error, {required String method}) {
   if (error is FirebaseAuthException) {
     switch (error.code) {
       case 'operation-not-allowed':
-        return 'Google sign-in is not switched on for MYCOSIX yet - the '
+        return '$method sign-in is not switched on for MYCOSIX yet - the '
             'owner needs to enable it once in the Firebase console. You can '
             'still sign in with email + password.';
       case 'popup-closed-by-user':
-        return 'The Google window was closed before sign-in finished. '
+        return 'The $method window was closed before sign-in finished. '
             'Try again when you are ready.';
       case 'popup-blocked':
-        return 'Your browser blocked the Google window. Allow pop-ups for '
+        return 'Your browser blocked the $method window. Allow pop-ups for '
             'this site and try again.';
       case 'account-exists-with-different-credential':
         return 'An account with this email already exists with a password. '
             'Sign in with your email + password instead.';
       case 'invalid-credential':
       case 'user-not-found':
-        return 'Google could not confirm this account. Try again, or use '
+        return '$method could not confirm this account. Try again, or use '
             'email + password.';
       default:
         return Fb.friendlyMessage(error);
@@ -199,15 +216,46 @@ class CustomerAuthController extends ChangeNotifier implements CartSyncAuth {
   /// Google sign-in also creates the account. The Firestore rules treat the
   /// Google-verified email exactly like a password-account email, so no rules
   /// change is needed. Failures surface as a customer-safe message.
-  Future<bool> signInWithGoogle() async {
+  Future<bool> signInWithGoogle() => _signInWithPopup(
+    GoogleAuthProvider(),
+    friendly: friendlyGoogleSignInError,
+  );
+
+  /// Signs the customer in with their Twitter/X account (a popup window). A
+  /// first Twitter sign-in also creates the account. Expected to answer with
+  /// the friendly "not switched on yet" message until the owner enables
+  /// Twitter once in the Firebase console. Failures surface as a
+  /// customer-safe message.
+  Future<bool> signInWithTwitter() => _signInWithPopup(
+    TwitterAuthProvider(),
+    friendly: friendlyTwitterSignInError,
+  );
+
+  /// Signs the customer in with their Yahoo account (a popup window). A first
+  /// Yahoo sign-in also creates the account. Expected to answer with the
+  /// friendly "not switched on yet" message until the owner enables Yahoo
+  /// once in the Firebase console. Failures surface as a customer-safe
+  /// message.
+  Future<bool> signInWithYahoo() => _signInWithPopup(
+    OAuthProvider('yahoo.com'),
+    friendly: friendlyYahooSignInError,
+  );
+
+  /// Shared body of the social popup sign-ins above: opens the provider's
+  /// popup, hands the verified session to Firebase, and reports any failure
+  /// as a customer-safe message. Returns success.
+  Future<bool> _signInWithPopup(
+    AuthProvider provider, {
+    required String Function(Object error) friendly,
+  }) async {
     if (!_backendAvailable) return false;
     _clearFeedback();
     notifyListeners();
     try {
-      await Fb.auth.signInWithPopup(GoogleAuthProvider());
+      await Fb.auth.signInWithPopup(provider);
       return true;
     } catch (e) {
-      _message = friendlyGoogleSignInError(e);
+      _message = friendly(e);
       notifyListeners();
       return false;
     }

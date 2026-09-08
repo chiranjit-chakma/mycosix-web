@@ -13,9 +13,15 @@ import 'package:mycosix/pages/shop/shop_page.dart';
 import 'package:mycosix/repositories/cart_repository.dart';
 import 'package:mycosix/repositories/product_repository.dart';
 import 'package:mycosix/state/cart_controller.dart';
+import 'package:mycosix/state/cart_sync_controller.dart';
 import 'package:mycosix/state/products_controller.dart';
 import 'package:mycosix/state/site_config_controller.dart';
 import 'package:mycosix/state/wishlist_controller.dart';
+
+class _NullAuth extends ChangeNotifier implements CartSyncAuth {
+  @override
+  String? get uid => null;
+}
 
 /// Delivery-pause gate: flipping "Delivery enabled" off in admin Settings must
 /// reach the customer site live — a banner appears on the shop/cart and the
@@ -37,12 +43,24 @@ void main() {
     final products = ProductsController(productsRepo);
     await products.fetchAll();
     final cart = CartController(cartRepo, siteDeliveryFee: MxConfig.deliveryFee);
+    // Dormant (no backend, no uid): the cart page's saved-items banner sits
+    // under the pause notice and needs the controller present but idle.
+    final sync = CartSyncController(
+      repository: cartRepo,
+      cart: cart,
+      auth: _NullAuth(),
+    );
     final config = SiteConfigController(
       initial: paused
           ? const SiteSettings(deliveryEnabled: false)
           : const SiteSettings(),
     );
-    return _Ctx(cart: cart, products: products, config: config);
+    return _Ctx(
+      cart: cart,
+      products: products,
+      config: config,
+      sync: sync,
+    );
   }
 
   Future<void> pump(
@@ -135,11 +153,17 @@ Future<void> _loadFont(String family, String asset) async {
 }
 
 class _Ctx {
-  _Ctx({required this.cart, required this.products, required this.config});
+  _Ctx({
+    required this.cart,
+    required this.products,
+    required this.config,
+    required this.sync,
+  });
 
   final CartController cart;
   final ProductsController products;
   final SiteConfigController config;
+  final CartSyncController sync;
 
   Widget app(Widget page) => MultiProvider(
         providers: [
@@ -149,6 +173,7 @@ class _Ctx {
             create: (_) => WishlistController(),
           ),
           ChangeNotifierProvider<SiteConfigController>.value(value: config),
+          ChangeNotifierProvider<CartSyncController>.value(value: sync),
         ],
         child: MaterialApp(debugShowCheckedModeBanner: false, home: page),
       );

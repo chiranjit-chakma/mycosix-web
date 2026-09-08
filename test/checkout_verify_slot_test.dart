@@ -41,6 +41,7 @@ void main() {
     bool proven = false,
     bool showPanel = false,
     bool autoRequestCode = false,
+    bool fallbackAvailable = false,
     FakeOtpGateway? gateway,
     void Function({required bool freshSession})? onVerified,
     VoidCallback? onOpenPanel,
@@ -61,6 +62,7 @@ void main() {
                 proven: proven,
                 showPanel: showPanel,
                 autoRequestCode: autoRequestCode,
+                fallbackAvailable: fallbackAvailable,
                 service: gw,
                 onVerified: onVerified ?? ({required bool freshSession}) {},
                 onOpenPanel: onOpenPanel ?? () {},
@@ -211,5 +213,37 @@ void main() {
     await tester.pump(); // async verify resolves
     expect(gw.verifyCalls, 1);
     expect(verified, 1);
+  });
+
+  testWidgets('fallback on: the panel opens straight on the temp-code entry',
+      (tester) async {
+    final gw = await pumpSlot(
+      tester,
+      proven: false,
+      showPanel: true,
+      fallbackAvailable: true,
+    );
+    await tester.pump(); // post-frame temp-mode switch rebuilds
+    expect(find.byType(WhatsAppVerifyPanel), findsOneWidget);
+    expect(find.byKey(const Key('whatsapp-otp-code')), findsOneWidget);
+    expect(find.text('Send verification code'), findsNothing);
+    expect(gw.sendCalls, 0);
+  });
+
+  testWidgets('fallback on: the compact offer copy mentions the temp code',
+      (tester) async {
+    await pumpSlot(tester, proven: false, showPanel: false,
+        fallbackAvailable: true);
+    expect(find.byKey(const Key('whatsapp-otp-offer')), findsOneWidget);
+    expect(find.textContaining('temporary code'), findsOneWidget);
+    expect(find.textContaining('123456'), findsOneWidget);
+  });
+
+  testWidgets('fallback off: the offer copy stays SMS-only',
+      (tester) async {
+    await pumpSlot(tester, proven: false, showPanel: false);
+    expect(find.byKey(const Key('whatsapp-otp-offer')), findsOneWidget);
+    expect(find.textContaining('temporary code'), findsNothing);
+    expect(find.textContaining('sent by SMS'), findsOneWidget);
   });
 }

@@ -60,7 +60,7 @@ service cloud.firestore {
     // with the customer on the phone by the admin workflow. A captured order can
     // never change its own status or stamp its own delivery: those fields are
     // admin-only (see the update diff on /orders).
-    function isCapturedOrder(res) {
+    function isCapturedOrderShape(res) {
       return res.data.keys().hasOnly([
         'orderId', 'customerName', 'phone', 'email',
         'latitude', 'longitude', 'mapsUrl',
@@ -79,21 +79,16 @@ service cloud.firestore {
       && res.data.customerName is string
       && res.data.customerName.size() >= 1
       && res.data.customerName.size() <= 120
-      // Contact phone: canonical '+91XXXXXXXXXX' AND proven. The proof is
-      // the server's own, never a browser flag: either Firebase put the
-      // phone_number claim on the caller's auth token (it only does that
-      // after IT verified the one-time code), or an admin attested the same
-      // canonical phone on the caller's own customer profile (customers/
-      // {uid}.phoneVerified - attestation fields only an admin may write,
-      // see the customers update rule). A browser can never write an
-      // unverified number or forge the marker.
+      // Contact phone: canonical '+91XXXXXXXXXX', marked phoneVerified. WHO
+      // proves the number is gated separately on the orders create rule
+      // (phoneProofOrFallbackHolds below) - the shape here only pins the
+      // format and the marker; a browser can never write a number outside
+      // the canonical Indian pattern or a raw non-boolean marker.
       && 'phone' in res.data
       && res.data.phone is string
       && res.data.phone.matches('^[+]91[6-9][0-9]{9}$')
       && 'phoneVerified' in res.data
       && res.data.phoneVerified == true
-      && request.auth != null
-      && phoneProofHolds(request.auth, res.data.phone)
       && 'latitude' in res.data
       && res.data.latitude is number
       && 'longitude' in res.data
@@ -163,6 +158,28 @@ service cloud.firestore {
             && get(/databases/$(database)/documents/customers/$(auth.uid)).data.phoneVerified == true);
     }
 
+    // The phone gate on recording an order: the strict server proof (token
+    // claim, or an admin attestation on the caller's own profile) - or,
+    // while the owner's temporary-code fallback is switched on, the
+    // phoneVerified marker the checkout stamps only after the customer
+    // entered the published temporary code. Guests can therefore order while
+    // the fallback is ON; flipping the flag off restores the strict proof
+    // and guests are denied again, with no app change needed.
+    function phoneProofOrFallbackHolds(auth, res) {
+      return (auth != null && phoneProofHolds(auth, res.data.phone))
+        || phoneFallbackOn();
+    }
+
+    // Whether the owner's temporary-code fallback is switched on. Read from
+    // the same siteConfig/public document the shop front reads at startup
+    // (customers read it freely; only admins write it). The exists() guard
+    // keeps this safe to evaluate even before the field exists - a missing
+    // document or field must read as "fallback off".
+    function phoneFallbackOn() {
+      return exists(/databases/$(database)/documents/siteConfig/public)
+        && get(/databases/$(database)/documents/siteConfig/public).data.whatsappCodeFallback == true;
+    }
+
     // Batch quantities must stay sane server-side: nothing negative and never
     // more sold + waste than produced (a produced=0 batch therefore can have
     // no sales or waste at all).
@@ -204,7 +221,14 @@ service cloud.firestore {
       // ever sees them.
       allow read: if isAdmin()
         || (isSignedIn() && resource.data.customerId == request.auth.uid);
-      allow create: if isCapturedOrder(request.resource);
+      // Capture requires the full shape AND a phone gate: while the owner's
+      // temporary-code fallback (siteConfig/public whatsappCodeFallback) is
+      // ON, the checkout's phoneVerified marker - stamped only after the
+      // customer entered the published temporary code - is accepted as the
+      // proof (guests included). While it is OFF, the strict server proof
+      // applies again: token claim or admin attestation, guests denied.
+      allow create: if isCapturedOrderShape(request.resource)
+        && phoneProofOrFallbackHolds(request.auth, request.resource);
       allow delete: if false;
 
       allow update: if isAdmin()

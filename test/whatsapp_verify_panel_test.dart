@@ -58,6 +58,7 @@ void main() {
     WidgetTester tester, {
     FakeOtpGateway? gateway,
     String? sessionPhone,
+    bool fallbackAvailable = false,
     required void Function({required bool freshSession}) onVerified,
     VoidCallback? onCancel,
   }) async {
@@ -73,6 +74,7 @@ void main() {
               service: gw,
               canonicalPhone: canonical,
               sessionPhone: sessionPhone,
+              fallbackAvailable: fallbackAvailable,
               onVerified: onVerified,
               onCancel: onCancel ?? () {},
             ),
@@ -291,6 +293,102 @@ void main() {
       onVerified: ({required bool freshSession}) {},
     );
     expect(find.textContaining('placed as a guest'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  /* ------------------------------------------------------------------ *
+   * Temporary-code fallback (owner flag on): the panel lands straight on
+   * the temp-code entry, never touches the gateway, and 123456 verifies
+   * locally with freshSession false. Flag off (the default) keeps every
+   * behaviour above byte-for-byte.
+   * ------------------------------------------------------------------ */
+  testWidgets('fallback off: no temporary-code entry or link appears',
+      (tester) async {
+    await pumpPanel(tester, onVerified: ({required bool freshSession}) {});
+    // Defaults to the SMS intro - no code field, no temp-code mention.
+    expect(find.text('Send verification code'), findsOneWidget);
+    expect(find.byKey(const Key('whatsapp-otp-code')), findsNothing);
+    expect(find.byKey(const Key('whatsapp-otp-use-temp-code')), findsNothing);
+    expect(find.textContaining('123456'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('fallback on: a fresh panel lands on the temp-code entry',
+      (tester) async {
+    final gw = await pumpPanel(
+      tester,
+      fallbackAvailable: true,
+      onVerified: ({required bool freshSession}) {},
+    );
+    await tester.pump(); // post-frame temp-mode switch rebuilds
+    // No dead SMS button; the 6-digit entry is right there with the notice.
+    expect(find.text('Send verification code'), findsNothing);
+    expect(find.byKey(const Key('whatsapp-otp-code')), findsOneWidget);
+    expect(find.textContaining('123456'), findsWidgets);
+    expect(gw.sendCalls, 0);
+    expect(gw.verifyCalls, 0);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('fallback on: 123456 verifies locally, no gateway call',
+      (tester) async {
+    late bool called;
+    late bool fresh;
+    final gw = await pumpPanel(
+      tester,
+      fallbackAvailable: true,
+      onVerified: ({required bool freshSession}) {
+        called = true;
+        fresh = freshSession;
+      },
+    );
+    await tester.pump(); // post-frame temp-mode switch rebuilds
+    await tester.enterText(
+      find.byKey(const Key('whatsapp-otp-code')),
+      '123456',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('whatsapp-otp-verify')));
+    await tester.pump();
+    expect(called, isTrue);
+    expect(fresh, isFalse);
+    expect(gw.sendCalls, 0);
+    expect(gw.verifyCalls, 0);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('fallback on: a wrong temp code explains locally, then 123456 works',
+      (tester) async {
+    var verified = 0;
+    final gw = await pumpPanel(
+      tester,
+      fallbackAvailable: true,
+      onVerified: ({required bool freshSession}) {
+        verified += 1;
+      },
+    );
+    await tester.pump(); // post-frame temp-mode switch rebuilds
+    await tester.enterText(
+      find.byKey(const Key('whatsapp-otp-code')),
+      '654321',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('whatsapp-otp-verify')));
+    await tester.pump();
+    expect(gw.verifyCalls, 0);
+    expect(gw.sendCalls, 0);
+    expect(find.textContaining('That code is not right'), findsOneWidget);
+    expect(find.textContaining('123456'), findsWidgets);
+
+    await tester.enterText(
+      find.byKey(const Key('whatsapp-otp-code')),
+      '123456',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('whatsapp-otp-verify')));
+    await tester.pump();
+    expect(verified, 1);
+    expect(gw.verifyCalls, 0);
     await tester.pumpWidget(const SizedBox());
   });
 }

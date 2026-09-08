@@ -18,7 +18,7 @@ import '../models/site_settings.dart';
 /// ordering — the site behaves exactly as before until a live update arrives.
 class SiteConfigController extends ChangeNotifier {
   SiteConfigController({SiteSettings initial = const SiteSettings()})
-      : _settings = initial;
+    : _settings = initial;
 
   SiteSettings _settings;
 
@@ -27,13 +27,21 @@ class SiteConfigController extends ChangeNotifier {
   /// False only when an admin has explicitly turned delivery off in Settings.
   bool get deliveryEnabled => _settings.deliveryEnabled;
 
+  /// True only while the owner's temporary-code fallback is switched on in
+  /// Settings (siteConfig/public whatsappCodeFallback). While true the
+  /// checkout shows the temporary code path; absent/false means real codes.
+  bool get whatsappCodeFallback => _settings.whatsappCodeFallback;
+
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _sub;
 
   /// Opens the live subscription to the public settings document. Called once
   /// when the app provides this controller.
   void start() {
     if (!Fb.enabled || _sub != null) return;
-    _sub = Fb.siteConfig.doc('public').snapshots().listen(
+    _sub = Fb.siteConfig
+        .doc('public')
+        .snapshots()
+        .listen(
           _applySnapshot,
           onError: (_) {
             // A transient config read error must never block ordering; keep the
