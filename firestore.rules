@@ -154,10 +154,13 @@ service cloud.firestore {
     // be written by an admin (see the customers update rule), so a customer
     // can never attest themselves or clear an admin's attestation.
     function phoneProofHolds(auth, phone) {
-      if (auth.token.phone_number == phone) return true;
-      return exists(/databases/$(database)/documents/customers/$(auth.uid))
-        && get(/databases/$(database)/documents/customers/$(auth.uid)).data.phone == phone
-        && get(/databases/$(database)/documents/customers/$(auth.uid)).data.phoneVerified == true;
+      // Pure boolean expression (matching every other function in this file -
+      // the rules language has no statement bodies): the caller's own token
+      // claim, or an admin attestation on their own customer profile.
+      return auth.token.phone_number == phone
+        || (exists(/databases/$(database)/documents/customers/$(auth.uid))
+            && get(/databases/$(database)/documents/customers/$(auth.uid)).data.phone == phone
+            && get(/databases/$(database)/documents/customers/$(auth.uid)).data.phoneVerified == true);
     }
 
     // Batch quantities must stay sane server-side: nothing negative and never
