@@ -36,7 +36,7 @@ void main() {
 
     // The offer is visible and names the count.
     expect(find.byKey(const Key('saved-cart-banner')), findsOneWidget);
-    expect(find.textContaining('2 items saved'), findsOneWidget);
+    expect(find.textContaining('2 more items on this account'), findsOneWidget);
 
     // Nothing was pushed by the sign-in read alone.
     expect(ctx.store.pushed, isEmpty);
@@ -72,6 +72,15 @@ void main() {
     final ctx = await _seed(accountHolds: {'remote-only': 2}, localQty: 2);
     await _pump(tester, ctx);
     expect(find.byKey(const Key('saved-cart-banner')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('no offer when the account holds no more than this cart - the '
+      'mirror echo can never re-offer or double', (tester) async {
+    final ctx = await _seed(accountHolds: {'remote-only': 1}, localQty: 2);
+    await _pump(tester, ctx);
+    expect(find.byKey(const Key('saved-cart-banner')), findsNothing);
+    expect(ctx.store.pushed, isEmpty);
     expect(tester.takeException(), isNull);
   });
 }

@@ -90,9 +90,11 @@ class CartController extends ChangeNotifier {
   Future<void> hydrate() => _repo.load();
 
   /// Merges the account cart into the local cart on the customer's explicit
-  /// request (the cart page's load button). Quantities are summed and
-  /// re-clamped by the repository. Returns the merged item map so the caller
-  /// can mirror it back to the account.
+  /// request (the cart page's load button). Every product is topped up to the
+  /// HIGHER of its two quantities - never summed - so loading the same saved
+  /// cart twice (or again after a re-login) can never double a line; the
+  /// repository re-clamps everything against the live catalogue. Returns the
+  /// merged item map so the caller can mirror it back to the account.
   Future<Map<String, int>> mergeRemoteCart(Map<String, int> remote) async {
     final merged = await _repo.mergeRemote(remote);
     notifyListeners();

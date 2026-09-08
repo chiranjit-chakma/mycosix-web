@@ -436,10 +436,12 @@ class _SummaryRow extends StatelessWidget {
 }
 
 /// The account-cart offer: appears only while the signed-in account holds
-/// saved items that differ from the cart on this device, and only ever loads
-/// them when the customer taps the button — a login, logout or background
-/// sync never adds or removes anything by itself. Dismissing the offer hides
-/// it until the cart or the account knowledge changes again.
+/// items this cart does not yet carry at the same quantity, and only ever
+/// brings them in when the customer taps the button - a login, logout or
+/// background sync never adds or removes anything by itself, and a load tops
+/// quantities up to the account's level (never summing, so the same saved
+/// cart can never be counted twice). Dismissing the offer hides it until the
+/// cart or the account knowledge changes again.
 class _SavedCartBanner extends StatefulWidget {
   const _SavedCartBanner();
 
@@ -461,7 +463,7 @@ class _SavedCartBannerState extends State<_SavedCartBanner> {
       if (!has) _dismissed = false;
     }
     if (!has || _dismissed) return const SizedBox.shrink();
-    final count = sync.accountCart!.values.fold<int>(0, (sum, q) => sum + q);
+    final count = sync.loadableCount;
 
     Future<void> load() async {
       setState(() => _loading = true);
@@ -513,11 +515,11 @@ class _SavedCartBannerState extends State<_SavedCartBanner> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Your account has $count item'
-                      '${count == 1 ? '' : 's'} saved from another device or '
-                      'an earlier visit. They are not in this cart and '
-                      'nothing is added or removed by itself - tap Load to '
-                      'combine them with this cart.',
+                      '$count more item'
+                      '${count == 1 ? '' : 's'} on this account (from another '
+                      'device or an earlier visit) than this cart. Nothing '
+                      'here changes by itself - tap Load to bring them in; '
+                      'quantities are never doubled.',
                       style: MxType.bodyXs(color: MxColors.stone),
                     ),
                   ],

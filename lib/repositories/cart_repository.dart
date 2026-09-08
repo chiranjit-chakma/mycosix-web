@@ -171,10 +171,15 @@ class CartRepository {
     await _persist();
   }
 
-  /// Merges the account cart into the local (guest) cart: quantities are
-  /// summed per product and re-clamped to what the live catalogue allows, so a
-  /// stale account cart can never push an unavailable product or an
-  /// over-stock quantity back into this device. Returns the merged map.
+  /// Merges the account cart into the local (guest) cart: every product
+  /// ends at the HIGHER of its two quantities - never at their sum. The
+  /// account cart is a write-through MIRROR of this cart, so summing it in
+  /// would count the customer's own items twice (the same saved cart can be
+  /// offered again after a re-login, or reloaded after a failed write);
+  /// topping up is the deterministic combine that can never double a line.
+  /// Everything is re-clamped to what the live catalogue allows, so a stale
+  /// account cart can never push an unavailable product or an over-stock
+  /// quantity back into this device. Returns the merged map.
   Future<Map<String, int>> mergeRemote(Map<String, int> remote) async {
     final merged = mergeCartQuantities(_items, remote, capForId);
     _items = merged;
@@ -183,9 +188,13 @@ class CartRepository {
   }
 }
 
-/// Sums two cart item maps per product, clamped to [capFor] (0 = drop the
-/// product entirely: unknown, unavailable, or out of stock). Pure, so the
-/// guest→login merge can be unit-tested without prefs or Firebase.
+/// Tops two cart item maps up to the higher quantity per product, clamped to
+/// [capFor] (0 = drop the product entirely: unknown, unavailable, or out of
+/// stock). Products present in the account at a HIGHER quantity are raised to
+/// it; products already carried at the same or a higher quantity are left
+/// alone - quantities are never summed, so re-loading the same saved cart can
+/// never double a line. Pure, so the guest→login merge can be unit-tested
+/// without prefs or Firebase.
 Map<String, int> mergeCartQuantities(
   Map<String, int> guest,
   Map<String, int> account,
@@ -201,8 +210,10 @@ Map<String, int> mergeCartQuantities(
     if (entry.value < 1) continue;
     final cap = capFor(entry.key);
     if (cap <= 0) continue;
-    final current = merged[entry.key];
-    merged[entry.key] = min((current ?? 0) + entry.value, cap);
+    final current = merged[entry.key] ?? 0;
+    if (entry.value > current) {
+      merged[entry.key] = min(entry.value, cap);
+    }
   }
   return merged;
 }

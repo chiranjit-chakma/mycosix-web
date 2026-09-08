@@ -12,13 +12,24 @@ void main() {
           _ => 0, // unknown product
         };
 
-    test('sums quantities per product, clamped to the cap', () {
+    test('tops each product up to the higher quantity, clamped to the cap',
+        () {
       final merged = mergeCartQuantities(
         {'a': 2, 'b': 1},
         {'a': 1, 'b': 2},
         cap,
       );
-      expect(merged, {'a': 3, 'b': 2}); // b: 1+2=3 clamped to 2
+      // a: already held at 2 - the account's 1 is its own mirror of that
+      // line and must never be summed on top; b: topped up 1 -> 2.
+      expect(merged, {'a': 2, 'b': 2});
+    });
+
+    test('loading the same saved cart twice never doubles a line', () {
+      final first = mergeCartQuantities({'a': 2}, {'a': 1, 'b': 2}, cap);
+      expect(first, {'a': 2, 'b': 2});
+      // A re-login offers the same saved cart again; merging is idempotent.
+      final second = mergeCartQuantities(first, {'a': 1, 'b': 2}, cap);
+      expect(second, first);
     });
 
     test('drops products the live catalogue does not allow', () {
@@ -61,8 +72,10 @@ void main() {
         'not-a-product': 7,
       });
 
-      expect(merged, {'fresh-oyster-250': 3});
-      expect(repo.items, {'fresh-oyster-250': 3});
+      // Topped up, not summed: the cart already holds 2 of fresh-oyster-250,
+      // and the account's 1 is its own earlier mirror of that line.
+      expect(merged, {'fresh-oyster-250': 2});
+      expect(repo.items, {'fresh-oyster-250': 2});
     });
 
     test('replaceAll re-sanitises a remote snapshot on apply', () async {

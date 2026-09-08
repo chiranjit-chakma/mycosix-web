@@ -33,10 +33,16 @@ class _FakeStore implements RemoteCartStore {
   int fetches = 0;
   bool fetchShouldFail = false;
 
+  /// When set, fetch waits on this gate (a slow account read) so tests can
+  /// interleave a local edit with the sign-in fetch.
+  Completer<void>? fetchGate;
+
   @override
   Future<Map<String, int>> fetch(String uid) async {
     fetches++;
     if (fetchShouldFail) throw Exception('offline');
+    final gate = fetchGate;
+    if (gate != null) await gate.future;
     return Map.of(cart);
   }
 
@@ -215,35 +221,187 @@ void main() {
     sync.dispose();
   });
 
-  test('load merges account items into the cart on the explicit tap', () async {
-    final (repo, cart, _) = await _loadedCart();
-    await repo.add('fresh-oyster-250', 2);
-    final auth = _FakeAuth();
-    final store = _FakeStore()
-      ..cart = {'fresh-oyster-250': 1, 'fresh-oyster-500': 2};
-    final sync = CartSyncController(
-      repository: repo,
-      cart: cart,
-      auth: auth,
-      store: store,
-      backendAvailable: true,
-    )..start();
-    auth.uid = 'u1';
-    await _settle();
-    expect(sync.hasSavedCart, isTrue);
+  test(
+    'load tops the cart up - never sums - and writes the account at once',
+    () async {
+      final (repo, cart, _) = await _loadedCart();
+      await repo.add('fresh-oyster-250', 2);
+      final auth = _FakeAuth();
+      final store = _FakeStore()
+        ..cart = {'fresh-oyster-250': 1, 'fresh-oyster-500': 2};
+      final sync = CartSyncController(
+        repository: repo,
+        cart: cart,
+        auth: auth,
+        store: store,
+        backendAvailable: true,
+      )..start();
+      auth.uid = 'u1';
+      await _settle();
+      expect(sync.hasSavedCart, isTrue);
 
-    await sync.loadAccountCart();
-    await _settle(700);
+      await sync.loadAccountCart();
+      // Topped up, not summed: 250 stays at 2 (the account's 1 is this
+      // cart's own mirror), and the other device's 500 line is added at 2.
+      expect(repo.items, {'fresh-oyster-250': 2, 'fresh-oyster-500': 2});
+      // The merged cart reached the account INSIDE the load call - there is
+      // no debounce window left to lose it in.
+      expect(store.pushed, [
+        {'fresh-oyster-250': 2, 'fresh-oyster-500': 2},
+      ]);
+      expect(sync.hasSavedCart, isFalse); // offer disappears
+      // And the load itself triggered no duplicate debounced write.
+      await _settle(700);
+      expect(store.pushed, hasLength(1));
+      sync.dispose();
+    },
+  );
 
-    // The saved items were merged in: 2 + 1 summed, the other line added.
-    expect(repo.items, {'fresh-oyster-250': 3, 'fresh-oyster-500': 2});
-    // The merged cart was written through to the account once.
-    expect(store.pushed, [
-      {'fresh-oyster-250': 3, 'fresh-oyster-500': 2},
-    ]);
-    expect(sync.hasSavedCart, isFalse); // offer disappears
-    sync.dispose();
-  });
+  test(
+    'the same-device mirror echo can never inflate a quantity',
+    () async {
+      // Session 1 signed in: 2 units were mirrored to the account, then the
+      // customer signed out and the cart kept them as the guest cart.
+      final (repo, cart, products) = await _loadedCart();
+      await repo.add('fresh-oyster-250', 2);
+      final auth = _FakeAuth();
+      final store = _FakeStore()..cart = {'fresh-oyster-250': 2};
+      final sync = CartSyncController(
+        repository: repo,
+        cart: cart,
+        auth: auth,
+        store: store,
+        backendAvailable: true,
+      )..start();
+      auth.uid = 'u1';
+      await _settle();
+      // Account and cart match - nothing is even offered.
+      expect(sync.hasSavedCart, isFalse);
+
+      // Guest edits do not reach the account: one more unit is added while
+      // signed out, then the customer logs back in.
+      auth.uid = null;
+      await _settle();
+      cart.add(_p(products, 'fresh-oyster-250'));
+      auth.uid = 'u1';
+      await _settle();
+
+      // The account's 2 is this cart's own mirror; the cart now holds 3, so
+      // there is nothing to load and no quantity can be inflated.
+      expect(repo.items, {'fresh-oyster-250': 3});
+      expect(sync.hasSavedCart, isFalse);
+      expect(store.pushed, isEmpty);
+      sync.dispose();
+    },
+  );
+
+  test(
+    'loading then logging out at once cannot lose the load',
+    () async {
+      final (repo, cart, _) = await _loadedCart();
+      await repo.add('fresh-oyster-250', 1);
+      final auth = _FakeAuth();
+      final store = _FakeStore()..cart = {'fresh-oyster-500': 2};
+      final sync = CartSyncController(
+        repository: repo,
+        cart: cart,
+        auth: auth,
+        store: store,
+        backendAvailable: true,
+      )..start();
+      auth.uid = 'u1';
+      await _settle();
+      expect(sync.hasSavedCart, isTrue);
+
+      await sync.loadAccountCart();
+      // The account write completed inside the call...
+      expect(store.pushed, hasLength(1));
+      // ...so an immediate logout (which cancels the debounce) loses nothing.
+      auth.uid = null;
+      await _settle();
+      expect(store.cart, {'fresh-oyster-250': 1, 'fresh-oyster-500': 2});
+
+      // The next login reads the merged cart: nothing to offer, and a stray
+      // load is a no-op - the same saved cart can never be counted twice.
+      auth.uid = 'u1';
+      await _settle();
+      expect(sync.hasSavedCart, isFalse);
+      final before = Map.of(repo.items);
+      await sync.loadAccountCart();
+      expect(repo.items, before);
+      expect(store.pushed, hasLength(1));
+      sync.dispose();
+    },
+  );
+
+  test(
+    'edits during the sign-in read never clobber unseen account items',
+    () async {
+      final (repo, cart, products) = await _loadedCart();
+      final auth = _FakeAuth();
+      final store = _FakeStore()
+        ..cart = {'fresh-oyster-500': 4}
+        ..fetchGate = Completer<void>();
+      final sync = CartSyncController(
+        repository: repo,
+        cart: cart,
+        auth: auth,
+        store: store,
+        backendAvailable: true,
+      )..start();
+      auth.uid = 'u1';
+      await _settle();
+      // The account read is still settling; the customer edits the cart.
+      cart.add(_p(products, 'fresh-oyster-250'), quantity: 2);
+      await _settle();
+      expect(store.pushed, isEmpty); // no write over the unread account cart
+
+      store.fetchGate!.complete();
+      await _settle(700);
+      // The unseen account items were not clobbered: no auto-push happened,
+      // the load offer took over instead.
+      expect(store.pushed, isEmpty);
+      expect(sync.hasSavedCart, isTrue);
+
+      await sync.loadAccountCart();
+      expect(repo.items, {'fresh-oyster-250': 2, 'fresh-oyster-500': 4});
+      expect(store.pushed, [
+        {'fresh-oyster-250': 2, 'fresh-oyster-500': 4},
+      ]);
+      sync.dispose();
+    },
+  );
+
+  test(
+    'an edit during the read is mirrored when the account holds nothing '
+    'unseen',
+    () async {
+      final (repo, cart, products) = await _loadedCart();
+      final auth = _FakeAuth();
+      final store = _FakeStore()
+        ..cart = {'fresh-oyster-250': 1}
+        ..fetchGate = Completer<void>();
+      final sync = CartSyncController(
+        repository: repo,
+        cart: cart,
+        auth: auth,
+        store: store,
+        backendAvailable: true,
+      )..start();
+      auth.uid = 'u1';
+      await _settle();
+      cart.add(_p(products, 'fresh-oyster-250'), quantity: 2);
+      store.fetchGate!.complete();
+      await _settle(700);
+      // The account's 1 holds nothing this cart (2) lacks, so the customer's
+      // edit mirrors through once the account read settles.
+      expect(store.pushed, [
+        {'fresh-oyster-250': 2},
+      ]);
+      expect(sync.hasSavedCart, isFalse);
+      sync.dispose();
+    },
+  );
 
   test('loadAccountCart is a no-op when signed out (no stale merge)', () async {
     final (repo, cart, _) = await _loadedCart();
