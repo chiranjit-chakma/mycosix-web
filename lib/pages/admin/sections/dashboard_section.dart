@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../config/mx_colors.dart';
 import '../../../config/mx_type.dart';
-import '../../../firebase/fb.dart';
+import '../../../firebase/fb_admin.dart';
 import '../../../models/order_status.dart';
 import '../../../utils/money.dart';
 import '../admin_widgets.dart';
@@ -116,7 +116,7 @@ class _OrderStats extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: Fb.orders
+      stream: FbAdmin.orders
           .orderBy('createdAt', descending: true)
           .limit(300)
           .snapshots(),
@@ -125,7 +125,7 @@ class _OrderStats extends StatelessWidget {
           return StateNote(
             icon: Icons.error_outline_rounded,
             text: 'Orders could not be loaded.',
-            detail: Fb.friendlyMessage(snap.error!),
+            detail: FbAdmin.friendlyMessage(snap.error!),
             tone: StateTone.danger,
           );
         }
@@ -174,13 +174,13 @@ class _ProductStats extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: Fb.products.orderBy('sortKey').snapshots(),
+      stream: FbAdmin.products.orderBy('sortKey').snapshots(),
       builder: (context, snap) {
         if (snap.hasError) {
           return StateNote(
             icon: Icons.error_outline_rounded,
             text: 'Products could not be loaded.',
-            detail: Fb.friendlyMessage(snap.error!),
+            detail: FbAdmin.friendlyMessage(snap.error!),
             tone: StateTone.danger,
           );
         }
@@ -254,7 +254,7 @@ class _RecentOrders extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: Fb.orders
+      stream: FbAdmin.orders
           .orderBy('createdAt', descending: true)
           .limit(8)
           .snapshots(),
@@ -329,7 +329,7 @@ class _LowStock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: Fb.products.orderBy('sortKey').snapshots(),
+      stream: FbAdmin.products.orderBy('sortKey').snapshots(),
       builder: (context, snap) {
         if (!snap.hasData) {
           return const LoadingNote(label: 'Loading products...');

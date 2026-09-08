@@ -6,7 +6,7 @@ import 'package:provider/provider.dart';
 import '../../../config/mx_colors.dart';
 import '../../../config/mx_type.dart';
 import '../../../firebase/admin_logs.dart';
-import '../../../firebase/fb.dart';
+import '../../../firebase/fb_admin.dart';
 import '../../../models/inventory_movement.dart';
 import '../../../models/product.dart';
 import '../../../state/auth_controller.dart';
@@ -52,13 +52,13 @@ class _InventorySectionState extends State<InventorySection> {
           ),
           const SizedBox(height: 12),
           StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: Fb.products.orderBy('sortKey').snapshots(),
+            stream: FbAdmin.products.orderBy('sortKey').snapshots(),
             builder: (context, snap) {
               if (snap.hasError) {
                 return StateNote(
                   icon: Icons.error_outline_rounded,
                   text: 'Products could not be loaded.',
-                  detail: Fb.friendlyMessage(snap.error!),
+                  detail: FbAdmin.friendlyMessage(snap.error!),
                   tone: StateTone.danger,
                 );
               }
@@ -235,7 +235,7 @@ class _InventorySectionState extends State<InventorySection> {
     if (next < 0) return;
     final previous = p.stock;
     try {
-      await Fb.products.doc(p.id).set({
+      await FbAdmin.products.doc(p.id).set({
         'stock': next,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
@@ -252,7 +252,7 @@ class _InventorySectionState extends State<InventorySection> {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(Fb.friendlyMessage(e))));
+        ..showSnackBar(SnackBar(content: Text(FbAdmin.friendlyMessage(e))));
     }
   }
 
@@ -378,7 +378,7 @@ class _MovementLog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: Fb.inventoryMovements
+      stream: FbAdmin.inventoryMovements
           .orderBy('recordedAt', descending: true)
           .limit(60)
           .snapshots(),
@@ -387,7 +387,7 @@ class _MovementLog extends StatelessWidget {
           return StateNote(
             icon: Icons.error_outline_rounded,
             text: 'Movements could not be loaded.',
-            detail: Fb.friendlyMessage(snap.error!),
+            detail: FbAdmin.friendlyMessage(snap.error!),
             tone: StateTone.danger,
           );
         }

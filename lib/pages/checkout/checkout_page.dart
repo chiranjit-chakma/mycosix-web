@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../../config/mx_colors.dart';
 import '../../config/mx_type.dart';
+import '../../firebase/fb.dart';
 import '../../models/cart_item.dart';
 import '../../models/customer_order.dart';
 import '../../models/delivery_location.dart';
@@ -27,10 +28,10 @@ import '../../state/location_controller.dart';
 import '../../state/site_config_controller.dart';
 import '../../utils/money.dart';
 import '../../widgets/delivery_paused_notice.dart';
+import 'checkout_verify_slot.dart';
 import '../../utils/phone.dart';
 import '../../utils/validators.dart';
 import '../../widgets/location/location_selector.dart';
-import '../../widgets/whatsapp_verify_panel.dart';
 import '../../widgets/page.dart';
 import '../../widgets/shell.dart';
 
@@ -99,18 +100,38 @@ class _CheckoutPageState extends State<CheckoutPage> {
   /// the tree (dispose cannot use context).
   CustomerAuthController? _auth;
 
-  /// Canonical '+91...' number already proven for this checkout - either the
-  /// signed-in account carries it (Firebase verified it when it was linked)
-  /// or it was verified here with a one-time code.
+  /// Canonical '+91...' number already proven for this checkout - the
+  /// signed-in account carries it (Firebase verified it when it was linked),
+  /// an admin attested it on the customer profile, or it was verified here
+  /// with a one-time code.
   String? _verifiedPhone;
 
-  /// Canonical number the open verification panel is proving, or null when no
-  /// panel is open. Closing it (or the number changing) clears this.
-  String? _otpPhone;
+  /// Whether the full verification panel is open. The slot decides what it
+  /// renders, and it is ALWAYS visible next to the WhatsApp field whenever
+  /// the field holds a valid number - the send-OTP option and the code entry
+  /// are never hidden behind the place-order button.
+  bool _verifyOpen = false;
 
-  /// Anchor on the verification panel's slot inside the details form, right
-  /// under the WhatsApp field. When the panel opens, the checkout glides it
-  /// into view through this key.
+  /// Canonical number the customer last closed the verification panel for.
+  /// While the field holds this exact number the slot shows the compact
+  /// 'Send OTP' offer instead of re-opening the panel on every rebuild.
+  String? _dismissedFor;
+
+  /// True right after the customer asked to send a code from the compact
+  /// offer: the next fresh panel mount auto-starts the request. Cleared as
+  /// soon as the panel is dismissed or reopened from the place-order CTA.
+  bool _autoRequest = false;
+
+  /// Canonical phone attested by an admin on this customer's own profile
+  /// (customers/{uid}.phone with phoneVerified == true - fields only an
+  /// admin may write, enforced by the rules). Loaded once per checkout,
+  /// lazily; null until known.
+  String? _attestedPhone;
+  bool _attestationLoaded = false;
+
+  /// Anchor on the verification slot inside the details form, right under
+  /// the WhatsApp field. When the place-order CTA opens the panel, the
+  /// checkout glides the slot into view through this key.
   final _verifyAnchor = GlobalKey();
 
   /// Frozen copy of everything the customer agreed at the moment the CTA
@@ -153,18 +174,22 @@ class _CheckoutPageState extends State<CheckoutPage> {
     for (final c in _fieldControllers) {
       c.addListener(_fieldsChanged);
     }
+    // Pre-fetch an admin attestation of the signed-in customer's own phone
+    // (customers/{uid}) so a proven number renders as verified instead of
+    // flashing the OTP panel. Best-effort: a failure just means the
+    // customer verifies with a one-time code - the rules never trust this
+    // client read, they re-check the attestation server-side at order time.
+    if (_auth!.backendAvailable && _auth!.user != null) {
+      unawaited(_loadAttestation());
+    }
   }
 
   void _fieldsChanged() {
     if (mounted) setState(() {});
-    // Editing the number while the verify panel is open invalidates what it
-    // is proving: close the panel silently (nothing was sent by doing so).
-    // Tapping the place-order CTA re-opens it for the number now in the field.
-    final otp = _otpPhone;
-    if (otp != null && canonicalWhatsAppPhone(_phone.text) != otp) {
-      _otpPhone = null;
-      if (mounted) setState(() {});
-    }
+    // The verification slot keys off the canonical number the field holds
+    // right now: editing the number simply swaps what the slot shows (a
+    // different number is a different proof flow), so no explicit close is
+    // needed here.
   }
 
   /// True only when name/phone/email and the optional delivery details are all
@@ -226,6 +251,60 @@ class _CheckoutPageState extends State<CheckoutPage> {
     return auth.uid;
   }
 
+  /// Reads the admin attestation on this customer's own profile once:
+  /// `phone` (canonical) is treated as proven only when the document says
+  /// `phoneVerified == true`. Anything unreadable or missing falls back to
+  /// the one-time-code flow.
+  Future<void> _loadAttestation() async {
+    if (_attestationLoaded) return;
+    final auth = _auth;
+    final uid = (auth != null && auth.backendAvailable) ? auth.uid : null;
+    if (uid == null) {
+      _attestationLoaded = true;
+      return;
+    }
+    try {
+      final doc = await Fb.customers
+          .doc(uid)
+          .get()
+          .timeout(const Duration(seconds: 6));
+      final d = doc.data();
+      final phone = (d != null && d['phoneVerified'] == true)
+          ? d['phone'] as Object?
+          : null;
+      if (phone is String && canonicalWhatsAppPhone(phone) == phone) {
+        _attestedPhone = phone;
+      }
+    } catch (_) {
+      // Offline / rules not live yet: fall back to the one-time-code flow.
+    } finally {
+      _attestationLoaded = true;
+      if (mounted) setState(() {});
+    }
+  }
+
+  /// Whether [canonical] still needs a code: false when it was verified here
+  /// with an OTP, is carried by the signed-in account itself (Firebase
+  /// verified it when it was linked - every auth token since then carries
+  /// the phone_number claim), or was attested by an admin on the profile.
+  bool _provenNow(String? canonical) {
+    if (canonical == null) return false;
+    if (_verifiedPhone == canonical) return true;
+    final auth = _auth;
+    if (auth != null &&
+        auth.backendAvailable &&
+        auth.user != null &&
+        auth.phoneNumber == canonical) {
+      return true;
+    }
+    return _attestedPhone == canonical;
+  }
+
+  Future<bool> _attestationMatches(String canonical) async {
+    await _loadAttestation();
+    return _attestedPhone == canonical;
+  }
+
   /// Place-order CTA. If the WhatsApp number is already proven for this
   /// session (the signed-in account carries it, or it was verified here
   /// earlier), the order is placed immediately. Otherwise the inline
@@ -282,18 +361,24 @@ class _CheckoutPageState extends State<CheckoutPage> {
           latitude: loc.latitude,
           longitude: loc.longitude,
           mapsUrl: loc.mapsUrl,
-          building:
-              _building.text.trim().isEmpty ? null : _building.text.trim(),
-          apartment:
-              _apartment.text.trim().isEmpty ? null : _apartment.text.trim(),
-          landmark:
-              _landmark.text.trim().isEmpty ? null : _landmark.text.trim(),
+          building: _building.text.trim().isEmpty
+              ? null
+              : _building.text.trim(),
+          apartment: _apartment.text.trim().isEmpty
+              ? null
+              : _apartment.text.trim(),
+          landmark: _landmark.text.trim().isEmpty
+              ? null
+              : _landmark.text.trim(),
           instructions: _instructions.text.trim().isEmpty
               ? null
               : _instructions.text.trim(),
           lines: [
             for (final line in cart.lines)
-              OrderDraftLine(productId: line.product.id, quantity: line.quantity),
+              OrderDraftLine(
+                productId: line.product.id,
+                quantity: line.quantity,
+              ),
           ],
         ),
         items: List.of(cart.lines),
@@ -310,8 +395,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
       return;
     }
     // The signed-in account itself carries this exact number (Firebase
-    // verified it when it was linked, and every auth token since then carries
-    // the phone_number claim): no new code is needed.
+    // verified it when it was linked, and every auth token since then
+    // carries the phone_number claim): no new code is needed.
     final auth = context.read<CustomerAuthController>();
     if (auth.backendAvailable &&
         auth.user != null &&
@@ -320,12 +405,26 @@ class _CheckoutPageState extends State<CheckoutPage> {
       await _createOrderNow();
       return;
     }
-    // The number still needs proving: open the verification panel.
+    // An admin attested this exact number on the customer's own profile
+    // (customers/{uid}.phoneVerified - written only by an admin, and
+    // re-checked by the rules server-side when the order is recorded):
+    // no new code is needed either.
+    if (await _attestationMatches(canonical)) {
+      if (!mounted) return;
+      setState(() => _verifiedPhone = canonical);
+      await _createOrderNow();
+      return;
+    }
+    // The number still needs proving. The verification slot is already
+    // visible right under the WhatsApp field; make sure the full panel is
+    // open, then glide it into the middle of the viewport so the customer
+    // watches the code request land next to the number it was sent to.
     if (!mounted) return;
-    setState(() => _otpPhone = canonical);
-    // The panel appears right under the WhatsApp field: glide it into the
-    // middle of the viewport so the customer sees the code request land
-    // next to the number it was sent to.
+    setState(() {
+      _verifyOpen = true;
+      _dismissedFor = null;
+      _autoRequest = false;
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final ctx = _verifyAnchor.currentContext;
@@ -493,7 +592,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     if (!mounted) return;
     setState(() {
       _verifiedPhone = canonical;
-      _otpPhone = null;
+      _verifyOpen = false;
       if (fresh) _sessionFresh = true;
     });
     unawaited(_createOrderNow());
@@ -586,14 +685,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
     final config = context.watch<SiteConfigController>();
     final paused = !config.deliveryEnabled;
 
-    // The verification panel target number: only while the field still holds
-    // that exact number (edits close the panel via _fieldsChanged).
-    final otpCanonical =
-        (_otpPhone != null && _otpPhone == canonicalWhatsAppPhone(_phone.text))
-            ? _otpPhone
-            : null;
+    // The canonical number the field currently holds, when it is complete
+    // and valid. The verification slot below the field keys off it.
+    final phoneCanonical = canonicalWhatsAppPhone(_phone.text);
 
-    // A short line under the CTA explaining why it is disabled.
+    // A short line under the CTA. Most states disable the button; the
+    // verification hint is the one case where the CTA stays enabled and the
+    // hint points at the always-visible OTP slot next to the number.
     final String? ctaHint;
     if (paused) {
       ctaHint =
@@ -605,10 +703,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
       ctaHint = 'Set and confirm your delivery location on the map';
     } else if (!locationReady) {
       ctaHint = 'Confirm the delivery location pin on the map';
-    } else if (otpCanonical != null) {
+    } else if (phoneCanonical != null && !_provenNow(phoneCanonical)) {
       ctaHint =
-          'Complete the WhatsApp verification next to your number to place '
-          'your order.';
+          'Send the OTP and enter the 6-digit code next to your number to '
+          'place your order.';
     } else {
       ctaHint = null;
     }
@@ -657,23 +755,46 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     builder: (context, constraints) {
                       final desktop = constraints.maxWidth >= 960;
                       final auth = _auth;
-                      // The live verification panel rides inside the details
+                      // The live verification slot rides inside the details
                       // form, directly under the WhatsApp number it belongs
                       // to - never off in the right-rail summary, where a
-                      // customer could miss it or lose it under a fold.
-                      final verifyPanel = otpCanonical == null
+                      // customer could miss it or lose it under a fold. It
+                      // is present whenever the field holds a valid number:
+                      // the full panel (send-OTP option + code entry), the
+                      // compact offer after a close, or the green verified
+                      // row once the number is proven.
+                      final verifySlot = phoneCanonical == null
                           ? null
-                          : WhatsAppVerifyPanel(
-                              key: ValueKey<String>('verify-$otpCanonical'),
+                          : CheckoutVerifySlot(
+                              canonicalPhone: phoneCanonical,
+                              proven: _provenNow(phoneCanonical),
+                              showPanel:
+                                  _verifyOpen ||
+                                  _dismissedFor != phoneCanonical,
+                              autoRequestCode: _autoRequest,
                               service: context.read<WhatsAppOtpService>(),
-                              canonicalPhone: otpCanonical,
                               sessionPhone: auth?.phoneNumber,
                               sessionEmail: auth?.email,
                               onVerified: ({required bool freshSession}) =>
-                                  _onNumberVerified(otpCanonical,
-                                      fresh: freshSession),
-                              onCancel: () {
-                                if (mounted) setState(() => _otpPhone = null);
+                                  _onNumberVerified(
+                                    phoneCanonical,
+                                    fresh: freshSession,
+                                  ),
+                              onOpenPanel: () {
+                                if (!mounted) return;
+                                setState(() {
+                                  _verifyOpen = true;
+                                  _dismissedFor = null;
+                                  _autoRequest = true;
+                                });
+                              },
+                              onDismiss: () {
+                                if (!mounted) return;
+                                setState(() {
+                                  _verifyOpen = false;
+                                  _dismissedFor = phoneCanonical;
+                                  _autoRequest = false;
+                                });
                               },
                             );
                       final form = _CheckoutForm(
@@ -686,7 +807,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                         apartment: _apartment,
                         landmark: _landmark,
                         instructions: _instructions,
-                        verification: verifyPanel,
+                        verification: verifySlot,
                         verificationKey: _verifyAnchor,
                       );
                       final aside = Column(
@@ -695,7 +816,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                           _SummaryCard(),
                           const SizedBox(height: 20),
                           _PlaceOrderCard(
-                            enabled: canSend && !paused && otpCanonical == null,
+                            enabled: canSend && !paused,
                             placing: _placing,
                             hint: ctaHint,
                             onPlace: _placeOrder,
@@ -1100,7 +1221,10 @@ class _PlaceOrderCard extends StatelessWidget {
                   : const Text('Place order - cash on delivery'),
             ),
           ),
-          if (!enabled && !placing && hint != null) ...[
+          // The hint renders under the CTA whether the button is disabled
+          // (missing details / location / paused) or enabled - the OTP hint
+          // points at the verification slot while the CTA stays tappable.
+          if (!placing && hint != null) ...[
             const SizedBox(height: 10),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,

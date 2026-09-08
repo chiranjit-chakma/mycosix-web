@@ -79,18 +79,21 @@ service cloud.firestore {
       && res.data.customerName is string
       && res.data.customerName.size() >= 1
       && res.data.customerName.size() <= 120
-      // Contact phone: canonical '+91XXXXXXXXXX' AND proven. The one-time
-      // code was verified by Firebase itself, which only then puts the
-      // phone_number claim on the caller's auth token; pinning the order's
-      // phone to that claim is the server's proof - a browser can never
-      // write an unverified number or forge the marker.
+      // Contact phone: canonical '+91XXXXXXXXXX' AND proven. The proof is
+      // the server's own, never a browser flag: either Firebase put the
+      // phone_number claim on the caller's auth token (it only does that
+      // after IT verified the one-time code), or an admin attested the same
+      // canonical phone on the caller's own customer profile (customers/
+      // {uid}.phoneVerified - attestation fields only an admin may write,
+      // see the customers update rule). A browser can never write an
+      // unverified number or forge the marker.
       && 'phone' in res.data
       && res.data.phone is string
       && res.data.phone.matches('^[+]91[6-9][0-9]{9}$')
       && 'phoneVerified' in res.data
       && res.data.phoneVerified == true
       && request.auth != null
-      && request.auth.token.phone_number == res.data.phone
+      && phoneProofHolds(request.auth, res.data.phone)
       && 'latitude' in res.data
       && res.data.latitude is number
       && 'longitude' in res.data
@@ -142,6 +145,19 @@ service cloud.firestore {
               && res.data.customerId.size() <= 80
               && request.auth != null
               && res.data.customerId == request.auth.uid));
+    }
+
+    // The server-side phone proof for a recorded order: either Firebase's
+    // own phone_number claim on the caller's token (the caller verified a
+    // one-time code just now), or an admin-verified attestation stored on
+    // the customer's own profile document. The attestation fields can ONLY
+    // be written by an admin (see the customers update rule), so a customer
+    // can never attest themselves or clear an admin's attestation.
+    function phoneProofHolds(auth, phone) {
+      if (auth.token.phone_number == phone) return true;
+      return exists(/databases/$(database)/documents/customers/$(auth.uid))
+        && get(/databases/$(database)/documents/customers/$(auth.uid)).data.phone == phone
+        && get(/databases/$(database)/documents/customers/$(auth.uid)).data.phoneVerified == true;
     }
 
     // Batch quantities must stay sane server-side: nothing negative and never
@@ -229,6 +245,9 @@ service cloud.firestore {
     // Customers section). The email on the profile must be the email the
     // auth provider verified for that uid, and a customer document starts
     // life as 'active' - account status changes are an admin-only decision.
+    // The other admin-only write is the WhatsApp-number attestation (phone +
+    // phoneVerified + who/when): an admin who confirmed the number with the
+    // customer may mark it verified so future orders skip the one-time code.
     match /customers/{uid} {
       allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
       allow create: if isSignedIn() && request.auth.uid == uid
@@ -254,11 +273,31 @@ service cloud.firestore {
                   && request.resource.data.displayName.size() <= 120))
         )
         || (
-          // An admin may only change the account status (active/disabled).
+          // An admin may change the account status (active/disabled) and,
+          // separately, the WhatsApp-number attestation: the canonical
+          // phone the customer uses on the shop, whether an admin verified
+          // it with the customer, and who verified it and when. These
+          // attestation fields are strictly admin-only - a customer can
+          // never write, change or clear their own verification.
           isAdmin()
           && request.resource.data.diff(resource.data).affectedKeys()
-               .hasOnly(['status', 'updatedAt'])
-          && request.resource.data.status in ['active', 'disabled']
+               .hasOnly([
+                 'status', 'updatedAt', 'phone', 'phoneVerified',
+                 'phoneVerifiedBy', 'phoneVerifiedAt'
+               ])
+          && (!('status' in request.resource.data)
+              || request.resource.data.status in ['active', 'disabled'])
+          && (!('phone' in request.resource.data)
+              || (request.resource.data.phone is string
+                  && request.resource.data.phone
+                       .matches('^[+]91[6-9][0-9]{9}$')))
+          && (!('phoneVerified' in request.resource.data)
+              || request.resource.data.phoneVerified is bool)
+          && (!('phoneVerifiedBy' in request.resource.data)
+              || (request.resource.data.phoneVerifiedBy is string
+                  && request.resource.data.phoneVerifiedBy.size() <= 120))
+          && (!('phoneVerifiedAt' in request.resource.data)
+              || request.resource.data.phoneVerifiedAt is timestamp)
         );
       allow delete: if false;
     }

@@ -281,23 +281,32 @@ async function placeOrder(
   { now = () => new Date(), authUid = null, authPhone = null } = {},
 ) {
   const c = cleanse(data);
-
-  // The order's phone must be the one Firebase verified on the caller's own
-  // auth session (the token's phone_number claim - Firebase only adds that
-  // claim after it verified the one-time code itself). A browser flag is
-  // never trusted here.
-  if (authPhone !== c.phone) {
-    throw fail(
-      'permission-denied',
-      'Please verify your WhatsApp number before placing the order.',
-    );
-  }
-
   const ordersCol = db.collection('orders');
   const productsCol = db.collection('products');
   const configRef = db.collection('siteConfig').doc('public');
 
   const outcome = await db.runTransaction(async (tx) => {
+    // The order's phone must be proven server-side - a browser flag is never
+    // trusted: either Firebase's own phone_number claim on the caller's auth
+    // token (Firebase only adds that claim after IT verified the one-time
+    // code), or an admin attestation on the caller's own customer profile
+    // (customers/{uid}: phone + phoneVerified - attestation fields only an
+    // admin may write, mirrored by the Firestore rules). The check runs
+    // inside the transaction, so an attestation cannot change between the
+    // check and the write.
+    let phoneProven = authPhone === c.phone;
+    if (!phoneProven && authUid) {
+      const custRef = db.collection('customers').doc(authUid);
+      const custSnap = await tx.get(custRef);
+      const cust = custSnap.exists ? custSnap.data() || {} : {};
+      phoneProven = cust.phoneVerified === true && cust.phone === c.phone;
+    }
+    if (!phoneProven) {
+      throw fail(
+        'permission-denied',
+        'Please verify your WhatsApp number before placing the order.',
+      );
+    }
     const cfgSnap = await tx.get(configRef);
     const cfg = cfgSnap.exists ? cfgSnap.data() || {} : {};
 
@@ -428,7 +437,7 @@ function getDb() {
   return db;
 }
 
-exports.createOrder = functions.https.onCall(async (data) => {
+exports.createOrder = functions.https.onCall(async (data, context) => {
   try {
     return await placeOrder(getDb(), data, {
       authUid: context.auth ? context.auth.uid : null,

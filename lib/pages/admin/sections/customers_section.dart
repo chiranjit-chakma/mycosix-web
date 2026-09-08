@@ -1,11 +1,14 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../../config/mx_colors.dart';
 import '../../../config/mx_type.dart';
-import '../../../firebase/fb.dart';
+import '../../../firebase/fb_admin.dart';
 import '../../../models/order_status.dart';
 import '../../../models/store_order.dart';
+import '../../../utils/phone.dart';
 import '../admin_widgets.dart';
 import '../order_detail.dart';
 
@@ -16,7 +19,7 @@ import '../order_detail.dart';
 Future<void> _sendResetLink(BuildContext context, String email) async {
   final messenger = ScaffoldMessenger.of(context);
   try {
-    await Fb.auth.sendPasswordResetEmail(email: email.trim());
+    await FbAdmin.auth.sendPasswordResetEmail(email: email.trim());
     messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text('Reset link sent to $email')));
@@ -24,7 +27,9 @@ Future<void> _sendResetLink(BuildContext context, String email) async {
     messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(content: Text('Could not send: ${Fb.friendlyMessage(e)}')),
+        SnackBar(
+          content: Text('Could not send: ${FbAdmin.friendlyMessage(e)}'),
+        ),
       );
   }
 }
@@ -37,9 +42,13 @@ Future<void> _sendResetLink(BuildContext context, String email) async {
 /// customer's own account document is still private to them and their admin:
 /// no passwords, no tokens, no one-time codes are ever read or shown here.
 ///
-/// The account status flag is the one thing an admin may change on a customer
-/// document (security rules allow exactly `status` + `updatedAt`). Status is a
-/// shop-side flag — it does not revoke the customer's sign-in session.
+/// The two things an admin may change on a customer document are the account
+/// status flag (`status` + `updatedAt`) and the WhatsApp-number attestation
+/// (`phone`, `phoneVerified`, `phoneVerifiedBy`, `phoneVerifiedAt` — orders
+/// on a verified number skip the one-time code). The security rules allow
+/// exactly these fields, and only for an admin — never for the customer
+/// themselves. Status is a shop-side flag — it does not revoke the
+/// customer's sign-in session.
 class CustomersSection extends StatefulWidget {
   const CustomersSection({super.key});
 
@@ -59,17 +68,19 @@ class _CustomersSectionState extends State<CustomersSection> {
             subtitle:
                 'Accounts created on the site, with their orders. The status '
                 'flag is a shop-side record you control — it does not revoke '
-                'a customer’s sign-in session.',
+                'a customer’s sign-in session. From a customer’s card you '
+                'can also verify the WhatsApp number they order with — and '
+                'unverify it again — both in real time.',
           ),
           const SizedBox(height: 14),
           StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: Fb.customers.snapshots(),
+            stream: FbAdmin.customers.snapshots(),
             builder: (context, custSnap) {
               if (custSnap.hasError) {
                 return StateNote(
                   icon: Icons.error_outline_rounded,
                   text: 'Customers could not be loaded.',
-                  detail: Fb.friendlyMessage(custSnap.error!),
+                  detail: FbAdmin.friendlyMessage(custSnap.error!),
                   tone: StateTone.danger,
                 );
               }
@@ -77,7 +88,7 @@ class _CustomersSectionState extends State<CustomersSection> {
                 return const LoadingNote(label: 'Loading customers...');
               }
               return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: Fb.orders
+                stream: FbAdmin.orders
                     .orderBy('createdAt', descending: true)
                     .limit(400)
                     .snapshots(),
@@ -86,7 +97,7 @@ class _CustomersSectionState extends State<CustomersSection> {
                     return StateNote(
                       icon: Icons.error_outline_rounded,
                       text: 'Orders could not be loaded.',
-                      detail: Fb.friendlyMessage(ordSnap.error!),
+                      detail: FbAdmin.friendlyMessage(ordSnap.error!),
                       tone: StateTone.danger,
                     );
                   }
@@ -163,7 +174,10 @@ class _CustomersSectionState extends State<CustomersSection> {
 }
 
 /// One customer, as read from `customers/{uid}` (email/displayName are the
-/// values the customer registered with; timestamps are server-side).
+/// values the customer registered with; timestamps are server-side). The
+/// phone fields below are the admin-side WhatsApp attestation — only an
+/// admin may write them (the security rules allow exactly that list), never
+/// the customer themselves.
 class CustomerRow {
   const CustomerRow({required this.uid, required this.doc});
 
@@ -177,6 +191,20 @@ class CustomerRow {
   String get status => (doc['status'] ?? 'active') as String;
 
   DateTime? get joined => fireTs(doc['createdAt']);
+
+  /// The canonical '+91...' number the customer orders with, when an admin
+  /// has recorded one.
+  String? get phone => (doc['phone'] as String?)?.trim();
+
+  /// Whether an admin verified that number with the customer: orders on a
+  /// verified number skip the one-time code at checkout.
+  bool get phoneVerified => doc['phoneVerified'] == true;
+
+  /// The admin who last marked the number verified.
+  String? get phoneVerifiedBy => (doc['phoneVerifiedBy'] as String?)?.trim();
+
+  /// When the number was last marked verified.
+  DateTime? get phoneVerifiedAt => fireTs(doc['phoneVerifiedAt']);
 
   /// What the admin list shows when there is no display name: the local part
   /// of their own email (clearly theirs), not a fabricated name.
@@ -337,7 +365,8 @@ class _CustomerTile extends StatelessWidget {
                       '${orders.length} '
                       '${orders.length == 1 ? 'order' : 'orders'}'
                       '${delivered > 0 ? '  ·  ${rupees(delivered)} delivered' : ''}'
-                      '${c.joined != null ? '  ·  joined ${shortWhen(c.joined!)}' : ''}',
+                      '${c.joined != null ? '  ·  joined ${shortWhen(c.joined!)}' : ''}'
+                      '${c.phoneVerified ? '  ·  WhatsApp verified' : ''}',
                       style: MxType.bodyXs(color: MxColors.charcoalSoft),
                     ),
                   ],
@@ -393,8 +422,11 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
-/// One customer, in full: their orders and the admin-only status control.
-/// Never shows passwords, reset tokens or anything else credential-like.
+/// One customer, in full: their orders and the admin-only controls — the
+/// account status and the WhatsApp-number attestation. The customer document
+/// is subscribed live, so a change (here, or from another admin screen) lands
+/// on this dialog in real time. Never shows passwords, reset tokens or
+/// anything else credential-like.
 class _CustomerDetailDialog extends StatefulWidget {
   const _CustomerDetailDialog({required this.customer, required this.orders});
 
@@ -409,8 +441,38 @@ class _CustomerDetailDialogState extends State<_CustomerDetailDialog> {
   bool _saving = false;
   String? _saveError;
 
+  /// The freshest read of the customer document; the row the tile was built
+  /// from is used only until the first live snapshot arrives.
+  CustomerRow get _customer {
+    final live = _live;
+    return live == null
+        ? widget.customer
+        : CustomerRow(uid: widget.customer.uid, doc: live);
+  }
+
+  Map<String, dynamic>? _live;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _customerSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _customerSub = FbAdmin.customers
+        .doc(widget.customer.uid)
+        .snapshots()
+        .listen((snap) {
+          if (!mounted || !snap.exists) return;
+          setState(() => _live = snap.data());
+        });
+  }
+
+  @override
+  void dispose() {
+    _customerSub?.cancel();
+    super.dispose();
+  }
+
   Future<void> _setStatus(String next) async {
-    if (next == widget.customer.status || _saving) return;
+    if (next == _customer.status || _saving) return;
     if (next == 'disabled') {
       final confirm = await showDialog<bool>(
         context: context,
@@ -446,7 +508,7 @@ class _CustomerDetailDialogState extends State<_CustomerDetailDialog> {
     try {
       // The security rules allow exactly this: an admin changing the status
       // (plus a server timestamp) and nothing else on a customer document.
-      await Fb.customers.doc(widget.customer.uid).update({
+      await FbAdmin.customers.doc(widget.customer.uid).update({
         'status': next,
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -458,8 +520,8 @@ class _CustomerDetailDialogState extends State<_CustomerDetailDialog> {
           SnackBar(
             content: Text(
               next == 'active'
-                  ? '${widget.customer.label} re-enabled.'
-                  : '${widget.customer.label} marked as disabled.',
+                  ? '${_customer.label} re-enabled.'
+                  : '${_customer.label} marked as disabled.',
             ),
           ),
         );
@@ -467,14 +529,14 @@ class _CustomerDetailDialogState extends State<_CustomerDetailDialog> {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _saveError = Fb.friendlyMessage(e);
+        _saveError = FbAdmin.friendlyMessage(e);
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final c = widget.customer;
+    final c = _customer;
     final active = c.status == 'active';
     return Dialog(
       backgroundColor: MxColors.cream,
@@ -566,6 +628,20 @@ class _CustomerDetailDialogState extends State<_CustomerDetailDialog> {
                       ],
                     ),
                     const Divider(color: MxColors.line, height: 30),
+                    Text(
+                      'WhatsApp number on orders',
+                      style: MxType.label(color: MxColors.forest),
+                    ),
+                    const SizedBox(height: 8),
+                    _PhoneVerificationCard(
+                      uid: widget.customer.uid,
+                      label: c.label,
+                      phone: c.phone,
+                      verified: c.phoneVerified,
+                      verifiedBy: c.phoneVerifiedBy,
+                      verifiedAt: c.phoneVerifiedAt,
+                    ),
+                    const Divider(color: MxColors.line, height: 30),
                     Text('Orders', style: MxType.label(color: MxColors.forest)),
                     const SizedBox(height: 8),
                     if (widget.orders.isEmpty)
@@ -638,6 +714,278 @@ class _CustomerOrderRow extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _PhoneVerificationCard extends StatefulWidget {
+  const _PhoneVerificationCard({
+    required this.uid,
+    required this.label,
+    required this.phone,
+    required this.verified,
+    required this.verifiedBy,
+    required this.verifiedAt,
+  });
+
+  final String uid;
+  final String label;
+  final String? phone;
+  final bool verified;
+  final String? verifiedBy;
+  final DateTime? verifiedAt;
+
+  @override
+  State<_PhoneVerificationCard> createState() => _PhoneVerificationCardState();
+}
+
+/// Verify/unverify, live: marking a number verified means orders on it skip
+/// the one-time code at checkout, so this is a deliberate admin act. Every
+/// write goes through the admin-only security rules (a customer can never
+/// attest, change or clear their own verification) and the card re-renders
+/// from the dialog's live document subscription — no refresh needed.
+class _PhoneVerificationCardState extends State<_PhoneVerificationCard> {
+  late final TextEditingController _phoneCtl;
+  bool _working = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _phoneCtl = TextEditingController(text: widget.phone ?? '');
+  }
+
+  @override
+  void dispose() {
+    _phoneCtl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _verify() async {
+    final typed = _phoneCtl.text.trim();
+    final canonical = canonicalWhatsAppPhone(
+      typed.isEmpty ? (widget.phone ?? '') : typed,
+    );
+    if (canonical == null) {
+      setState(
+        () => _error =
+            'Enter a valid Indian mobile number, e.g. +91 98765 43210.',
+      );
+      return;
+    }
+    final by = FbAdmin.auth.currentUser?.email?.trim() ?? '';
+    setState(() {
+      _working = true;
+      _error = null;
+    });
+    try {
+      // The security rules allow exactly these attestation fields, and only
+      // when the writer is an admin - never for the customer themselves.
+      await FbAdmin.customers.doc(widget.uid).update({
+        'phone': canonical,
+        'phoneVerified': true,
+        'phoneVerifiedBy': by.isEmpty ? 'admin' : by,
+        'phoneVerifiedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      if (!mounted) return;
+      setState(() {
+        _working = false;
+        _phoneCtl.text = canonical;
+      });
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              '${humanizeWhatsAppPhone(canonical)} verified \u2014 orders on '
+              'this number now skip the one-time code.',
+            ),
+          ),
+        );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _working = false;
+        _error = FbAdmin.friendlyMessage(e);
+      });
+    }
+  }
+
+  Future<void> _unverify() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Unverify this number?'),
+        content: const Text(
+          'Orders placed on this number will need a fresh one-time code at '
+          'checkout again. You can verify the number again at any time.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: MxColors.danger,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Unverify'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    setState(() {
+      _working = true;
+      _error = null;
+    });
+    try {
+      await FbAdmin.customers.doc(widget.uid).update({
+        'phoneVerified': false,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      if (!mounted) return;
+      setState(() => _working = false);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              '${widget.label} unverified \u2014 a one-time code is needed '
+              'for this number again.',
+            ),
+          ),
+        );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _working = false;
+        _error = FbAdmin.friendlyMessage(e);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.verified) {
+      final by = widget.verifiedBy ?? 'admin';
+      final at = widget.verifiedAt;
+      final when = at != null ? '  \u00b7  on ${shortWhen(at)}' : '';
+      final phone = humanizeWhatsAppPhone(widget.phone ?? '');
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: MxColors.ok.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(MxRadius.md),
+          border: Border.all(color: MxColors.ok.withValues(alpha: 0.4)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.verified_user_rounded,
+                  size: 19,
+                  color: MxColors.ok,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Verified: $phone',
+                    style: MxType.bodySm(
+                      color: MxColors.charcoal,
+                      weight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Padding(
+              padding: const EdgeInsets.only(left: 27),
+              child: Text(
+                'Marked verified by $by$when. Orders on this number skip '
+                'the one-time code at checkout.',
+                style: MxType.bodyXs(color: MxColors.charcoalSoft),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton.icon(
+                onPressed: _working ? null : _unverify,
+                icon: _working
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.block_rounded, size: 16),
+                label: const Text('Unverify'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: MxColors.danger,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: _phoneCtl,
+          keyboardType: TextInputType.phone,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => _verify(),
+          decoration: InputDecoration(
+            hintText: '+91 98765 43210',
+            isDense: true,
+            errorText: _error,
+            border: const OutlineInputBorder(),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 12,
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'The number the customer orders with. Verify it only once you '
+          'have confirmed it with the customer \u2014 orders on a verified '
+          'number skip the one-time code at checkout.',
+          style: MxType.bodyXs(color: MxColors.stone),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.icon(
+            onPressed: _working ? null : _verify,
+            icon: _working
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.check_rounded, size: 17),
+            style: FilledButton.styleFrom(
+              backgroundColor: MxColors.ok,
+              foregroundColor: Colors.white,
+            ),
+            label: const Text('Verify number'),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'config/mx_theme.dart';
 import 'firebase/fb.dart';
+import 'firebase/fb_admin.dart';
 import 'firebase/firebase_options.dart';
 import 'repositories/cart_repository.dart';
 import 'repositories/config_repository.dart';
@@ -45,6 +46,21 @@ Future<void> main() async {
       options: DefaultFirebaseOptions.currentPlatform,
     ).timeout(const Duration(seconds: 8));
     Fb.enabled = true;
+    // The admin area runs on its own NAMED Firebase app (FbAdmin): the admin
+    // sign-in and sign-out therefore live on an auth session that is fully
+    // separate from the customer session of the default app. Signing in as
+    // admin in one tab can never change or overwrite the customer account
+    // of the normal site, and the two never merge. If the second app fails
+    // to come up, only the admin area reports itself unavailable.
+    try {
+      final adminApp = await Firebase.initializeApp(
+        name: FbAdmin.appName,
+        options: DefaultFirebaseOptions.currentPlatform,
+      ).timeout(const Duration(seconds: 8));
+      FbAdmin.attach(adminApp);
+    } catch (e) {
+      debugPrint('MYCOSIX: admin Firebase unavailable ($e).');
+    }
   } catch (e) {
     debugPrint('MYCOSIX: Firebase unavailable ($e) — running on local data.');
   }

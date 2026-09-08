@@ -6,7 +6,7 @@ import '../../../analytics/monthly.dart';
 import '../../../analytics/order_analytics.dart';
 import '../../../config/mx_colors.dart';
 import '../../../config/mx_type.dart';
-import '../../../firebase/fb.dart';
+import '../../../firebase/fb_admin.dart';
 import '../../../models/batch.dart';
 import '../../../models/order_status.dart';
 import '../../../models/store_order.dart';
@@ -169,7 +169,7 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
       customTo: _customTo,
     );
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: Fb.orders
+      stream: FbAdmin.orders
           .where('createdAt', isGreaterThanOrEqualTo: range.startUtc)
           .where('createdAt', isLessThan: range.endUtc)
           .orderBy('createdAt', descending: true)
@@ -180,7 +180,7 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
           return StateNote(
             icon: Icons.error_outline_rounded,
             text: 'Orders could not be loaded.',
-            detail: Fb.friendlyMessage(snap.error!),
+            detail: FbAdmin.friendlyMessage(snap.error!),
             tone: StateTone.danger,
           );
         }
@@ -481,7 +481,7 @@ class _MonthlyBlock extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: Fb.orders
+          stream: FbAdmin.orders
               .where('deliveredAt', isGreaterThanOrEqualTo: cutoff.toUtc())
               .orderBy('deliveredAt', descending: true)
               .limit(400)
@@ -491,7 +491,7 @@ class _MonthlyBlock extends StatelessWidget {
               return StateNote(
                 icon: Icons.error_outline_rounded,
                 text: 'Delivered orders could not be loaded.',
-                detail: Fb.friendlyMessage(snap.error!),
+                detail: FbAdmin.friendlyMessage(snap.error!),
                 tone: StateTone.danger,
               );
             }
@@ -504,13 +504,13 @@ class _MonthlyBlock extends StatelessWidget {
                   orderFromDoc(d),
             ];
             return FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              future: Fb.batches.get(),
+              future: FbAdmin.batches.get(),
               builder: (context, batchSnap) {
                 if (batchSnap.hasError) {
                   return StateNote(
                     icon: Icons.error_outline_rounded,
                     text: 'Batches could not be loaded.',
-                    detail: Fb.friendlyMessage(batchSnap.error!),
+                    detail: FbAdmin.friendlyMessage(batchSnap.error!),
                     tone: StateTone.danger,
                   );
                 }

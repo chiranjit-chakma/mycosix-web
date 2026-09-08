@@ -363,6 +363,59 @@ test('rejects when the caller has no verified phone at all', () => {
   );
 });
 
+/* ------------------------------------------------------------------ *
+ * Admin attestation: customers/{uid}.phone + phoneVerified is a second,
+ * admin-only way a phone can be proven (the Firestore rules mirror this).
+ * ------------------------------------------------------------------ */
+test('accepts an admin-attested phone on the caller profile (no token claim)', async () => {
+  const db = seededDb({
+    'customers/u-1': { email: 'customer@example.com', phone: PHONE, phoneVerified: true },
+  });
+  const res = await placeOrderImpl(db, draft(), { authPhone: null, authUid: 'u-1' });
+  assert.equal(res.order.phone, PHONE);
+});
+
+test('rejects an attestation whose phone does not match the order phone', () => {
+  const db = seededDb({
+    'customers/u-1': { phone: '+919876543211', phoneVerified: true },
+  });
+  return expectRejected(
+    placeOrderImpl(db, draft(), { authPhone: null, authUid: 'u-1' }),
+    'permission-denied',
+    /verify your WhatsApp number/,
+  );
+});
+
+test('rejects an unverified attestation', () => {
+  const db = seededDb({
+    'customers/u-1': { phone: PHONE, phoneVerified: false },
+  });
+  return expectRejected(
+    placeOrderImpl(db, draft(), { authPhone: null, authUid: 'u-1' }),
+    'permission-denied',
+    /verify your WhatsApp number/,
+  );
+});
+
+test('rejects when the caller has no customer profile at all', () => {
+  const db = seededDb();
+  return expectRejected(
+    placeOrderImpl(db, draft(), { authPhone: null, authUid: 'u-missing' }),
+    'permission-denied',
+    /verify your WhatsApp number/,
+  );
+});
+
+test('a live token claim wins regardless of the profile attestation', async () => {
+  // The caller carries the phone on their own token, so an unattested (or
+  // differently attested) profile does not matter - the claim is the proof.
+  const db = seededDb({
+    'customers/u-1': { phone: '+919876543211', phoneVerified: false },
+  });
+  const res = await placeOrder(db, draft(), { authUid: 'u-1' });
+  assert.equal(res.order.phone, PHONE);
+});
+
 test('rejects a phone that is not a 10-digit Indian mobile', () => {
   const db = seededDb();
   return expectRejected(

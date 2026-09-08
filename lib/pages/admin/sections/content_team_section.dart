@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../config/mx_colors.dart';
 import '../../../config/mx_type.dart';
-import '../../../firebase/fb.dart';
+import '../../../firebase/fb_admin.dart';
 import '../admin_widgets.dart';
 
 /// Content + team records. Nothing here is invented: only documents that
@@ -44,7 +44,7 @@ class _Block extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: Fb.db.collection(hint).snapshots(),
+      stream: FbAdmin.db.collection(hint).snapshots(),
       builder: (context, snap) {
         final docs =
             snap.data?.docs ?? const <DocumentSnapshot<Map<String, dynamic>>>[];
@@ -70,7 +70,7 @@ class _Block extends StatelessWidget {
               StateNote(
                 icon: Icons.error_outline_rounded,
                 text: 'Could not load $hint records.',
-                detail: Fb.friendlyMessage(snap.error!),
+                detail: FbAdmin.friendlyMessage(snap.error!),
                 tone: StateTone.danger,
               )
             else if (!snap.hasData)
@@ -165,12 +165,12 @@ class _Block extends StatelessWidget {
     );
     if (ok != true) return;
     try {
-      await Fb.db.collection(hint).doc(id).delete();
+      await FbAdmin.db.collection(hint).doc(id).delete();
     } catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(Fb.friendlyMessage(e))));
+        ..showSnackBar(SnackBar(content: Text(FbAdmin.friendlyMessage(e))));
     }
   }
 }

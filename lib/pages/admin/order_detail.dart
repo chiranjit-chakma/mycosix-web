@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../config/mx_colors.dart';
 import '../../config/mx_type.dart';
-import '../../firebase/fb.dart';
+import '../../firebase/fb_admin.dart';
 import '../../models/order_status.dart';
 import '../../models/order_status_update.dart';
 import '../../models/store_order.dart';
@@ -52,7 +52,7 @@ class _OrderSheetState extends State<_OrderSheet> {
         next,
         FieldValue.serverTimestamp(),
       );
-      await Fb.orders.doc(widget.order.id).update(patch);
+      await FbAdmin.orders.doc(widget.order.id).update(patch);
       if (!mounted) return;
       setState(() => _saving = false);
       ScaffoldMessenger.of(context)
@@ -66,7 +66,7 @@ class _OrderSheetState extends State<_OrderSheet> {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _saveError = Fb.friendlyMessage(e);
+        _saveError = FbAdmin.friendlyMessage(e);
       });
     }
   }

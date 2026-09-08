@@ -6,7 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../../config/mx_colors.dart';
 import '../../../config/mx_type.dart';
-import '../../../firebase/fb.dart';
+import '../../../firebase/fb_admin.dart';
 import '../../../models/order_request.dart';
 import '../../../models/order_status.dart';
 import '../../../models/order_status_update.dart';
@@ -43,7 +43,7 @@ class _RequestsSectionState extends State<RequestsSection> {
   @override
   void initState() {
     super.initState();
-    _reqSub = Fb.orderRequests
+    _reqSub = FbAdmin.orderRequests
         .orderBy('recordedAt', descending: true)
         .limit(200)
         .snapshots()
@@ -54,7 +54,7 @@ class _RequestsSectionState extends State<RequestsSection> {
         _loading = false;
       });
     });
-    _ordersSub = Fb.orders
+    _ordersSub = FbAdmin.orders
         .orderBy('createdAt', descending: true)
         .limit(400)
         .snapshots()
@@ -143,7 +143,7 @@ class _RequestsSectionState extends State<RequestsSection> {
             StateNote(
               icon: Icons.error_outline_rounded,
               text: 'Requests could not be loaded.',
-              detail: Fb.friendlyMessage(_requestsError!),
+              detail: FbAdmin.friendlyMessage(_requestsError!),
               tone: StateTone.danger,
             )
           else if (_loading)
@@ -230,7 +230,7 @@ class _RequestsSectionState extends State<RequestsSection> {
             ? OrderRequestStatus.approved
             : OrderRequestStatus.rejected;
     try {
-      await Fb.orderRequests.doc(request.id).update(
+      await FbAdmin.orderRequests.doc(request.id).update(
             request.decisionFields(
               next,
               timestamp: FieldValue.serverTimestamp(),
@@ -242,7 +242,7 @@ class _RequestsSectionState extends State<RequestsSection> {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(Fb.friendlyMessage(e))));
+        ..showSnackBar(SnackBar(content: Text(FbAdmin.friendlyMessage(e))));
     }
   }
 
@@ -559,7 +559,7 @@ class _RequestCard extends StatelessWidget {
     );
     if (ok != true || !context.mounted) return;
     try {
-      await Fb.orders.doc(o.id).update(
+      await FbAdmin.orders.doc(o.id).update(
         orderStatusUpdateFields(
           OrderStatus.cancelled,
           FieldValue.serverTimestamp(),
@@ -575,7 +575,7 @@ class _RequestCard extends StatelessWidget {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(Fb.friendlyMessage(e))));
+        ..showSnackBar(SnackBar(content: Text(FbAdmin.friendlyMessage(e))));
     }
   }
 }
@@ -700,14 +700,14 @@ class _NewRequestDialogState extends State<NewRequestDialog> {
       );
       final map = request.toMap();
       map['recordedAt'] = FieldValue.serverTimestamp();
-      await Fb.orderRequests.add(map);
+      await FbAdmin.orderRequests.add(map);
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = Fb.friendlyMessage(e);
+        _error = FbAdmin.friendlyMessage(e);
       });
     }
   }

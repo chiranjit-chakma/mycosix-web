@@ -35,6 +35,7 @@ class WhatsAppVerifyPanel extends StatefulWidget {
     required this.onCancel,
     this.sessionPhone,
     this.sessionEmail,
+    this.autoRequestCode = false,
   });
 
   /// The gateway that talks to Firebase Phone Auth (injected so tests can
@@ -61,6 +62,13 @@ class WhatsAppVerifyPanel extends StatefulWidget {
   /// The signed-in account's email (for the disclosure copy), when known.
   final String? sessionEmail;
 
+  /// When true, a freshly mounted panel in its intro phase requests a code
+  /// in the frame after mounting. The checkout's compact 'Send OTP' offer
+  /// re-opens the panel with this set, so the tap that says 'send' really
+  /// sends; it only ever fires from the intro phase, once per mount, and a
+  /// normal mount (default false) still waits for the customer to tap send.
+  final bool autoRequestCode;
+
   @override
   State<WhatsAppVerifyPanel> createState() => _WhatsAppVerifyPanelState();
 }
@@ -86,6 +94,12 @@ class _WhatsAppVerifyPanelState extends State<WhatsAppVerifyPanel> {
   void initState() {
     super.initState();
     _code.addListener(_codeChanged);
+    if (widget.autoRequestCode) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _phase != _Phase.intro) return;
+        _sendCode();
+      });
+    }
   }
 
   @override
@@ -307,11 +321,7 @@ class _WhatsAppVerifyPanelState extends State<WhatsAppVerifyPanel> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(
-                  Icons.sms_outlined,
-                  size: 15,
-                  color: MxColors.moss,
-                ),
+                const Icon(Icons.sms_outlined, size: 15, color: MxColors.moss),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -405,10 +415,9 @@ class _WhatsAppVerifyPanelState extends State<WhatsAppVerifyPanel> {
                 alignment: Alignment.centerRight,
                 child: TextButton.icon(
                   key: const Key('whatsapp-otp-resend'),
-                  onPressed:
-                      (_verificationId == null || _coolingDown)
-                          ? null
-                          : _sendCode,
+                  onPressed: (_verificationId == null || _coolingDown)
+                      ? null
+                      : _sendCode,
                   icon: const Icon(Icons.refresh_rounded, size: 15),
                   label: Text(
                     _coolingDown
@@ -434,8 +443,8 @@ class _WhatsAppVerifyPanelState extends State<WhatsAppVerifyPanel> {
                           style: FilledButton.styleFrom(
                             backgroundColor: MxColors.forest,
                             foregroundColor: Colors.white,
-                            disabledBackgroundColor:
-                                MxColors.stoneLight.withValues(alpha: 0.25),
+                            disabledBackgroundColor: MxColors.stoneLight
+                                .withValues(alpha: 0.25),
                             disabledForegroundColor: MxColors.stone,
                           ),
                           child: busy

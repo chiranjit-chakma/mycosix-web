@@ -6,7 +6,7 @@ import 'package:provider/provider.dart';
 import '../../../config/mx_colors.dart';
 import '../../../config/mx_type.dart';
 import '../../../firebase/admin_logs.dart';
-import '../../../firebase/fb.dart';
+import '../../../firebase/fb_admin.dart';
 import '../../../models/inventory_movement.dart';
 import '../../../models/product.dart';
 import '../../../state/auth_controller.dart';
@@ -53,13 +53,13 @@ class _ProductsSectionState extends State<ProductsSection> {
           _bar(),
           const SizedBox(height: 12),
           StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: Fb.products.orderBy('sortKey').snapshots(),
+            stream: FbAdmin.products.orderBy('sortKey').snapshots(),
             builder: (context, snap) {
               if (snap.hasError) {
                 return StateNote(
                   icon: Icons.error_outline_rounded,
                   text: 'Products could not be loaded.',
-                  detail: Fb.friendlyMessage(snap.error!),
+                  detail: FbAdmin.friendlyMessage(snap.error!),
                   tone: StateTone.danger,
                 );
               }
@@ -250,7 +250,7 @@ class _ProductsSectionState extends State<ProductsSection> {
 
   Future<void> _toggleAvailable(Product p, bool value) async {
     try {
-      await Fb.products.doc(p.id).set({
+      await FbAdmin.products.doc(p.id).set({
         'available': value,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
@@ -258,7 +258,7 @@ class _ProductsSectionState extends State<ProductsSection> {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(Fb.friendlyMessage(e))));
+        ..showSnackBar(SnackBar(content: Text(FbAdmin.friendlyMessage(e))));
     }
   }
 
@@ -286,12 +286,12 @@ class _ProductsSectionState extends State<ProductsSection> {
     );
     if (ok != true || !mounted) return;
     try {
-      await Fb.products.doc(p.id).delete();
+      await FbAdmin.products.doc(p.id).delete();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(Fb.friendlyMessage(e))));
+        ..showSnackBar(SnackBar(content: Text(FbAdmin.friendlyMessage(e))));
     }
   }
 
@@ -469,7 +469,7 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
       };
       final existing = widget.product;
       if (existing == null) {
-        final ref = Fb.products.doc();
+        final ref = FbAdmin.products.doc();
         await ref.set({
           ...base,
           'id': ref.id,
@@ -489,7 +489,7 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
           recordedByEmail: actor,
         );
       } else {
-        await Fb.products.doc(existing.id).set(base, SetOptions(merge: true));
+        await FbAdmin.products.doc(existing.id).set(base, SetOptions(merge: true));
         if (stock != existing.stock) {
           final label = existing.name +
               (existing.weight.isEmpty ? '' : ' (${existing.weight})');
@@ -510,7 +510,7 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = Fb.friendlyMessage(e);
+        _error = FbAdmin.friendlyMessage(e);
       });
     }
   }

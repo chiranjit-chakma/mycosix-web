@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../../config/mx_colors.dart';
 import '../../../config/mx_type.dart';
-import '../../../firebase/fb.dart';
+import '../../../firebase/fb_admin.dart';
 import '../../../models/site_settings.dart';
 import '../../../repositories/config_repository.dart';
 import '../admin_widgets.dart';
@@ -122,7 +122,7 @@ class _SettingsSectionState extends State<SettingsSection> {
     };
 
     try {
-      await Fb.siteConfig.doc('public').set(patch, SetOptions(merge: true));
+      await FbAdmin.siteConfig.doc('public').set(patch, SetOptions(merge: true));
       if (!mounted) return;
       setState(() {
         _busy = false;
@@ -133,7 +133,7 @@ class _SettingsSectionState extends State<SettingsSection> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _status = Fb.friendlyMessage(e);
+        _status = FbAdmin.friendlyMessage(e);
       });
     }
   }

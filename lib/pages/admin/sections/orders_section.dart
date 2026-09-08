@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../config/mx_colors.dart';
 import '../../../config/mx_type.dart';
-import '../../../firebase/fb.dart';
+import '../../../firebase/fb_admin.dart';
 import '../../../models/order_status.dart';
 import '../../../models/store_order.dart';
 import '../admin_widgets.dart';
@@ -39,7 +39,7 @@ class _OrdersSectionState extends State<OrdersSection> {
           _filterBar(),
           const SizedBox(height: 12),
           StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: Fb.orders
+            stream: FbAdmin.orders
                 .orderBy('createdAt', descending: true)
                 .limit(400)
                 .snapshots(),
@@ -48,7 +48,7 @@ class _OrdersSectionState extends State<OrdersSection> {
                 return StateNote(
                   icon: Icons.error_outline_rounded,
                   text: 'Orders could not be loaded.',
-                  detail: Fb.friendlyMessage(snap.error!),
+                  detail: FbAdmin.friendlyMessage(snap.error!),
                   tone: StateTone.danger,
                 );
               }

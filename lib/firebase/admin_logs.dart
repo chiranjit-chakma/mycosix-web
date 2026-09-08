@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/inventory_movement.dart';
-import 'fb.dart';
+import 'fb_admin.dart';
 
 /// Best-effort audit log for every product-stock change an admin makes.
 ///
@@ -35,7 +35,7 @@ Future<void> logStockChange({
     );
     final map = movement.toMap();
     map['recordedAt'] = FieldValue.serverTimestamp();
-    await Fb.inventoryMovements.add(map);
+    await FbAdmin.inventoryMovements.add(map);
   } catch (_) {
     // Never let auditing break the real stock write.
   }

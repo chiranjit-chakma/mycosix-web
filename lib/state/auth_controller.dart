@@ -4,7 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
-import '../firebase/fb.dart';
+import '../firebase/fb_admin.dart';
 
 /// Where a visitor stands on the way into the admin area.
 enum AdminGateStatus {
@@ -58,7 +58,7 @@ class AuthController extends ChangeNotifier {
     _start();
   }
 
-  final bool _backendAvailable = Fb.enabled;
+  final bool _backendAvailable = FbAdmin.enabled;
   bool get backendAvailable => _backendAvailable;
 
   bool _resolving = true;
@@ -83,7 +83,7 @@ class AuthController extends ChangeNotifier {
       _resolving = false;
       return;
     }
-    _authSub = Fb.auth.authStateChanges().listen(
+    _authSub = FbAdmin.auth.authStateChanges().listen(
       (u) {
         _user = u;
         _isAdmin = null;
@@ -108,7 +108,7 @@ class AuthController extends ChangeNotifier {
       return;
     }
     // Only the signed-in user may read their own grant document (rules).
-    _adminSub = Fb.admins
+    _adminSub = FbAdmin.admins
         .doc(u.uid)
         .snapshots()
         .listen(
@@ -121,7 +121,7 @@ class AuthController extends ChangeNotifier {
             // Rules not deployed / offline: the safest reading is "not admin".
             _isAdmin = false;
             _resolving = false;
-            _message = Fb.friendlyMessage(e);
+            _message = FbAdmin.friendlyMessage(e);
             notifyListeners();
           },
         );
@@ -134,13 +134,13 @@ class AuthController extends ChangeNotifier {
     _message = null;
     notifyListeners();
     try {
-      await Fb.auth.signInWithEmailAndPassword(
+      await FbAdmin.auth.signInWithEmailAndPassword(
         email: email.trim(),
         password: password,
       );
       return true;
     } catch (e) {
-      _message = Fb.friendlyMessage(e);
+      _message = FbAdmin.friendlyMessage(e);
       notifyListeners();
       return false;
     }
@@ -152,10 +152,10 @@ class AuthController extends ChangeNotifier {
     _message = null;
     notifyListeners();
     try {
-      await Fb.auth.sendPasswordResetEmail(email: email.trim());
+      await FbAdmin.auth.sendPasswordResetEmail(email: email.trim());
       return true;
     } catch (e) {
-      _message = Fb.friendlyMessage(e);
+      _message = FbAdmin.friendlyMessage(e);
       notifyListeners();
       return false;
     }
@@ -164,7 +164,7 @@ class AuthController extends ChangeNotifier {
   Future<void> signOut() async {
     _message = null;
     try {
-      await Fb.auth.signOut();
+      await FbAdmin.auth.signOut();
     } catch (_) {
       // Nothing to recover here; the dashboard stays until state updates.
     }

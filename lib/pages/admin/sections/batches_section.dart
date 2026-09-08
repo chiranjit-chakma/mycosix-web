@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../../../config/mx_colors.dart';
 import '../../../config/mx_type.dart';
-import '../../../firebase/fb.dart';
+import '../../../firebase/fb_admin.dart';
 import '../../../models/batch.dart';
 import '../admin_widgets.dart';
 
@@ -38,13 +38,13 @@ class _BatchesSectionState extends State<BatchesSection> {
           ),
           const SizedBox(height: 12),
           StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: Fb.batches.orderBy('productionDate', descending: true).snapshots(),
+            stream: FbAdmin.batches.orderBy('productionDate', descending: true).snapshots(),
             builder: (context, snap) {
               if (snap.hasError) {
                 return StateNote(
                   icon: Icons.error_outline_rounded,
                   text: 'Batches could not be loaded.',
-                  detail: Fb.friendlyMessage(snap.error!),
+                  detail: FbAdmin.friendlyMessage(snap.error!),
                   tone: StateTone.danger,
                 );
               }
@@ -335,13 +335,13 @@ class _BatchEditorDialogState extends State<BatchEditorDialog> {
       if (isNew) {
         map['createdAt'] = FieldValue.serverTimestamp();
         map['updatedAt'] = FieldValue.serverTimestamp();
-        await Fb.batches.doc().set(map);
+        await FbAdmin.batches.doc().set(map);
       } else {
         map['createdAt'] =
             widget.existing!.createdAt ?? FieldValue.serverTimestamp();
         map['updatedAt'] = FieldValue.serverTimestamp();
         // Full overwrite keeps the record free of stale optional fields.
-        await Fb.batches.doc(widget.existing!.id).set(map);
+        await FbAdmin.batches.doc(widget.existing!.id).set(map);
       }
       if (!mounted) return;
       Navigator.pop(context);
@@ -349,7 +349,7 @@ class _BatchEditorDialogState extends State<BatchEditorDialog> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = Fb.friendlyMessage(e);
+        _error = FbAdmin.friendlyMessage(e);
       });
     }
   }
