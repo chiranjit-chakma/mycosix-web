@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../config/mx_colors.dart';
 import '../../router/routes.dart';
@@ -183,6 +186,19 @@ class _MxPwaRootState extends State<MxPwaRoot>
     return true;
   }
 
+  /// One short, subtle tick per successful section change — never during a
+  /// drag (the dock only reports a selection once a release settles) and
+  /// never for a same-section tap. Unsupported platforms are silent: the web
+  /// engine answers haptic messages it cannot deliver with nothing, and any
+  /// platform error is swallowed — a decorative tick must never surface.
+  Future<void> _hapticTick() async {
+    try {
+      await HapticFeedback.selectionClick();
+    } catch (_) {
+      // No haptics here: do nothing.
+    }
+  }
+
   bool _scrollVisibleToTop() {
     // Only claim the request while the pager itself is the visible route: a
     // page pushed on top of it (checkout after an order, ...) must scroll its
@@ -221,6 +237,14 @@ class _MxPwaRootState extends State<MxPwaRoot>
       _sectionStates[index]?.scrollToTop();
       return;
     }
+    // The arriving section always opens at the very top: old scroll
+    // positions never carry across a section change. If the section is
+    // currently attached (offscreen in the pager's cache band) it jumps
+    // now, invisibly; a section parked in the keep-alive bucket resets
+    // itself the moment it re-attaches — still offscreen — so the customer
+    // only ever sees the page arrive at the top.
+    _sectionStates[index]?.openAtTopOnArrival();
+    unawaited(_hapticTick());
     _pageController.animateToPage(
       index,
       duration: const Duration(milliseconds: 280),
@@ -359,10 +383,14 @@ class _MxPwaRootState extends State<MxPwaRoot>
 }
 
 /// One pager page: the section content plus the app chrome each section
-/// carries in the browser too — a scrollable body with the footer and the
-/// floating top bar (the back-to-top button sits inside the footer area,
-/// raised above the floating dock). Kept alive so moving between sections
-/// never loses the section's scroll position or re-fetches its data.
+/// carries in the browser too — a scrollable body and the floating top bar
+/// (the back-to-top button sits inside the footer area, raised above the
+/// floating dock). Kept alive so switching sections never re-fetches a
+/// section's data — but a section that becomes visible again always
+/// presents itself from the top ([openAtTopOnArrival]): no page ever
+/// inherits an old scroll position. The large page footer renders on the
+/// Home section only; the floating dock is the other sections' persistent
+/// chrome (their browser twins keep their own footers through MxShell).
 class _PwaSection extends StatefulWidget {
   const _PwaSection({
     super.key,
@@ -393,6 +421,10 @@ class _PwaSectionState extends State<_PwaSection>
   final compression = ValueNotifier<double>(0);
 
   bool _scrolled = false;
+
+  /// True from the moment the root aims a navigation at this section until
+  /// its scroll has been returned to the top (see [openAtTopOnArrival]).
+  bool _openAtTop = false;
 
   @override
   bool get wantKeepAlive => true;
@@ -425,6 +457,24 @@ class _PwaSectionState extends State<_PwaSection>
         .ignore();
   }
 
+  /// Armed by the root when a navigation targets this section: it must
+  /// present itself from the top. Applies immediately when the section is
+  /// attached (it sits offscreen in the pager's cache band, so the jump is
+  /// invisible); otherwise the reset runs the first time the keep-alive
+  /// section re-attaches — still offscreen, so nothing ever visibly jumps.
+  void openAtTopOnArrival() {
+    if (_openAtTop) return;
+    _openAtTop = true;
+    if (_scrollController.hasClients) _jumpToTop();
+  }
+
+  void _jumpToTop() {
+    _openAtTop = false;
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    if (position.pixels > 0) position.jumpTo(0);
+  }
+
   bool _handleScroll(ScrollNotification notification) {
     if (notification.depth != 0) return false;
     final scrolled = notification.metrics.pixels > 24;
@@ -444,6 +494,15 @@ class _PwaSectionState extends State<_PwaSection>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    // A keep-alive section re-attaches while it is still offscreen (inside
+    // the pager's cache band): if a navigation armed this section, reset it
+    // then — before it can become visible.
+    if (_openAtTop && _scrollController.hasClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_openAtTop) return;
+        _jumpToTop();
+      });
+    }
     final width = MediaQuery.of(context).size.width;
     return NotificationListener<ScrollNotification>(
       onNotification: _handleScroll,
@@ -479,7 +538,15 @@ class _PwaSectionState extends State<_PwaSection>
                             12,
                       ),
                       child: Column(
-                        children: [widget.child, const MxFooter()],
+                        children: [
+                          widget.child,
+                          // The large page footer (store story, shortcuts,
+                          // contact) stays on the Home section only — the
+                          // floating dock is all the chrome the other
+                          // sections carry. Browser pages keep their own
+                          // footers through MxShell, untouched.
+                          if (widget.index == 0) const MxFooter(),
+                        ],
                       ),
                     );
                   },

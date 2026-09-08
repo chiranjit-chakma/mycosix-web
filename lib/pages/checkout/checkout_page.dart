@@ -108,6 +108,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
   /// panel is open. Closing it (or the number changing) clears this.
   String? _otpPhone;
 
+  /// Anchor on the verification panel's slot inside the details form, right
+  /// under the WhatsApp field. When the panel opens, the checkout glides it
+  /// into view through this key.
+  final _verifyAnchor = GlobalKey();
+
   /// Frozen copy of everything the customer agreed at the moment the CTA
   /// passed validation; placing later always uses this snapshot.
   _FrozenOrder? _pending;
@@ -318,6 +323,20 @@ class _CheckoutPageState extends State<CheckoutPage> {
     // The number still needs proving: open the verification panel.
     if (!mounted) return;
     setState(() => _otpPhone = canonical);
+    // The panel appears right under the WhatsApp field: glide it into the
+    // middle of the viewport so the customer sees the code request land
+    // next to the number it was sent to.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = _verifyAnchor.currentContext;
+      if (ctx == null) return;
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 450),
+        curve: Curves.easeOutCubic,
+        alignment: 0.5,
+      );
+    });
   }
 
   /// Records the frozen order: the trusted backend validates and writes it;
@@ -588,7 +607,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
       ctaHint = 'Confirm the delivery location pin on the map';
     } else if (otpCanonical != null) {
       ctaHint =
-          'Complete the WhatsApp verification above to place your order.';
+          'Complete the WhatsApp verification next to your number to place '
+          'your order.';
     } else {
       ctaHint = null;
     }
@@ -636,25 +656,14 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final desktop = constraints.maxWidth >= 960;
-                      final form = _CheckoutForm(
-                        formKey: _formKey,
-                        submitted: _submitted,
-                        name: _name,
-                        phone: _phone,
-                        email: _email,
-                        building: _building,
-                        apartment: _apartment,
-                        landmark: _landmark,
-                        instructions: _instructions,
-                      );
                       final auth = _auth;
-                      final aside = Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _SummaryCard(),
-                          if (otpCanonical != null) ...[
-                            const SizedBox(height: 20),
-                            WhatsAppVerifyPanel(
+                      // The live verification panel rides inside the details
+                      // form, directly under the WhatsApp number it belongs
+                      // to - never off in the right-rail summary, where a
+                      // customer could miss it or lose it under a fold.
+                      final verifyPanel = otpCanonical == null
+                          ? null
+                          : WhatsAppVerifyPanel(
                               key: ValueKey<String>('verify-$otpCanonical'),
                               service: context.read<WhatsAppOtpService>(),
                               canonicalPhone: otpCanonical,
@@ -666,8 +675,24 @@ class _CheckoutPageState extends State<CheckoutPage> {
                               onCancel: () {
                                 if (mounted) setState(() => _otpPhone = null);
                               },
-                            ),
-                          ],
+                            );
+                      final form = _CheckoutForm(
+                        formKey: _formKey,
+                        submitted: _submitted,
+                        name: _name,
+                        phone: _phone,
+                        email: _email,
+                        building: _building,
+                        apartment: _apartment,
+                        landmark: _landmark,
+                        instructions: _instructions,
+                        verification: verifyPanel,
+                        verificationKey: _verifyAnchor,
+                      );
+                      final aside = Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _SummaryCard(),
                           const SizedBox(height: 20),
                           _PlaceOrderCard(
                             enabled: canSend && !paused && otpCanonical == null,
@@ -812,6 +837,8 @@ class _CheckoutForm extends StatelessWidget {
     required this.apartment,
     required this.landmark,
     required this.instructions,
+    this.verification,
+    this.verificationKey,
   });
 
   final GlobalKey<FormState> formKey;
@@ -823,6 +850,14 @@ class _CheckoutForm extends StatelessWidget {
   final TextEditingController apartment;
   final TextEditingController landmark;
   final TextEditingController instructions;
+
+  /// The live WhatsApp-verification panel, present only while a number is
+  /// being proved. It renders directly beneath the phone field.
+  final Widget? verification;
+
+  /// Key on the verification slot, used by the checkout page to glide the
+  /// panel into view the moment it opens.
+  final GlobalKey? verificationKey;
 
   @override
   Widget build(BuildContext context) {
@@ -865,7 +900,13 @@ class _CheckoutForm extends StatelessWidget {
             ),
             validator: _validatePhone,
           ),
-          const SizedBox(height: 14),
+          // The WhatsApp verification panel (code request, code entry,
+          // status) belongs right here, next to the number it verifies.
+          if (verification != null) ...[
+            const SizedBox(height: 16),
+            KeyedSubtree(key: verificationKey, child: verification!),
+            const SizedBox(height: 14),
+          ],
           TextFormField(
             controller: email,
             textInputAction: TextInputAction.next,

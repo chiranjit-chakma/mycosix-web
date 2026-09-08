@@ -17,12 +17,17 @@ import 'location_math.dart';
 /// the map's anchor coordinate. A cross-origin embed can never report its own
 /// gestures, so a gesture layer above the iframe implements the map feel:
 ///
-///  * Drag empty map space: the map paper slides under the customer's finger;
-///    releasing re-centers the embed on the spot now under the pin.
+///  * Drag empty map space: the map paper slides under the customer's finger
+///    over an oversized canvas, elastic-banded at its edges — dragging can
+///    never expose an empty gap; releasing re-centers the embed on the spot
+///    now under the pin.
+///  * Pinch two fingers in or out: zoom (street level 14 .. 20) around the
+///    spot under the pin; releasing settles on the nearest whole level,
+///    exactly like the + / - buttons.
 ///  * Tap anywhere: drops the pin exactly under the finger (no reload).
 ///  * Drag the pin: fine-tunes the spot without any reload.
-///  * + / - zoom (street level 14 .. 20) scales around the pin's spot, so the
-///    customer can zoom right down to their building without losing it.
+///  * + / - zoom (street level 14 .. 20) scales around the pin's spot too, so
+///    the customer can zoom right down to their building without losing it.
 ///
 /// The pin marks the exact candidate in every state. Re-centering the embed
 /// (a pan release, a zoom step, or an external move such as GPS) swaps the
@@ -82,11 +87,26 @@ class _LocationMapState extends State<LocationMap> {
   /// Pin tip, in pixels from the map center (the pointed end).
   Offset _pin = Offset.zero;
 
-  /// Current map-paper translation while the customer drags empty space.
+  /// Current map-paper translation (bounded to its oversized canvas): it
+  /// slides while the customer drags empty space or pinches with two
+  /// fingers, and resets when the embed re-centers on release.
   Offset _paper = Offset.zero;
 
   bool _pinDrag = false;
   bool _paperDrag = false;
+
+  /// True while at least two fingers are down: the map is being pinched.
+  bool _pinching = false;
+
+  /// Zoom level the current gesture started at, and its live level while
+  /// pinching (fractional — a release commits the nearest whole level, the
+  /// same steps the + / - buttons take).
+  int _gestureStartZoom = initialZoom;
+  double _gestureZoom = initialZoom.toDouble();
+
+  /// Pointer count of the last scale update: a finger landing or lifting
+  /// makes the focal point jump, so that one frame is absorbed.
+  int _lastPointers = 0;
 
   /// True while the embed is loading or being re-centered; the veil absorbs
   /// all pointers so gestures can never desync from the imagery.
@@ -131,7 +151,12 @@ class _LocationMapState extends State<LocationMap> {
     final lng = widget.longitude;
     if (lat == _emitLat && lng == _emitLng) return; // Echo of our own commit.
     // A genuine external move (GPS, another entry point): jump the whole map.
+    // Gesture state is dropped too - a drag in flight when the map jumps can
+    // never receive its end callback, so it must not leave stale flags.
     setState(() {
+      _pinDrag = false;
+      _paperDrag = false;
+      _pinching = false;
       _centerLat = lat;
       _centerLng = lng;
       _emitLat = lat;
@@ -163,6 +188,29 @@ class _LocationMapState extends State<LocationMap> {
     tip.dx.clamp(2.0, math.max(2.0, _size.width - 2)),
     tip.dy.clamp(2.0, math.max(2.0, _size.height - 2)),
   );
+
+  /// Canvas margin for paper travel on each axis: 35% of that axis, so a
+  /// whole generous drag can slide before resistance builds. The embed
+  /// viewport is larger than the map's clip by one band on every side.
+  double get _paperBandX => _size.width * 0.35;
+  double get _paperBandY => _size.height * 0.35;
+
+  /// Elastic bound on paper travel: the paper eases toward the canvas edge
+  /// as the finger keeps pushing, and can never pass it — real imagery
+  /// therefore always covers the map and no empty gap can ever open beside
+  /// it, however far the drag goes. (A soft saturation curve: free at the
+  /// start of a drag, firmer as the paper approaches its band.)
+  double _boundAxis(double raw, double band) {
+    if (raw == 0 || band <= 0) return 0;
+    final s = raw.sign;
+    final x = raw.abs() / band;
+    if (x > 20) return s * band; // exp would overflow; the curve is flat.
+    final e = math.exp(2 * x);
+    return s * band * (e - 1) / (e + 1);
+  }
+
+  Offset _boundPaper(Offset raw) =>
+      Offset(_boundAxis(raw.dx, _paperBandX), _boundAxis(raw.dy, _paperBandY));
 
   String _embedSrc() => MxConfig.mapsEmbedUrl
       .replaceAll('{lat}', _centerLat.toStringAsFixed(6))
@@ -269,9 +317,16 @@ class _LocationMapState extends State<LocationMap> {
 
   // --- Gestures ------------------------------------------------------------
 
-  void _onPanStart(DragStartDetails details) {
+  void _onScaleStart(ScaleStartDetails details) {
+    _lastPointers = details.pointerCount;
     setState(() {
-      if (_onPin(details.localPosition)) {
+      _gestureStartZoom = _zoom;
+      _gestureZoom = _zoom.toDouble();
+      if (details.pointerCount > 1) {
+        // Two fingers from the start: a pinch, panning with the focal point.
+        _pinDrag = false;
+        _paperDrag = true;
+      } else if (_onPin(details.localFocalPoint)) {
         _pinDrag = true;
         _paperDrag = false;
       } else {
@@ -281,33 +336,95 @@ class _LocationMapState extends State<LocationMap> {
     });
   }
 
-  void _onPanUpdate(DragUpdateDetails details) {
+  void _onScaleUpdate(ScaleUpdateDetails details) {
+    final twoFingers = details.pointerCount > 1;
+    final countChanged = details.pointerCount != _lastPointers;
+    _lastPointers = details.pointerCount;
+    // A finger landing or lifting makes the focal point jump: absorb that
+    // one frame instead of shoving the paper.
+    if (countChanged) return;
     setState(() {
-      if (_pinDrag) {
-        _pin = _clampTip(_pin + details.delta);
+      if (twoFingers) {
+        // Two fingers: pan with the focal point and zoom with the pinch.
+        // Even a grab that started on the pin hands over to the pinch - the
+        // pin simply stays where it is while the map moves beneath it.
+        _pinching = true;
+        _pinDrag = false;
+        _paperDrag = true;
+        _gestureZoom =
+            (_gestureStartZoom + math.log(details.scale) / math.log(1.5))
+                .clamp(minZoom.toDouble(), maxZoom.toDouble());
+        _paper = _boundPaper(_paper + details.focalPointDelta);
+      } else if (_pinching) {
+        // A finger lifted: continue as a one-finger paper drag.
+        _pinching = false;
+        _paperDrag = true;
+        _paper = _boundPaper(_paper + details.focalPointDelta);
+      } else if (_pinDrag) {
+        _pin = _clampTip(_pin + details.focalPointDelta);
       } else if (_paperDrag) {
-        _paper += details.delta;
+        _paper = _boundPaper(_paper + details.focalPointDelta);
       }
     });
   }
 
-  void _onPanEnd() {
-    if (_pinDrag) {
-      setState(() => _pinDrag = false);
-      final (lat, lng) = _clamped(_latAt(_pin.dy), _lngAt(_pin.dx));
+  /// One commit per gesture, whatever it mixed (paper pan, pin grab, pinch):
+  /// a pinch that landed on a new zoom level re-anchors the embed around the
+  /// spot now under the pin and emits that candidate; a pure paper pan
+  /// re-centers on the spot under the pin; a pin grab just reports the pin's
+  /// spot. Each path reloads at most once.
+  void _onGestureEnd() {
+    final zoomNow = _pinching
+        ? _gestureZoom.round().clamp(minZoom, maxZoom).toInt()
+        : _zoom;
+    final wasPinDrag = _pinDrag;
+    final movedPaper = _paper != Offset.zero;
+    final tip = _pin - _paper;
+    final (lat, lng) = _clamped(_latAt(tip.dy), _lngAt(tip.dx));
+    if (zoomNow != _zoom) {
+      // Zoom commit: keep the spot under the pin exactly where it is at the
+      // new scale (the + / - behaviour), so a pinch never drifts the spot.
+      final mppNext = metersPerPixelAt(_centerLat, zoomNow);
+      final centerLat = centerLatitudeForPin(lat, tip.dy, mppNext);
+      final centerLng = centerLongitudeForPin(
+        lng,
+        tip.dx,
+        mppNext,
+        centerLat,
+      );
+      setState(() {
+        _pinDrag = false;
+        _paperDrag = false;
+        _pinching = false;
+        _zoom = zoomNow;
+        _centerLat = centerLat;
+        _centerLng = centerLng;
+        _paper = Offset.zero;
+        _reload();
+      });
+      // The pin tip's spot stayed the candidate; _emit skips it when the
+      // pan never moved it a full pixel.
       _emit(lat, lng, recenter: false);
       return;
     }
-    if (_paperDrag) {
-      setState(() => _paperDrag = false);
-      if (_paper == Offset.zero) return;
-      // The paper moved by [_paper], so the imagery now under the pin tip
-      // came from (pin - paper): the spot the embed must re-center on.
-      final tip = _pin - _paper;
-      final (lat, lng) = _clamped(_latAt(tip.dy), _lngAt(tip.dx));
-      _paper = Offset.zero;
+    if (movedPaper) {
+      // Paper pan release: the imagery now under the pin tip came from
+      // (pin - paper) - the spot the embed must re-center on.
+      setState(() {
+        _pinDrag = false;
+        _paperDrag = false;
+        _pinching = false;
+        _paper = Offset.zero;
+      });
       _emit(lat, lng, recenter: true);
+      return;
     }
+    setState(() {
+      _pinDrag = false;
+      _paperDrag = false;
+      _pinching = false;
+    });
+    if (wasPinDrag) _emit(lat, lng, recenter: false);
   }
 
   void _onTapUp(TapUpDetails details) {
@@ -336,19 +453,33 @@ class _LocationMapState extends State<LocationMap> {
             return Stack(
               fit: StackFit.expand,
               children: [
-                // The embed, translated while the customer drags the paper.
+                // Cream ground: with the paper bounded to its oversized
+                // canvas no gap can ever open beside the imagery, and this
+                // ground also covers the embed's first paint before its
+                // tiles arrive (it matches the load veil's wash).
+                const ColoredBox(color: MxColors.cream),
+                // The map paper: the embed viewport is larger than the map's
+                // clip - a margin of one elastic band on every side - and is
+                // translated while the customer drags. Real imagery always
+                // sits under the clip, so dragging never shows empty sides.
                 Transform.translate(
                   offset: _paper,
-                  child: HtmlElementView(viewType: _viewType),
+                  child: Center(
+                    child: SizedBox(
+                      width: _size.width + 2 * _paperBandX,
+                      height: _size.height + 2 * _paperBandY,
+                      child: HtmlElementView(viewType: _viewType),
+                    ),
+                  ),
                 ),
-                // Gesture layer: map drag, pin drag, tap to drop.
+                // Gesture layer: paper pan, pin drag, two-finger pinch
+                // zoom, tap to drop.
                 Positioned.fill(
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onPanStart: _onPanStart,
-                    onPanUpdate: _onPanUpdate,
-                    onPanEnd: (_) => _onPanEnd(),
-                    onPanCancel: _onPanEnd,
+                    onScaleStart: _onScaleStart,
+                    onScaleUpdate: _onScaleUpdate,
+                    onScaleEnd: (_) => _onGestureEnd(),
                     onTapUp: _onTapUp,
                   ),
                 ),
@@ -420,7 +551,7 @@ class _LocationMapState extends State<LocationMap> {
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
-                            'Release to set the pin',
+                            _gestureHint(),
                             style: MxType.bodyXs(
                               color: Colors.white,
                               weight: FontWeight.w600,
@@ -494,6 +625,17 @@ class _LocationMapState extends State<LocationMap> {
         ),
       ),
     );
+  }
+
+  /// The caption shown while a gesture is in flight: during a pinch it
+  /// announces the zoom level a release will land on (updating live);
+  /// any pan release sets the pin spot.
+  String _gestureHint() {
+    if (_pinching) {
+      final target = _gestureZoom.round().clamp(minZoom, maxZoom).toInt();
+      if (target != _zoom) return 'Zoom $target';
+    }
+    return 'Release to set the pin';
   }
 
   String _pillText() {

@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 
@@ -20,7 +21,7 @@ double _itemScale(double frac, int i) {
   return 0.9 + 0.26 * _focusFor(i - frac);
 }
 
-/// Prominence: the centred item is fully opaque, far items dim slightly, and
+/// Prominence: the centred item is fully opaque, far items dim a touch, and
 /// an item sliding past the strip's own edge melts away instead of hitting a
 /// hard clip boundary.
 double _itemOpacity(double frac, int i, double capsuleWidth, double slot) {
@@ -28,7 +29,7 @@ double _itemOpacity(double frac, int i, double capsuleWidth, double slot) {
   final screenX = (i - frac) * slot;
   final edge = (capsuleWidth / 2 - screenX.abs() + 24) / 24;
   final edgeFade = math.min(1.0, math.max(0.0, edge));
-  return (0.78 + 0.22 * f) * edgeFade;
+  return (0.85 + 0.15 * f) * edgeFade;
 }
 
 /// The caption under the active item fades out as the dock compresses, over
@@ -40,16 +41,15 @@ double _labelOpacity(double t) {
   return (0.9 - t) / 0.35;
 }
 
-/// The installed phone app's primary navigation: a containerless floating
-/// icon row that behaves like a carousel, not a static bar.
+/// The installed phone app's primary navigation: a floating frosted-glass
+/// dock that behaves like a carousel, not a static bar.
 ///
-/// There is no pill, no glass card, no icon box and no background panel: the
-/// five destinations float directly over the page as bare glyphs. Only the
-/// active destination is enlarged and tinted deep forest with a small brand
-/// underline and its caption; inactive destinations sit smaller, muted and
-/// plain, and the strip slides so the selected glyph is always the largest,
-/// centred one. Emphasis comes from spacing, scale and restraint — not from
-/// effects.
+/// The five destinations ride a frosted glass carrier — the same blur, wash,
+/// hairline and shadow recipe as the browser's floating top pill, so the two
+/// navigations read as one system. Only the active destination is enlarged
+/// and tinted deep forest with a small brand underline and its caption;
+/// inactive destinations sit smaller and quieter, and the strip slides so
+/// the selected glyph is always the largest, centred one.
 ///
 /// Five destinations ride a strip that tracks the finger 1:1 while dragged
 /// horizontally. The item nearest the strip's centre is the live selection;
@@ -258,6 +258,42 @@ class _PwaDockState extends State<PwaDock>
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
+                  // Frosted-glass carrier — the dock's visible surface. It
+                  // joins the inner IgnorePointer subtree, so it is purely
+                  // visual: the translucent strip above it remains the
+                  // dock's only hit-testable surface and vertical page
+                  // scrolls still fall straight through.
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(MxRadius.lg),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                        child: const ColoredBox(color: Colors.transparent),
+                      ),
+                    ),
+                  ),
+                  // Wash, hairline and shadow over the blur: the border
+                  // stays crisp while the content scrolling behind the
+                  // glass is what actually blurs (same recipe as the
+                  // browser's floating top pill).
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: MxColors.creamSoft.withValues(alpha: 0.92),
+                        borderRadius: BorderRadius.circular(MxRadius.lg),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.6),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: MxColors.charcoal.withValues(alpha: 0.14),
+                            blurRadius: 22,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                   for (final i in order)
                     Positioned.fill(
                       child: Align(
@@ -296,11 +332,11 @@ class _PwaDockState extends State<PwaDock>
   }
 }
 
-/// One destination: a bare glyph that floats over the page. The active item
-/// is tinted deep forest and carries a small brand underline and caption;
-/// every other item is a plain muted glyph. There is no cell, no pill and no
-/// background panel around any of them. Purely visual — pointer input lives
-/// on the strip so the dock never swallows a page gesture.
+/// One destination: a glyph floating over the dock's glass carrier. The
+/// active item is tinted deep forest and carries a small brand underline and
+/// caption; every other item is a quieter muted glyph. Purely visual —
+/// pointer input lives on the strip so the dock never swallows a page
+/// gesture.
 class _DockItem extends StatelessWidget {
   const _DockItem({
     super.key,

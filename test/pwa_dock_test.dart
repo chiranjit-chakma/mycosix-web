@@ -7,6 +7,7 @@ import 'package:mycosix/config/mx_colors.dart';
 import 'package:mycosix/config/mx_config.dart';
 import 'package:mycosix/pages/pwa/pwa_root.dart';
 import 'package:mycosix/repositories/cart_repository.dart';
+import 'package:mycosix/widgets/footer.dart';
 import 'package:mycosix/repositories/product_repository.dart';
 import 'package:mycosix/state/cart_controller.dart';
 import 'package:mycosix/state/products_controller.dart';
@@ -342,23 +343,33 @@ void main() {
     expect(tester.getSize(dock).width, closeTo(expandedWidth, 0.5));
   });
 
-  testWidgets('the dock is a containerless icon row: no glass box, no cells', (
+  testWidgets('the dock rides a frosted glass carrier with no per-icon cells', (
     tester,
   ) async {
     await _pumpPager(tester);
     final dock = find.byKey(const Key('pwa-dock'));
-    // No frosted-glass card, no per-icon material cell, no clipping shell,
-    // no divider — the glyphs float directly over the page.
+    // The glyphs float on one frosted glass card: the blur shell is there,
+    // and so is the wash/hairline/shadow decoration over it - the same
+    // recipe as the browser's floating top pill, so the dock is clearly
+    // visible over any page.
     expect(
       find.descendant(of: dock, matching: find.byType(BackdropFilter)),
-      findsNothing,
+      findsOneWidget,
     );
+    final carrier = tester
+        .widgetList<DecoratedBox>(
+          find.descendant(of: dock, matching: find.byType(DecoratedBox)),
+        )
+        .where((d) {
+          final deco = d.decoration;
+          return deco is BoxDecoration &&
+              deco.color == MxColors.creamSoft.withValues(alpha: 0.92);
+        });
+    expect(carrier, isNotEmpty);
+    // The carrier is purely visual: no per-icon material cell tints the
+    // glyphs, so the active item still reads through its colour and scale.
     expect(
       find.descendant(of: dock, matching: find.byType(Material)),
-      findsNothing,
-    );
-    expect(
-      find.descendant(of: dock, matching: find.byType(ClipRRect)),
       findsNothing,
     );
     // The icons themselves are there and the active one is marked.
@@ -474,5 +485,121 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(scroll.position.pixels, 0);
+  });
+
+  testWidgets('the large page footer stays on Home only; other sections carry none', (
+    tester,
+  ) async {
+    await _pumpPager(tester);
+    // Home's own subtree carries the footer...
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('pwa-section-0')),
+        matching: find.byType(MxFooter),
+      ),
+      findsOneWidget,
+    );
+    // ...and each other destination renders none in its own subtree.
+    for (var i = 1; i < 5; i++) {
+      await _dragDock(tester, const Offset(-90, 0));
+      expect(_page(tester), i.toDouble());
+      expect(
+        find.descendant(
+          of: find.byKey(Key('pwa-section-$i')),
+          matching: find.byType(MxFooter),
+        ),
+        findsNothing,
+      );
+    }
+    // Walk back Home one section per drag (from the last section a single
+    // far-end tap maps to the neighbour - drags stay exact at the edges).
+    for (var i = 4; i > 0; i--) {
+      await _dragDock(tester, const Offset(90, 0));
+      expect(_page(tester), (i - 1).toDouble());
+    }
+    // Exactly one footer exists in the whole tree: the other sections never
+    // mount one, in the cache band or after a revisit.
+    expect(_page(tester), 0.0);
+    expect(find.byType(MxFooter), findsOneWidget);
+  });
+
+  testWidgets('a section scrolled earlier opens at the top on its next arrival', (
+    tester,
+  ) async {
+    await _pumpPager(tester);
+    // Home: scroll well down (this also compresses the dock - and while the
+    // dock is compressed its slots are shorter, so section changes happen
+    // by tapping item centres, which always map to their exact item).
+    await tester.drag(find.text('S0'), const Offset(0, -600));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    final home = _sectionScroll(tester, 0);
+    expect(home.position.pixels, greaterThan(0));
+
+    // To Shop by tapping its glyph: Shop opens at the top (never scrolled).
+    await tester.tap(
+      find.byKey(const Key('pwa-nav-shop')),
+      warnIfMissed: false,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(_page(tester), 1.0);
+    expect(_sectionScroll(tester, 1).position.pixels, 0);
+
+    // Scroll Shop down, then tap Home: Home must arrive at the top, not at
+    // the position it was left in.
+    await tester.drag(find.text('S1'), const Offset(0, -400));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(_sectionScroll(tester, 1).position.pixels, greaterThan(0));
+
+    await tester.tap(
+      find.byKey(const Key('pwa-nav-home')),
+      warnIfMissed: false,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(_page(tester), 0.0);
+    expect(home.position.pixels, 0);
+  });
+
+  testWidgets('each successful section change fires exactly one subtle haptic', (
+    tester,
+  ) async {
+    final ticks = <MethodCall>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          ticks.add(call);
+        }
+        return null;
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
+    });
+
+    await _pumpPager(tester);
+    // Home -> Shop: exactly one tick, of the subtle selection flavour.
+    await _dragDock(tester, const Offset(-90, 0));
+    expect(_page(tester), 1.0);
+    expect(ticks.length, 1);
+    // HapticFeedback.vibrate carries the tick type as its plain argument
+    // (the HapticFeedbackType enum's toString on this Flutter version).
+    expect(ticks.single.arguments, endsWith('selectionClick'));
+
+    // Shop -> Farm: one more tick - and nothing repeats while settling.
+    await _dragDock(tester, const Offset(-90, 0));
+    expect(_page(tester), 2.0);
+    expect(ticks.length, 2);
+
+    // A nudge that settles back on Farm changes nothing: no tick.
+    await _dragDock(tester, const Offset(-30, 0));
+    expect(_page(tester), 2.0);
+    expect(ticks.length, 2);
   });
 }
