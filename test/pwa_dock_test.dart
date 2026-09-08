@@ -187,10 +187,12 @@ void main() {
   testWidgets('pager opens on the requested section and the dock marks it selected', (
     tester,
   ) async {
+    // Home is the centre section (Farm 0, Shop 1, Home 2, Journey 3,
+    // Profile 4): opening the shell on Home centres it in the dock.
     await _pumpPager(tester, initialIndex: 2);
     expect(_page(tester), 2.0);
-    expect(_navSelected(tester, 'Farm'), isTrue);
-    expect(_navSelected(tester, 'Home'), isFalse);
+    expect(_navSelected(tester, 'Home'), isTrue);
+    expect(_navSelected(tester, 'Farm'), isFalse);
   });
 
   testWidgets('dragging the dock left advances to the next section and snaps', (
@@ -211,7 +213,7 @@ void main() {
     await _pumpPager(tester, initialIndex: 1);
     await _dragDock(tester, const Offset(90, 0));
     expect(_page(tester), 0.0);
-    expect(_navSelected(tester, 'Home'), isTrue);
+    expect(_navSelected(tester, 'Farm'), isTrue);
   });
 
   testWidgets('releasing between items snaps to the nearest section', (
@@ -239,7 +241,7 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    // The fling lands on Farm, a full section beyond the drag distance.
+    // The fling lands on Home, a full section beyond the drag distance.
     expect(_page(tester), 2.0);
   });
 
@@ -293,9 +295,10 @@ void main() {
     await gesture.up();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    // The net movement is zero, so Home stays centered and selected.
+    // The net movement is zero, so the first slot stays centered and
+    // selected.
     expect(_page(tester), 0.0);
-    expect(_navSelected(tester, 'Home'), isTrue);
+    expect(_navSelected(tester, 'Farm'), isTrue);
   });
 
   testWidgets('a vertical drag on the dock scrolls the page, not the section', (
@@ -374,7 +377,7 @@ void main() {
     );
     // The icons themselves are there and the active one is marked.
     expect(find.byIcon(Icons.storefront_rounded), findsOneWidget);
-    expect(_navSelected(tester, 'Home'), isTrue);
+    expect(_navSelected(tester, 'Farm'), isTrue);
   });
 
   testWidgets('focusing a text field hides the dock; leaving it restores it', (
@@ -441,7 +444,7 @@ void main() {
     tester,
   ) async {
     await _pumpPager(tester);
-    // Journey sits three slots from Home — still tappable, no swipe needed.
+    // Journey sits three slots from Farm — still tappable, no swipe needed.
     await tester.tap(
       find.byKey(const Key('pwa-nav-journey')),
       warnIfMissed: false,
@@ -456,7 +459,7 @@ void main() {
     tester,
   ) async {
     await _pumpPager(tester);
-    // Scroll Home well down first.
+    // Scroll the current (first) section well down first.
     await tester.drag(find.text('S0'), const Offset(0, -400));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
@@ -472,11 +475,11 @@ void main() {
   testWidgets('tapping the current section scrolls it to the top (dock included)', (
     tester,
   ) async {
-    await _pumpPager(tester);
-    await tester.drag(find.text('S0'), const Offset(0, -600));
+    await _pumpPager(tester, initialIndex: 2); // Home at the centre.
+    await tester.drag(find.text('S2'), const Offset(0, -600));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    final scroll = _sectionScroll(tester, 0);
+    final scroll = _sectionScroll(tester, 2);
     expect(scroll.position.pixels, greaterThan(0));
 
     await tester.tap(
@@ -490,50 +493,84 @@ void main() {
   testWidgets('the large page footer stays on Home only; other sections carry none', (
     tester,
   ) async {
-    await _pumpPager(tester);
+    await _pumpPager(tester, initialIndex: 2); // Home at the centre.
     // Home's own subtree carries the footer...
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('pwa-section-2')),
+        matching: find.byType(MxFooter),
+      ),
+      findsOneWidget,
+    );
+    // ...and each other destination renders none in its own subtree:
+    // right of Home sit Journey and Profile...
+    await _dragDock(tester, const Offset(-90, 0)); // -> 3
+    expect(_page(tester), 3.0);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('pwa-section-3')),
+        matching: find.byType(MxFooter),
+      ),
+      findsNothing,
+    );
+    await _dragDock(tester, const Offset(-90, 0)); // -> 4
+    expect(_page(tester), 4.0);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('pwa-section-4')),
+        matching: find.byType(MxFooter),
+      ),
+      findsNothing,
+    );
+    // ...and left of Home sit Shop and Farm (back through Home first:
+    // a single far-end tap maps to the neighbour, drags stay exact).
+    await _dragDock(tester, const Offset(90, 0)); // -> 3
+    await _dragDock(tester, const Offset(90, 0)); // -> 2 Home again
+    expect(_page(tester), 2.0);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('pwa-section-2')),
+        matching: find.byType(MxFooter),
+      ),
+      findsOneWidget,
+    );
+    await _dragDock(tester, const Offset(90, 0)); // -> 1
+    expect(_page(tester), 1.0);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('pwa-section-1')),
+        matching: find.byType(MxFooter),
+      ),
+      findsNothing,
+    );
+    await _dragDock(tester, const Offset(90, 0)); // -> 0
+    expect(_page(tester), 0.0);
     expect(
       find.descendant(
         of: find.byKey(const Key('pwa-section-0')),
         matching: find.byType(MxFooter),
       ),
-      findsOneWidget,
+      findsNothing,
     );
-    // ...and each other destination renders none in its own subtree.
-    for (var i = 1; i < 5; i++) {
-      await _dragDock(tester, const Offset(-90, 0));
-      expect(_page(tester), i.toDouble());
-      expect(
-        find.descendant(
-          of: find.byKey(Key('pwa-section-$i')),
-          matching: find.byType(MxFooter),
-        ),
-        findsNothing,
-      );
-    }
-    // Walk back Home one section per drag (from the last section a single
-    // far-end tap maps to the neighbour - drags stay exact at the edges).
-    for (var i = 4; i > 0; i--) {
-      await _dragDock(tester, const Offset(90, 0));
-      expect(_page(tester), (i - 1).toDouble());
-    }
     // Exactly one footer exists in the whole tree: the other sections never
     // mount one, in the cache band or after a revisit.
-    expect(_page(tester), 0.0);
+    await _dragDock(tester, const Offset(-90, 0)); // -> 1
+    await _dragDock(tester, const Offset(-90, 0)); // -> 2 Home
+    expect(_page(tester), 2.0);
     expect(find.byType(MxFooter), findsOneWidget);
   });
 
   testWidgets('a section scrolled earlier opens at the top on its next arrival', (
     tester,
   ) async {
-    await _pumpPager(tester);
+    await _pumpPager(tester, initialIndex: 2); // Home at the centre.
     // Home: scroll well down (this also compresses the dock - and while the
     // dock is compressed its slots are shorter, so section changes happen
     // by tapping item centres, which always map to their exact item).
-    await tester.drag(find.text('S0'), const Offset(0, -600));
+    await tester.drag(find.text('S2'), const Offset(0, -600));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    final home = _sectionScroll(tester, 0);
+    final home = _sectionScroll(tester, 2);
     expect(home.position.pixels, greaterThan(0));
 
     // To Shop by tapping its glyph: Shop opens at the top (never scrolled).
@@ -559,7 +596,7 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    expect(_page(tester), 0.0);
+    expect(_page(tester), 2.0);
     expect(home.position.pixels, 0);
   });
 
@@ -584,7 +621,7 @@ void main() {
     });
 
     await _pumpPager(tester);
-    // Home -> Shop: exactly one tick, of the subtle selection flavour.
+    // Farm -> Shop: exactly one tick, of the subtle selection flavour.
     await _dragDock(tester, const Offset(-90, 0));
     expect(_page(tester), 1.0);
     expect(ticks.length, 1);
@@ -592,12 +629,12 @@ void main() {
     // (the HapticFeedbackType enum's toString on this Flutter version).
     expect(ticks.single.arguments, endsWith('selectionClick'));
 
-    // Shop -> Farm: one more tick - and nothing repeats while settling.
+    // Shop -> Home: one more tick - and nothing repeats while settling.
     await _dragDock(tester, const Offset(-90, 0));
     expect(_page(tester), 2.0);
     expect(ticks.length, 2);
 
-    // A nudge that settles back on Farm changes nothing: no tick.
+    // A nudge that settles back on Home changes nothing: no tick.
     await _dragDock(tester, const Offset(-30, 0));
     expect(_page(tester), 2.0);
     expect(ticks.length, 2);

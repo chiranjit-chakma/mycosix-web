@@ -149,10 +149,12 @@ void main() {
   testWidgets('pager opens on the requested section and marks it selected', (
     tester,
   ) async {
+    // Home is the centre section (Farm 0, Shop 1, Home 2, Journey 3,
+    // Profile 4): opening the shell on Home puts it front and centred.
     await _pumpPager(tester, initialIndex: 2);
     expect(_page(tester), 2.0);
-    expect(_navSelected(tester, 'Farm'), isTrue);
-    expect(_navSelected(tester, 'Home'), isFalse);
+    expect(_navSelected(tester, 'Home'), isTrue);
+    expect(_navSelected(tester, 'Farm'), isFalse);
   });
 
   testWidgets('tapping a bottom-nav destination glides the pager', (
@@ -176,7 +178,8 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    expect(_page(tester), 0.0);
+    expect(_page(tester), 2.0);
+    expect(_navSelected(tester, 'Home'), isTrue);
   });
 
   testWidgets(
@@ -190,7 +193,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
       expect(_page(tester), 0.0);
-      expect(_navSelected(tester, 'Home'), isTrue);
+      expect(_navSelected(tester, 'Farm'), isTrue);
 
       // And back the other way.
       await tester.drag(find.text('S0'), const Offset(420, 0));
@@ -267,6 +270,9 @@ void main() {
   ) async {
     // The owner flow: from any section but Home, back goes straight to
     // Home in one step (never one section at a time).
+    // The owner flow: from any section but Home, back goes straight to
+    // Home in one step (never one section at a time). Home now sits at the
+    // centre of the shell, so back glides there from either side.
     await _pumpPager(tester, initialIndex: 4);
     expect(_page(tester), 4.0);
 
@@ -277,7 +283,7 @@ void main() {
     // their own frames, so settle until the tree is quiet, like a device
     // streaming frames. (The harness slabs animate nothing on their own.)
     await tester.pumpAndSettle();
-    expect(_page(tester), 0.0);
+    expect(_page(tester), 2.0);
     expect(_navSelected(tester, 'Home'), isTrue);
 
     // A second back on Home starts the exit guard: the hint appears and
@@ -285,19 +291,20 @@ void main() {
     await tester.binding.handlePopRoute();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    expect(_page(tester), 0.0);
+    expect(_page(tester), 2.0);
     expect(find.textContaining('Press back again'), findsOneWidget);
   });
 
   testWidgets('system back on Home shows the exit hint and does not leave', (
     tester,
   ) async {
-    await _pumpPager(tester);
+    // Home is the centre section - open the shell on it.
+    await _pumpPager(tester, initialIndex: 2);
 
     await tester.binding.handlePopRoute();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    expect(_page(tester), 0.0);
+    expect(_page(tester), 2.0);
     expect(find.textContaining('Press back again'), findsOneWidget);
 
     // A second back within the window attempts to exit; the test arm of the
@@ -305,7 +312,7 @@ void main() {
     await tester.binding.handlePopRoute();
     await tester.pump();
     expect(find.byKey(const Key('pwa-pager')), findsOneWidget);
-    expect(_page(tester), 0.0);
+    expect(_page(tester), 2.0);
   });
 
   testWidgets(
@@ -324,15 +331,15 @@ void main() {
   testWidgets('tapping the current bottom-nav item scrolls it to the top', (
     tester,
   ) async {
-    await _pumpPager(tester);
+    await _pumpPager(tester, initialIndex: 2);
     // Scroll the Home section well down first.
-    await tester.drag(find.text('S0'), const Offset(0, -600));
+    await tester.drag(find.text('S2'), const Offset(0, -600));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     final vertical = tester
         .stateList<ScrollableState>(
           find.descendant(
-            of: find.byKey(const Key('pwa-section-0')),
+            of: find.byKey(const Key('pwa-section-2')),
             matching: find.byType(Scrollable),
           ),
         )

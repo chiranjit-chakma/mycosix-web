@@ -17,17 +17,17 @@ import '../shop/shop_page.dart';
 import 'pwa_dock.dart';
 import 'pwa_registry.dart';
 
-/// Index of each primary section inside the paging shell: Home 0, Shop 1,
-/// Farm 2, Journey 3, Profile 4. Any other route is -1 (not a primary
-/// section). Pure so it can be unit-tested and reused by the router.
+/// Index of each primary section inside the paging shell: Farm 0, Shop 1,
+/// Home 2 (the centre), Journey 3, Profile 4. Any other route is -1 (not a
+/// primary section). Pure so it can be unit-tested and reused by the router.
 int primarySectionIndex(String route) {
   switch (route) {
     case Routes.home:
-      return 0;
+      return kPwaHomeIndex;
     case Routes.shop:
       return 1;
     case Routes.farm:
-      return 2;
+      return 0;
     case Routes.journey:
       return 3;
     case Routes.profile:
@@ -42,28 +42,35 @@ int primarySectionIndex(String route) {
 /// because the paging shell provides the app chrome (floating top bar,
 /// footer, carousel dock) around them.
 const List<Widget> kPwaSections = <Widget>[
-  HomePage(embedded: true),
-  ShopPage(embedded: true),
   FarmPage(embedded: true),
+  ShopPage(embedded: true),
+  HomePage(embedded: true),
   JourneyPage(embedded: true),
   ProfilePage(embedded: true),
 ];
 
 const List<String> kPwaSectionLabels = <String>[
-  'Home',
-  'Shop',
   'Farm',
+  'Shop',
+  'Home',
   'Journey',
   'Profile',
 ];
 
 const List<IconData> kPwaSectionIcons = <IconData>[
-  Icons.home_rounded,
-  Icons.storefront_rounded,
   Icons.agriculture_rounded,
+  Icons.storefront_rounded,
+  Icons.home_rounded,
   Icons.route_rounded,
   Icons.person_rounded,
 ];
+
+/// Home's slot in the paging shell: the centre of the five sections
+/// (Farm 0, Shop 1, Home 2, Journey 3, Profile 4), so the shell opens and
+/// the dock sits centred on Home. Home is the anchor section: the pager
+/// opens there by default, the large page footer renders only under it,
+/// and system back glides every other section to it.
+const int kPwaHomeIndex = 2;
 
 /// Expanded (fully scrolled-up) and compressed (scrolled-down) heights of
 /// the floating dock, and the clearance kept around it: a gap above the
@@ -86,11 +93,12 @@ const double _kDockHeightNarrow = 58;
 class MxPwaRoot extends StatefulWidget {
   const MxPwaRoot({
     super.key,
-    this.initialIndex = 0,
+    this.initialIndex = kPwaHomeIndex,
     this.sections = kPwaSections,
   });
 
   /// Which section to open at first (drives deep links: /shop -> index 1).
+  /// Defaults to Home, the centre section, when no route asks for another.
   final int initialIndex;
 
   /// The sections in page order. Injectable so widget tests can exercise the
@@ -253,15 +261,15 @@ class _MxPwaRootState extends State<MxPwaRoot>
   }
 
   /// System back inside the app: any section other than Home glides back
-  /// to Home (the customer's anchor) in one step; back on Home runs the
-  /// exit guard (scroll to top, then "press back again to exit", then
-  /// leave).
+  /// to Home (the customer's anchor, the centre of the shell) in one step;
+  /// back on Home runs the exit guard (scroll to top, then "press back
+  /// again to exit", then leave).
   void _handleBack() {
-    if (_index > 0) {
-      _switchTo(0);
+    if (_index != kPwaHomeIndex) {
+      _switchTo(kPwaHomeIndex);
       return;
     }
-    final s = _sectionStates[0];
+    final s = _sectionStates[kPwaHomeIndex];
     final scrolledDown = s?.isScrolled ?? false;
     switch (_back.handle(scrolledDown: scrolledDown)) {
       case BackPressAction.scrollToTop:
@@ -545,7 +553,7 @@ class _PwaSectionState extends State<_PwaSection>
                           // floating dock is all the chrome the other
                           // sections carry. Browser pages keep their own
                           // footers through MxShell, untouched.
-                          if (widget.index == 0) const MxFooter(),
+                          if (widget.index == kPwaHomeIndex) const MxFooter(),
                         ],
                       ),
                     );
