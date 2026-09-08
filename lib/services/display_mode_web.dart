@@ -23,3 +23,18 @@ bool isStandaloneDisplay() {
     return false;
   }
 }
+
+
+/// Like [isStandaloneDisplay], but only for a phone-sized window.
+///
+/// The installed app gets its paging shell and carousel dock only where the
+/// window is narrower than the desktop breakpoint the site already uses
+/// (1024 CSS px). A desktop installed PWA is therefore treated like the
+/// desktop browser: ordinary website navigation, no app-style bottom bar.
+bool isStandaloneMobile() {
+  try {
+    return isStandaloneDisplay() && web.window.innerWidth < 1024;
+  } catch (_) {
+    return false;
+  }
+}

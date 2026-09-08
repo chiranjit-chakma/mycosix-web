@@ -4,3 +4,4 @@
 /// tests therefore exercise the browser (non-standalone) behaviour, which is
 /// the honest default for a fresh test environment.
 bool isStandaloneDisplay() => false;
+bool isStandaloneMobile() => false;

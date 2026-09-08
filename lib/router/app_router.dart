@@ -53,12 +53,15 @@ class AppRouter {
       );
     }
 
-    // Installed PWA: the five primary sections live in a horizontal
-    // paging shell, so a primary route becomes the shell at that section
-    // instead of a full page. Profile reached WITH arguments is a real
-    // page (the wishlist-heart return flow), not a pager section, and
-    // keeps its ordinary route. A browser tab never takes this branch.
-    if (isStandaloneDisplay()) {
+    // Installed *phone-size* PWA: the five primary sections live in a
+    // paging shell with the carousel dock, so a primary route becomes the
+    // shell at that section instead of a full page. A desktop installed PWA
+    // is a wide window, so it stays on the ordinary website pages — same UI
+    // as the desktop browser, no app-style bottom bar. Profile reached WITH
+    // arguments is a real page (the wishlist-heart return flow), not a
+    // pager section, and keeps its ordinary route. A browser tab never
+    // takes this branch.
+    if (isStandaloneMobile()) {
       final idx = primarySectionIndex(name);
       if (idx >= 0 && !(name == Routes.profile && settings.arguments != null)) {
         return fadeRoute(MxPwaRoot(initialIndex: idx));

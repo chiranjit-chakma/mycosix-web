@@ -1,9 +1,6 @@
-import 'dart:ui' show ImageFilter;
-
 import 'package:flutter/material.dart';
 
 import '../../config/mx_colors.dart';
-import '../../config/mx_type.dart';
 import '../../router/routes.dart';
 import '../../services/app_exit.dart';
 import '../../state/back_press_controller.dart';
@@ -14,6 +11,7 @@ import '../home/home_page.dart';
 import '../journey/journey_page.dart';
 import '../profile/profile_page.dart';
 import '../shop/shop_page.dart';
+import 'pwa_dock.dart';
 import 'pwa_registry.dart';
 
 /// Index of each primary section inside the paging shell: Home 0, Shop 1,
@@ -39,7 +37,7 @@ int primarySectionIndex(String route) {
 /// The five primary sections of the installed MYCOSIX app, in page order.
 /// Each page renders in its embedded form — content only, no per-page shell —
 /// because the paging shell provides the app chrome (floating top bar,
-/// footer, bottom navigation) around them.
+/// footer, carousel dock) around them.
 const List<Widget> kPwaSections = <Widget>[
   HomePage(embedded: true),
   ShopPage(embedded: true),
@@ -64,20 +62,24 @@ const List<IconData> kPwaSectionIcons = <IconData>[
   Icons.person_rounded,
 ];
 
-/// Height of the floating bottom navigation bar, and the clearance kept
-/// around it: a small gap above the screen's bottom safe inset, then room
-/// inside each section's scroll view so the footer never hides behind it.
-const double _kNavBarHeight = 62;
+/// Expanded (fully scrolled-up) and compressed (scrolled-down) heights of
+/// the floating dock, and the clearance kept around it: a gap above the
+/// screen's bottom safe inset, then room inside each section's scroll view
+/// so the footer never hides behind it. The dock compresses smoothly along
+/// the page's scroll, so each section's scroll reserve follows the same
+/// 0..1 curve.
+const double _kDockHeightWide = 78;
+const double _kDockHeightNarrow = 58;
 
-/// The installed-app home: a Slice-style horizontal pager over the five
-/// primary sections with a bottom navigation bar.
+/// The installed phone app's home: a horizontal pager over the five primary
+/// sections with the floating carousel dock.
 ///
-/// Used ONLY when the app runs as an installed PWA (display-mode standalone).
-/// A normal browser tab never builds this widget — it keeps its ordinary
-/// per-page navigation. The pager distinguishes navigation swipes from
-/// interactions inside the pages: a horizontal carousel or image rail inside
-/// a section scrolls itself, and only swipes on non-scrollable horizontal
-/// space change the page.
+/// Used ONLY when the app runs as an installed *phone-size* PWA (display-mode
+/// standalone on a window narrower than the desktop breakpoint). A browser
+/// tab — and a desktop installed PWA — never builds this widget; they keep
+/// the ordinary per-page navigation. The pager itself does not swipe:
+/// horizontal navigation belongs to the dock alone, so in-page carousels,
+/// image rails, maps and forms are never mistaken for navigation.
 class MxPwaRoot extends StatefulWidget {
   const MxPwaRoot({
     super.key,
@@ -96,12 +98,23 @@ class MxPwaRoot extends StatefulWidget {
   State<MxPwaRoot> createState() => _MxPwaRootState();
 }
 
-class _MxPwaRootState extends State<MxPwaRoot> {
+class _MxPwaRootState extends State<MxPwaRoot>
+    with SingleTickerProviderStateMixin {
   late final PageController _pageController;
   late int _index;
   NavigatorState? _rootNavigator;
   final Map<int, _PwaSectionState> _sectionStates = <int, _PwaSectionState>{};
   final _back = BackPressController();
+
+  /// Page-scroll compression of the floating dock: 0 expanded at the top of
+  /// the page, 1 fully compressed once scrolled down. It follows the visible
+  /// section's scroll position while the user scrolls, and eases to the new
+  /// section's state when the section changes.
+  late final AnimationController _dockT = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 200),
+    value: 0,
+  );
 
   @override
   void initState() {
@@ -121,6 +134,7 @@ class _MxPwaRootState extends State<MxPwaRoot> {
     if (PwaRegistry.scrollVisibleToTop == _scrollVisibleToTop) {
       PwaRegistry.scrollVisibleToTop = null;
     }
+    _dockT.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -149,6 +163,24 @@ class _MxPwaRootState extends State<MxPwaRoot> {
     if (s == null) return false;
     s.scrollToTop();
     return true;
+  }
+
+  /// Live follow from a section's scroll notification: the dock tracks the
+  /// page 1:1, expanding and compressing as the section scrolls.
+  void _setDockCompression(double c) {
+    if (!mounted) return;
+    _dockT.value = c;
+  }
+
+  /// The pager settled on another section: update the active index and ease
+  /// the dock to that section's own scroll compression.
+  void _onPageChanged(int i) {
+    setState(() => _index = i);
+    _dockT.animateTo(
+      _sectionStates[i]?.compression.value ?? 0,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+    );
   }
 
   void _switchTo(int index) {
@@ -220,23 +252,27 @@ class _MxPwaRootState extends State<MxPwaRoot> {
               child: PageView.builder(
                 key: const Key('pwa-pager'),
                 controller: _pageController,
-                physics: const PageScrollPhysics(),
+                // Only the dock navigates sections; the pager never swipes,
+                // so a horizontal carousel, image rail, map or form inside a
+                // section is never mistaken for navigation.
+                physics: const NeverScrollableScrollPhysics(),
                 itemCount: widget.sections.length,
-                onPageChanged: (i) => setState(() => _index = i),
+                onPageChanged: _onPageChanged,
                 itemBuilder: (context, index) {
                   return _PwaSection(
                     key: Key('pwa-section-$index'),
                     index: index,
                     onSwitchSection: _switchTo,
+                    onCompression: _setDockCompression,
                     onState: (state) => _sectionStates[index] = state,
                     child: widget.sections[index],
                   );
                 },
               ),
             ),
-            // Floating glass bar: safe-area aware, floating just above the
-            // bottom inset, capped in width so tablets and desktop get a
-            // centered capsule instead of an edge-to-edge strip.
+            // Floating carousel dock: safe-area aware, floating just above
+            // the bottom inset, capped in width so the strip stays a
+            // comfortable centred capsule on wide phones.
             Positioned(
               left: 0,
               right: 0,
@@ -248,11 +284,13 @@ class _MxPwaRootState extends State<MxPwaRoot> {
                   alignment: Alignment.bottomCenter,
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 620),
-                    child: _PwaNavBar(
+                    child: PwaDock(
+                      key: const Key('pwa-dock'),
                       index: _index,
                       labels: kPwaSectionLabels,
                       icons: kPwaSectionIcons,
-                      onTap: _switchTo,
+                      onSelect: _switchTo,
+                      compression: _dockT,
                     ),
                   ),
                 ),
@@ -266,22 +304,24 @@ class _MxPwaRootState extends State<MxPwaRoot> {
 }
 
 /// One pager page: the section content plus the app chrome each section
-/// carries in the browser too — a scrollable body with the footer, the
-/// floating top bar, and the back-to-top button (raised above the bottom
-/// navigation). Kept alive so swiping back and forth never loses the
-/// section's scroll position or re-fetches its data.
+/// carries in the browser too — a scrollable body with the footer and the
+/// floating top bar (the back-to-top button sits inside the footer area,
+/// raised above the floating dock). Kept alive so moving between sections
+/// never loses the section's scroll position or re-fetches its data.
 class _PwaSection extends StatefulWidget {
   const _PwaSection({
     super.key,
     required this.index,
     required this.child,
     required this.onSwitchSection,
+    required this.onCompression,
     required this.onState,
   });
 
   final int index;
   final Widget child;
   final void Function(int index) onSwitchSection;
+  final void Function(double compression) onCompression;
   final void Function(_PwaSectionState state) onState;
 
   @override
@@ -291,6 +331,12 @@ class _PwaSection extends StatefulWidget {
 class _PwaSectionState extends State<_PwaSection>
     with AutomaticKeepAliveClientMixin {
   final _scrollController = ScrollController();
+
+  /// This section's contribution to the dock's compression (0 at the top,
+  /// 1 after about 200px of scrolling). The root eases its dock animation
+  /// to whichever section is visible.
+  final compression = ValueNotifier<double>(0);
+
   bool _scrolled = false;
 
   @override
@@ -307,6 +353,7 @@ class _PwaSectionState extends State<_PwaSection>
   @override
   void dispose() {
     _scrollController.dispose();
+    compression.dispose();
     super.dispose();
   }
 
@@ -329,6 +376,13 @@ class _PwaSectionState extends State<_PwaSection>
     if (scrolled != _scrolled && mounted) {
       setState(() => _scrolled = scrolled);
     }
+    // The dock compresses 1:1 with the page's scroll — progressive, never a
+    // jump — and eases back out as the section returns to the top.
+    final c = (notification.metrics.pixels / 200.0).clamp(0.0, 1.0);
+    if ((c - compression.value).abs() > 0.0005) {
+      compression.value = c;
+      widget.onCompression(c);
+    }
     return false;
   }
 
@@ -349,24 +403,38 @@ class _PwaSectionState extends State<_PwaSection>
                 physics: const BouncingScrollPhysics(
                   parent: AlwaysScrollableScrollPhysics(),
                 ),
-                child: Padding(
-                  // Scroll room for the floating navigation bar: even fully
-                  // scrolled down, the footer clears the glass pill by a
-                  // comfortable margin.
-                  padding: EdgeInsets.only(
-                    bottom:
-                        MediaQuery.paddingOf(context).bottom +
-                        _kNavBarHeight +
-                        24,
-                  ),
-                  child: Column(children: [widget.child, const MxFooter()]),
+                child: ListenableBuilder(
+                  listenable: compression,
+                  builder: (context, _) {
+                    final c = compression.value;
+                    // Scroll room for the floating dock: even fully scrolled
+                    // down, the footer clears the capsule by a comfortable
+                    // margin. The reserve shrinks with the dock as the page
+                    // scrolls, so compressed content gains the space the
+                    // smaller dock frees up.
+                    final dockHeight =
+                        _kDockHeightWide +
+                        (_kDockHeightNarrow - _kDockHeightWide) * c;
+                    return Padding(
+                      padding: EdgeInsets.only(
+                        bottom:
+                            MediaQuery.paddingOf(context).bottom +
+                            10 +
+                            dockHeight +
+                            12,
+                      ),
+                      child: Column(
+                        children: [widget.child, const MxFooter()],
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
           ),
           // Floating top bar, exactly as on the browser pages. The hamburger
-          // menu is hidden here: the bottom navigation already reaches every
-          // primary section, and the rest lives under Profile -> More.
+          // menu is hidden here: the dock already reaches every primary
+          // section, and the rest lives under Profile -> More.
           Positioned(
             top: 10,
             left: 0,
@@ -378,165 +446,6 @@ class _PwaSectionState extends State<_PwaSection>
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// The installed app's primary navigation: a floating frosted-glass capsule
-/// with five destinations. It overlays the pager (each section reserves
-/// scroll room below), floats above the bottom safe inset, and tapping a
-/// destination glides the pager to the matching section.
-class _PwaNavBar extends StatelessWidget {
-  const _PwaNavBar({
-    required this.index,
-    required this.labels,
-    required this.icons,
-    required this.onTap,
-  });
-
-  final int index;
-  final List<String> labels;
-  final List<IconData> icons;
-  final void Function(int index) onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: MxColors.charcoal.withValues(alpha: 0.14),
-            blurRadius: 26,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: Stack(
-          children: [
-            // Frosted backing: soft blur of whatever scrolls beneath, under
-            // a translucent cream surface with a hairline highlight border.
-            Positioned.fill(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                child: const ColoredBox(color: Colors.transparent),
-              ),
-            ),
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: MxColors.cream.withValues(alpha: 0.88),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.6),
-                    width: 1,
-                  ),
-                ),
-              ),
-            ),
-            SizedBox(
-              height: _kNavBarHeight,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (var i = 0; i < labels.length; i++)
-                    Expanded(
-                      child: _PwaNavItem(
-                        key: Key('pwa-nav-${labels[i].toLowerCase()}'),
-                        selected: i == index,
-                        label: labels[i],
-                        icon: icons[i],
-                        onTap: () => onTap(i),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PwaNavItem extends StatelessWidget {
-  const _PwaNavItem({
-    super.key,
-    required this.selected,
-    required this.label,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final bool selected;
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  static const _radius = 18.0;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      selected: selected,
-      button: true,
-      label: label,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 3),
-        child: TweenAnimationBuilder<double>(
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOut,
-          tween: Tween<double>(end: selected ? 1 : 0),
-          builder: (context, t, _) {
-            // The chosen section fills its cell with deep forest and lifts
-            // it with a soft glow; the fill and the ink share the material,
-            // so a tap always ripples above the surface.
-            final fill =
-                Color.lerp(Colors.transparent, MxColors.forest, t) ??
-                Colors.transparent;
-            final content =
-                Color.lerp(
-                  selected ? MxColors.charcoalSoft : MxColors.stone,
-                  Colors.white,
-                  t,
-                ) ??
-                Colors.white;
-            return Material(
-              color: fill,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(_radius),
-              ),
-              elevation: 4 * t,
-              shadowColor: MxColors.forest.withValues(alpha: 0.45),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: onTap,
-                splashColor: Colors.white.withValues(alpha: 0.22),
-                highlightColor: Colors.white.withValues(alpha: 0.08),
-                child: SizedBox.expand(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(icon, size: 21, color: content),
-                      const SizedBox(height: 3),
-                      Text(
-                        label,
-                        maxLines: 1,
-                        style: MxType.label(
-                          color: content,
-                          weight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
       ),
     );
   }

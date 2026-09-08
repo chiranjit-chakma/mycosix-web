@@ -194,10 +194,12 @@ class _ProfilePageState extends State<ProfilePage> {
                       onGoogleSignIn: _googleSignIn,
                       onSwitchMode: _switchMode,
                     ),
-                    // Installed-app users always see where their Wishlist
-                    // and My Orders live, locked until they sign in. In a
-                    // browser tab these stay out of the signed-out page.
-                    if (isStandaloneDisplay()) ...[
+                    // Installed phone-size app users always see where their
+                    // Wishlist and My Orders live, locked until they sign
+                    // in. Browser tabs — and the desktop installed PWA,
+                    // which keeps the desktop UI — leave these out of the
+                    // signed-out page.
+                    if (isStandaloneMobile()) ...[
                       const SizedBox(height: 28),
                       const _LockedSections(),
                     ],

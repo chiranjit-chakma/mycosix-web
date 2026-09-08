@@ -161,30 +161,44 @@ void main() {
     await _pumpPager(tester);
     expect(_page(tester), 0.0);
 
-    await tester.tap(find.byKey(const Key('pwa-nav-journey')));
+    await tester.tap(
+      find.byKey(const Key('pwa-nav-journey')),
+      warnIfMissed: false,
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(_page(tester), 3.0);
     expect(_navSelected(tester, 'Journey'), isTrue);
 
-    await tester.tap(find.byKey(const Key('pwa-nav-home')));
+    await tester.tap(
+      find.byKey(const Key('pwa-nav-home')),
+      warnIfMissed: false,
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(_page(tester), 0.0);
   });
 
-  testWidgets('swiping empty page space changes the section', (tester) async {
-    await _pumpPager(tester);
-    // The drag lands on the section's label - non-scrollable horizontal space.
-    await tester.drag(find.text('S0'), const Offset(-420, 0));
-    await tester.pumpAndSettle();
-    expect(_page(tester), 1.0);
+  testWidgets(
+    'swiping empty page space does not change the section (the dock owns navigation)',
+    (tester) async {
+      await _pumpPager(tester);
+      // Horizontal navigation belongs to the floating dock; a swipe on the
+      // page's own space must not turn the section, or a product carousel,
+      // image rail, map or form could be mistaken for navigation.
+      await tester.drag(find.text('S0'), const Offset(-420, 0));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(_page(tester), 0.0);
+      expect(_navSelected(tester, 'Home'), isTrue);
 
-    // And back the other way.
-    await tester.drag(find.text('S1'), const Offset(420, 0));
-    await tester.pumpAndSettle();
-    expect(_page(tester), 0.0);
-  });
+      // And back the other way.
+      await tester.drag(find.text('S0'), const Offset(420, 0));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(_page(tester), 0.0);
+    },
+  );
 
   testWidgets(
     'a horizontal rail inside a section scrolls itself, not the page',
@@ -257,8 +271,12 @@ void main() {
     expect(_page(tester), 4.0);
 
     await tester.binding.handlePopRoute();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+    // _switchTo only glides the pager; _index updates when the glide
+    // crosses its midpoint (_onPageChanged), and only then does the dock
+    // learn the new section and start its snap. Both animations land in
+    // their own frames, so settle until the tree is quiet, like a device
+    // streaming frames. (The harness slabs animate nothing on their own.)
+    await tester.pumpAndSettle();
     expect(_page(tester), 0.0);
     expect(_navSelected(tester, 'Home'), isTrue);
 
@@ -327,7 +345,10 @@ void main() {
     expect(vertical.position.pixels, greaterThan(0));
 
     // Tapping Home while already on Home glides the section back to the top.
-    await tester.tap(find.byKey(const Key('pwa-nav-home')));
+    await tester.tap(
+      find.byKey(const Key('pwa-nav-home')),
+      warnIfMissed: false,
+    );
     await tester.pumpAndSettle();
     expect(vertical.position.pixels, 0);
   });
