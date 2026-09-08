@@ -7,6 +7,7 @@ import '../../firebase/fb_admin.dart';
 import '../../models/order_status.dart';
 import '../../models/order_status_update.dart';
 import '../../models/store_order.dart';
+import '../../services/safe_location_links.dart';
 import '../../services/url_launcher.dart';
 import '../../utils/money.dart';
 import 'admin_widgets.dart';
@@ -48,10 +49,7 @@ class _OrderSheetState extends State<_OrderSheet> {
       // status is stored as the canonical label (never the Dart enum name) and
       // Delivered additionally stamps a trusted deliveredAt. The write is
       // authorised by security rules and restricted to those fields.
-      final patch = orderStatusUpdateFields(
-        next,
-        FieldValue.serverTimestamp(),
-      );
+      final patch = orderStatusUpdateFields(next, FieldValue.serverTimestamp());
       await FbAdmin.orders.doc(widget.order.id).update(patch);
       if (!mounted) return;
       setState(() => _saving = false);
@@ -136,7 +134,12 @@ class _OrderSheetState extends State<_OrderSheet> {
                     _row('Delivery note', o.instructions!),
                 ],
                 trailing: TextButton.icon(
-                  onPressed: () => UrlLauncher.open(o.mapsUrl),
+                  // Only ever open a link on Google's own map hosts (the stored link is
+                  // rules-restricted to those hosts); a link from an older or crafted order
+                  // falls back to a freshly built Maps link for the same co-ordinates.
+                  onPressed: () => UrlLauncher.open(
+                    openableLocationUrl(o.mapsUrl, o.latitude, o.longitude),
+                  ),
                   icon: const Icon(Icons.map_outlined, size: 17),
                   label: const Text('Open in Maps'),
                 ),
@@ -278,9 +281,9 @@ class _OrderSheetState extends State<_OrderSheet> {
                 Text(
                   _status == OrderStatus.delivered
                       ? 'Delivered and Cancelled are final — this order cannot be '
-                          'moved back to an earlier status.'
+                            'moved back to an earlier status.'
                       : 'Cancelled is final — this order cannot be reopened. '
-                          'Restock any items manually in Inventory if needed.',
+                            'Restock any items manually in Inventory if needed.',
                   style: MxType.bodyXs(color: MxColors.stone),
                 ),
               ],
@@ -309,8 +312,18 @@ class _OrderSheetState extends State<_OrderSheet> {
 /// Absolute local timestamp, e.g. "5 Sep 2026, 09:14".
 String _stamp(DateTime t) {
   const months = <String>[
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   String two(int v) => v.toString().padLeft(2, '0');
   final l = t.toLocal();

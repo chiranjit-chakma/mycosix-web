@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/delivery_location.dart';
 import '../repositories/cart_repository.dart';
+import 'saved_location_clear.dart';
 import '../services/geo_location_service.dart';
 import '../services/location_failure.dart';
 
@@ -10,7 +11,7 @@ import '../services/location_failure.dart';
 /// A location only becomes usable once the user EXPLICITLY confirms it
 /// (confirmed == true). GPS fixes and map drags set the candidate, never the
 /// final location.
-class LocationController extends ChangeNotifier {
+class LocationController extends ChangeNotifier implements SavedLocationClear {
   LocationController(this._repo, this._geo);
 
   final CartRepository _repo;
@@ -89,6 +90,7 @@ class LocationController extends ChangeNotifier {
     }
   }
 
+  @override
   Future<void> clear() async {
     await _repo.clearLocation();
     notifyListeners();

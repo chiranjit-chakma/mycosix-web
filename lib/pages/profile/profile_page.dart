@@ -6,6 +6,7 @@ import '../../config/mx_type.dart';
 import '../../router/routes.dart';
 import '../../services/display_mode.dart';
 import '../../state/customer_auth_controller.dart';
+import '../../state/saved_location_clear.dart';
 import '../../utils/validators.dart';
 import '../../widgets/google_sign_in_button.dart';
 import '../../widgets/twitter_sign_in_button.dart';
@@ -147,8 +148,16 @@ class _ProfilePageState extends State<ProfilePage> {
   /// out of the app.
   Future<void> _confirmSignOut() async {
     final auth = _auth;
+    final location = context.read<SavedLocationClear>();
     if (!await showSignOutConfirm(context)) return;
     await auth.signOut();
+    // The sign-out did not complete; the customer stays signed in.
+    if (auth.user != null) return;
+    // A deliberate sign-out leaves nothing of the previous account's saved
+    // delivery point behind (shared devices). The cart is a device cart by
+    // design and stays, so a re-login still restores the items. clear() is
+    // a no-op when nothing is saved.
+    await location.clear();
   }
 
   @override
@@ -404,10 +413,7 @@ class _AuthPanel extends StatelessWidget {
             busy: busy,
           ),
           const SizedBox(height: 10),
-          YahooSignInButton(
-            onPressed: busy ? null : onYahooSignIn,
-            busy: busy,
-          ),
+          YahooSignInButton(onPressed: busy ? null : onYahooSignIn, busy: busy),
           const SizedBox(height: 16),
           Row(
             children: [

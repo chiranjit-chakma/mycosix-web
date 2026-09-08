@@ -27,6 +27,7 @@ import 'services/whatsapp_order_service.dart';
 import 'services/whatsapp_otp.dart';
 import 'state/cart_controller.dart';
 import 'state/location_controller.dart';
+import 'state/saved_location_clear.dart';
 import 'state/products_controller.dart';
 import 'state/site_config_controller.dart';
 import 'state/wishlist_controller.dart';
@@ -172,6 +173,12 @@ class MxApp extends StatelessWidget {
           create: (_) =>
               LocationController(cartRepository, BrowserGeoLocationService()),
         ),
+        // Same controller under the narrow sign-out contract, so the profile
+        // page can clear the saved delivery point without importing web-only
+        // services (widget tests compile on the VM test runner).
+        ProxyProvider<LocationController, SavedLocationClear>(
+          update: (_, controller, _) => controller,
+        ),
         Provider<ConfigRepository>(create: (_) => configRepository),
         // Live site configuration: subscribes to siteConfig/public so an admin
         // toggling "Delivery enabled" off stops customer ordering immediately,
@@ -179,8 +186,7 @@ class MxApp extends StatelessWidget {
         ChangeNotifierProvider<SiteConfigController>(
           lazy: false,
           create: (_) =>
-              SiteConfigController(initial: configRepository.settings)
-                ..start(),
+              SiteConfigController(initial: configRepository.settings)..start(),
         ),
         Provider<OrderRepository>(create: (_) => orderRepository),
         // One-time-code WhatsApp verification for checkout (Firebase Phone
@@ -189,9 +195,7 @@ class MxApp extends StatelessWidget {
         Provider<WhatsAppOrderService>(
           create: (context) {
             final config = context.read<ConfigRepository>();
-            return WhatsAppOrderService(
-              whatsappNumber: config.whatsappNumber,
-            );
+            return WhatsAppOrderService(whatsappNumber: config.whatsappNumber);
           },
         ),
         // Admin auth + authorisation (drives the /admin gate).

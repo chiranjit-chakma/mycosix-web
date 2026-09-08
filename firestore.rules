@@ -93,9 +93,18 @@ service cloud.firestore {
       && res.data.latitude is number
       && 'longitude' in res.data
       && res.data.longitude is number
+      // The location link a capture may carry is pinned to Google's own map
+      // hosts - the same allowlist the trusted order backend enforces
+      // (MAPS_HOSTS). The checkout only ever stores a link this app builds
+      // from a confirmed co-ordinate (google.com/maps?q=...); an empty string
+      // is tolerated for legacy pins. Anything else is a crafted link and is
+      // denied, because an admin opens an order's location link later and an
+      // unconstrained host would plant a phishing page under that tap.
       && 'mapsUrl' in res.data
       && res.data.mapsUrl is string
       && res.data.mapsUrl.size() <= 500
+      && (res.data.mapsUrl.size() == 0
+        || res.data.mapsUrl.matches('(?i)^https://(www\\.google\\.com/maps([?/].*)?|maps\\.google\\.com/maps([?/].*)?|maps\\.app\\.goo\\.gl/.+|goo\\.gl/maps/.+|(www\\.)?googlemaps\\.com/.+)$'))
       && (!('email' in res.data)
           || (res.data.email is string && res.data.email.size() <= 120))
       && (!('building' in res.data)
