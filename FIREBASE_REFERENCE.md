@@ -57,9 +57,9 @@ with: `firebase deploy --only firestore:rules --project mycosix`
 | --- | --- | --- |
 | `products` | read | read + create/update/delete |
 | `siteConfig` (single doc `public`) | read | read + write |
-| `orders` | owner may read orders linked to their own account (`customerId` == their uid); create ONLY the "captured order" allowlist (checkout fallback); never delete. Since 2026-09-08 a captured order's `phone` must be the **canonical `+91XXXXXXXXXX`** number on the caller's own Firebase auth token (`phone_number` claim, `phoneVerified: true`) - the browser can never write an unverified number or forge the marker | read; update status-only |
+| `orders` | owner may read orders linked to their own account (`customerId` == their uid); create ONLY the "captured order" allowlist (checkout fallback); never delete. Since 2026-09-08 a captured order's `phone` must be the **canonical `+91XXXXXXXXXX`** number and proven server-side (`phoneVerified: true` in the order, then the rules' `phoneProofHolds`): either on the caller's own Firebase auth token (`phone_number` claim - Firebase only adds that claim after it verified the one-time code itself), or an admin attestation on the caller's own `customers/{uid}` document (`phone` == the order's phone and `phoneVerified: true` - those fields are admin-only). The browser can never write an unverified number or forge the marker | read; update status-only |
 | `admins` | read own grant only | (grants made via console/admin SDK - rules forbid app writes) |
-| `customers` (per customer `{uid}`) | owner may read their own doc; owner creates it on first sign-in (email pinned, status `active`); owner may only update `displayName` | read all (admin Customers section); may only update `status` (`active`/`disabled`); never delete |
+| `customers` (per customer `{uid}`) | owner may read their own doc; owner creates it on first sign-in (email pinned, status `active`); owner may only update `displayName` | read all (admin Customers section); may update `status` (`active`/`disabled`) and, since 2026-09-08, the WhatsApp attestation fields (`phone`, `phoneVerified`, `phoneVerifiedBy`, `phoneVerifiedAt` - the Customers screen verifies/unverifies a number live through these); never delete |
 | `carts` (per customer `{uid}`) | owner-only read/write of their own cart mirror; delete own | no access (not business data) |
 | `wishlists` (per customer `{uid}`) | owner-only read/write of their own saved-product list (bounded, 120 ids max); delete own | no access (not business data) |
 | `team`, `content` | no | admin only (currently unused - future editorial) |
@@ -69,7 +69,7 @@ with: `firebase deploy --only firestore:rules --project mycosix`
 
 ## Collections with live data today (captured 2026-09-08)
 
-At re-capture (2026-09-08) six collections hold live data: `products` (8 documents), `siteConfig` (1), `orders` (11), `admins` (2 - the second admin `mycosixmushroom@gmail.com` was granted on 2026-09-08), and - new since the first capture - the customer-account collections `customers`, `carts` and `wishlists` (3 documents each; rows are private customer data and are deliberately NOT reproduced in this file). The account collections are still auto-created on first use: `customers/{uid}` the first time someone registers, `carts/{uid}` the first time that customer changes their cart while signed in, and `wishlists/{uid}` the first time they save a product. `team`, `content`, `batches`, `inventoryMovements`, `orderRequests` remain defined in the rules for future features and hold **no documents** today. What changed since 2026-09-07: the admin restocked `oyster-pickle-250` (0 -> 6), one `New Trending Mushroom` sold (5 -> 4), the `chandan mushroom` admin test entry was deleted from the Products screen, and 6 new orders arrived (5 -> 11 total; 4 of 11 are linked to signed-in customer accounts). No schema or security-rules changes.
+At re-capture (2026-09-08) six collections hold live data: `products` (8 documents), `siteConfig` (1), `orders` (11), `admins` (2 - the second admin `mycosixmushroom@gmail.com` was granted on 2026-09-08), and - new since the first capture - the customer-account collections `customers`, `carts` and `wishlists` (3 documents each; rows are private customer data and are deliberately NOT reproduced in this file). The account collections are still auto-created on first use: `customers/{uid}` the first time someone registers, `carts/{uid}` the first time that customer changes their cart while signed in, and `wishlists/{uid}` the first time they save a product. `team`, `content`, `batches`, `inventoryMovements`, `orderRequests` remain defined in the rules for future features and hold **no documents** today. What changed since 2026-09-07: the admin restocked `oyster-pickle-250` (0 -> 6), one `New Trending Mushroom` sold (5 -> 4), the `chandan mushroom` admin test entry was deleted from the Products screen, and 6 new orders arrived (5 -> 11 total; 4 of 11 are linked to signed-in customer accounts). Rules/app update 2026-09-08 (evening): no data changed; the rules gained the admin WhatsApp-number attestation described above, and the app now keeps the admin area on its own separate login (`mycosix-admin`) so an admin session never touches the customer session in the same browser.
 
 ### 1) `products` - 8 documents
 
@@ -190,12 +190,12 @@ the owner - the account already existed).
 
 | File in this repo | What it is for |
 | --- | --- |
-| `firestore.rules` | Security rules for every collection (the schema tables above come from here). Since 2026-09-08 the orders `create` gate also pins the canonical phone to the caller's auth-token `phone_number` claim |
+| `firestore.rules` | Security rules for every collection (the schema tables above come from here). Since 2026-09-08 the orders `create` gate proves the canonical phone server-side (`phoneProofHolds`): the caller's auth-token `phone_number` claim, or an admin attestation on the caller's own `customers/{uid}` profile |
 | `firestore.indexes.json` | Firestore composite indexes (products category+sortKey; orders customerId+createdAt) |
 | `storage.rules` | Storage rules (deny-all; Storage not enabled today) |
 | `firebase.json` | Hosting config |
 | `functions/scripts/seed_catalog.js` | Re-creates the 6 real products (safe re-run) |
-| `functions/index.js` + `functions/test/` | Trusted order backend + tests (optional; not deployed on the free plan) |
+| `functions/index.js` + `functions/test/` | Trusted order backend + tests (optional; not deployed on the free plan). Mirrors the attestation phone proof inside its transaction (24 tests pass) |
 | `lib/firebase/firebase_options.dart` | The web app's Firebase project config |
 | `assets/` | Every product/brand photo that products reference as asset paths |
 
