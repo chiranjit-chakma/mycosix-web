@@ -7,6 +7,7 @@ import '../../router/routes.dart';
 import '../../state/admin_reveal.dart';
 import '../../state/auth_controller.dart';
 import '../../widgets/brand.dart';
+import '../pwa/pwa_admin_dock_shell.dart';
 import 'admin_scaffold.dart';
 
 /// Entry point for the admin area.
@@ -33,11 +34,19 @@ class AdminGate extends StatelessWidget {
       listenable: AdminReveal.shared,
       builder: (context, _) {
         // A persisted session always reaches the real gate body — an admin
-        // who is signed in never needs to summon anything.
-        if (auth.user != null) return const _AdminGateBody();
+        // who is signed in never needs to summon anything. On the installed
+        // phone app with the owner's navigation toggle on, the body keeps the
+        // phone dock below it (PwaAdminDockShell) so the Admin page carries
+        // the same bottom navigation as the home sections; everywhere else
+        // the shell renders its child unchanged.
+        if (auth.user != null) {
+          return const PwaAdminDockShell(child: _AdminGateBody());
+        }
         switch (AdminReveal.shared.stage) {
           case AdminRevealStage.signIn:
-            return const _AdminGateBody();
+            // Summoned: the sign-in (or the dashboard for a persisted admin)
+            // also keeps the phone dock below it when it applies.
+            return const PwaAdminDockShell(child: _AdminGateBody());
           case AdminRevealStage.hidden:
             // Not summoned: while auth is still restoring (persisted session
             // check) show nothing; afterwards hand off to the public site.
