@@ -27,6 +27,7 @@ import 'services/browser_geo_location_service.dart';
 import 'services/whatsapp_order_service.dart';
 import 'services/whatsapp_otp.dart';
 import 'state/cart_controller.dart';
+import 'state/fcm_registration_keeper.dart';
 import 'state/location_controller.dart';
 import 'state/saved_location_clear.dart';
 import 'state/products_controller.dart';
@@ -138,6 +139,17 @@ Future<void> main() async {
   // controller subscribes to Firestore only when its side of Firebase is up
   // and stays inert otherwise (tests / offline builds).
   final orderAlertController = OrderAlertController();
+
+  // Web-push registration keeper (client stack). App-lifetime; re-evaluates
+  // whenever siteConfig changes, so it arms the moment the owner pastes the
+  // VAPID public key in Admin -> Settings - and stays fully dormant until then
+  // (no permission prompt, no token, no network). Foreground pushes are
+  // converted to the same deduplicated banner the Firestore watchers raise.
+  // The sending Cloud Functions stay undeployed (paid-plan owner decision).
+  FcmRegistrationKeeper(
+    siteConfigController: siteConfigController,
+    alertsController: orderAlertController,
+  );
 
   runApp(
     MxApp(

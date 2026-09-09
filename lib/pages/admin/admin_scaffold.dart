@@ -1,9 +1,12 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/mx_colors.dart';
 import '../../config/mx_type.dart';
+import '../../firebase/fb_admin.dart';
 import '../../state/auth_controller.dart';
+import '../../state/site_config_controller.dart';
 import '../../widgets/brand.dart';
 import 'sections/analytics_section.dart';
 import 'sections/batches_section.dart';
@@ -230,10 +233,57 @@ class _NavItem extends StatelessWidget {
   }
 }
 
+/// Account footer: email, the Admin-in-navigation toggle beside Logout, and
+/// the sign-out button.
+///
+/// The toggle is a NAVIGATION-VISIBILITY preference only (stored on
+/// siteConfig/public, public-read/admin-write like the rest of the settings):
+/// when ON, the site's top bar shows an Admin entry for a signed-in
+/// administrator; when OFF the entry is hidden and admin access continues
+/// exactly as before (account-page tile / secret-code / direct gate). It is
+/// never treated as proof of admin authorisation — the admins/{uid} grant
+/// enforced by the security rules remains the boundary, and the Admin entry
+/// only ever appears for a signed-in admin regardless of this flag.
 class _AccountFooter extends StatelessWidget {
   const _AccountFooter({this.compact = false});
 
   final bool compact;
+
+  /// Writes the toggle value to the live settings document; the site's
+  /// SiteConfigController picks it up instantly, so the Admin entry appears
+  /// or disappears without a reload.
+  Future<void> _setShortcut(BuildContext context, bool value) async {
+    try {
+      await FbAdmin.siteConfig.doc('public').set(
+        {'adminNavShortcutEnabled': value},
+        SetOptions(merge: true),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(FbAdmin.friendlyMessage(e))),
+        );
+      }
+    }
+  }
+
+  Widget _toggle(BuildContext context) {
+    final value = liveSiteSettings(context).adminNavShortcutEnabled;
+    final mini = compact;
+    return Tooltip(
+      message: value
+          ? 'Admin is shown in the site navigation'
+          : 'Show Admin in the site navigation',
+      child: Transform.scale(
+        scale: mini ? 0.78 : 0.9,
+        child: Switch(
+          value: value,
+          onChanged: (v) => _setShortcut(context, v),
+          activeThumbColor: MxColors.moss,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -265,10 +315,17 @@ class _AccountFooter extends StatelessWidget {
     }
 
     if (compact) {
-      return IconButton(
-        tooltip: 'Sign out ($email)',
-        icon: const Icon(Icons.logout_rounded, color: MxColors.cream, size: 20),
-        onPressed: signOut,
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _toggle(context),
+          const SizedBox(width: 2),
+          IconButton(
+            tooltip: 'Sign out ($email)',
+            icon: const Icon(Icons.logout_rounded, color: MxColors.cream, size: 20),
+            onPressed: signOut,
+          ),
+        ],
       );
     }
     return Container(
@@ -293,6 +350,9 @@ class _AccountFooter extends StatelessWidget {
               style: MxType.bodyXs(color: MxColors.cream),
             ),
           ),
+          const SizedBox(width: 4),
+          _toggle(context),
+          const SizedBox(width: 2),
           IconButton(
             tooltip: 'Sign out',
             icon: const Icon(

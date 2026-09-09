@@ -52,16 +52,25 @@ class MxConfig {
   static const defaultLatitude = 12.2958;
   static const defaultLongitude = 76.6394;
 
-  /// Closed-app / background push notifications. OFF by default: delivering
-  /// them needs (a) the paid (Blaze) plan so the notification Cloud Functions
-  /// in `functions/notify_core.js` can run, and (b) a web-push (VAPID) key
-  /// added to the Firebase console under Project settings -> Cloud Messaging,
-  /// whose PUBLIC half is pasted into [pushVapidKey]. The open-app banner
-  /// alerts do NOT depend on this flag - they work today on the free plan.
-  static const pushNotificationsEnabled = false;
+  /// Closed-app / background push notifications: the CLIENT stack is LIVE.
+  ///
+  /// On: the FCM registration keeper runs, asks for notification permission
+  /// and registers the device's push token under the signed-in account's
+  /// fcmTokens/{uid} document so the backend can later deliver. It stays fully
+  /// dormant until a web-push (VAPID) key is present: the keeper reads the
+  /// PUBLIC half at runtime from siteConfig/public `pushVapidPublicKey` (the
+  /// owner pastes it in Admin -> Settings, or fills [pushVapidKey] below) -
+  /// the PRIVATE half lives only in the Firebase console under Project
+  /// settings -> Cloud Messaging. The automated SENDER (the notification
+  /// Cloud Functions in `functions/notify_core.js`) is still gated behind the
+  /// paid (Blaze) plan and stays undeployed until the owner approves it; the
+  /// open-app banner alerts do NOT depend on any of this - they work today on
+  /// the free plan.
+  static const pushNotificationsEnabled = true;
 
-  /// The PUBLIC web-push key (paste here when enabling push). The PRIVATE key
-  /// lives only in the Firebase console - never put it in this repo. An empty
-  /// key keeps the registration keeper dormant.
+  /// Build-time fallback for the PUBLIC web-push key. The live source is
+  /// siteConfig/public `pushVapidPublicKey` (set in Admin -> Settings); this
+  /// constant is used only when that runtime value is blank. An empty key
+  /// keeps the registration keeper dormant.
   static const pushVapidKey = '';
 }

@@ -9,7 +9,10 @@ import '../config/mx_type.dart';
 import '../pages/pwa/pwa_registry.dart';
 import '../router/app_nav.dart';
 import '../router/routes.dart';
+import '../state/admin_reveal.dart';
+import '../state/auth_controller.dart';
 import '../state/cart_controller.dart';
+import '../state/site_config_controller.dart';
 import 'brand.dart';
 
 /// Floating top navigation bar. Rendered by [MxShell] above page content.
@@ -50,6 +53,12 @@ class MxTopBar extends StatelessWidget {
     final pagerLive = PwaRegistry.switchToSection != null;
     final currentRoute = ModalRoute.of(context)?.settings.name;
     bool isActive(String route) => !pagerLive && currentRoute == route;
+
+    // The Admin entry appears only when the owner turned it on in the admin
+    // area (siteConfig/public adminNavShortcutEnabled) AND the admin-session
+    // user is a server-verified administrator (admins/{uid} grant). It is
+    // never shown to a plain customer, and never based on a client flag.
+    final adminNavVisible = _adminNavVisible(context);
 
     return _FrostPill(
       frosted: scrolled,
@@ -95,6 +104,14 @@ class MxTopBar extends StatelessWidget {
               label: 'Contact',
               route: Routes.contact,
             ),
+            if (adminNavVisible) ...[
+              const SizedBox(width: 2),
+              _NavLink(
+                active: isActive(Routes.admin),
+                label: 'Admin',
+                route: Routes.admin,
+              ),
+            ],
             const SizedBox(width: 8),
             if (showAccount) ...[
               _AccountButton(onTap: () => _go(context, Routes.profile)),
@@ -109,6 +126,10 @@ class MxTopBar extends StatelessWidget {
           ] else ...[
             if (showAccount) ...[
               _AccountButton(onTap: () => _go(context, Routes.profile)),
+              if (adminNavVisible) ...[
+                const SizedBox(width: 2),
+                _AdminButton(onTap: () => AdminReveal.shared.openAdmin()),
+              ],
               const SizedBox(width: 2),
             ],
             _CartButton(
@@ -123,6 +144,22 @@ class MxTopBar extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Whether the Admin entry belongs in the top bar right now. Reads two
+/// server-backed sources: the admin session's grant status (AuthController
+/// watches the FbAdmin session + the admins/{uid} rules-gated grant) and the
+/// owner's navigation toggle (siteConfig/public, public-read). Falls back to
+/// hidden when the providers are absent (standalone widget tests), so the bar
+/// renders unchanged in isolation.
+bool _adminNavVisible(BuildContext context) {
+  try {
+    final auth = context.watch<AuthController>();
+    final site = context.watch<SiteConfigController>();
+    return auth.isAdmin == true && site.settings.adminNavShortcutEnabled;
+  } on ProviderNotFoundException {
+    return false;
   }
 }
 
@@ -274,6 +311,31 @@ class _NavLinkState extends State<_NavLink> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Admin entry point (signed-in administrators only). Uses the same arming
+/// call as the account-page tile, so the gate's summoner state stays
+/// consistent across every entry.
+class _AdminButton extends StatelessWidget {
+  const _AdminButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: onTap,
+      tooltip: 'Admin',
+      style: IconButton.styleFrom(
+        hoverColor: MxColors.moss.withValues(alpha: 0.10),
+      ),
+      icon: const Icon(
+        Icons.admin_panel_settings_outlined,
+        size: 21,
+        color: MxColors.forest,
       ),
     );
   }

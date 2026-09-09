@@ -47,6 +47,15 @@ class SiteConfigController extends ChangeNotifier {
   /// checkout shows the temporary code path; absent/false means real codes.
   bool get whatsappCodeFallback => _settings.whatsappCodeFallback;
 
+  /// Whether the Admin entry is shown in the site navigation for a signed-in
+  /// administrator (the toggle beside Logout in the admin area). Navigation
+  /// visibility only - never an authorisation signal.
+  bool get adminNavShortcutEnabled => _settings.adminNavShortcutEnabled;
+
+  /// The public web-push (VAPID) key the owner pasted into Settings, or ''
+  /// until they do. An empty key keeps FCM token registration dormant.
+  String get pushVapidPublicKey => _settings.pushVapidPublicKey;
+
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _sub;
 
   /// Opens the live subscription to the public settings document. Called once

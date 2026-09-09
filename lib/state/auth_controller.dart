@@ -25,6 +25,20 @@ enum AdminGateStatus {
   admin,
 }
 
+/// Result of submitting the admin access code to create an admins grant.
+enum AdminCodeGrant {
+  /// The rules verified the code server-side and created the grant; the gate
+  /// rebuilds into the dashboard as soon as the grant snapshot lands.
+  granted,
+
+  /// The code was missing or wrong (or the owner has not set one yet) - the
+  /// rules refused the write.
+  incorrectCode,
+
+  /// No signed-in admin-session user / backend offline: nothing to grant.
+  offline,
+}
+
 /// Pure decision used by the admin gate. Kept free of Firebase so it can be
 /// unit-tested without a live backend. Ordering matters: an offline backend
 /// always wins, then loading, then the signed-in check, then the admin grant.
@@ -158,6 +172,31 @@ class AuthController extends ChangeNotifier {
       _message = FbAdmin.friendlyMessage(e);
       notifyListeners();
       return false;
+    }
+  }
+
+  /// Restores the server-verified secret-code entry: attempts to create this
+  /// user's `admins/{uid}` grant by submitting [code]. The Firestore rules
+  /// compare the code against the owner-set secrets/adminGate document (which
+  /// no client can read) and refuse unless it matches exactly and the write is
+  /// the submitter's own uid with exactly one field. On success the admin
+  /// grant snapshot watched here flips to exists -> the gate rebuilds into the
+  /// dashboard without any further code. A wrong/missing code (or a secret
+  /// the owner has not configured yet) surfaces as [AdminCodeGrant.incorrectCode]
+  /// and leaves the account non-admin.
+  Future<AdminCodeGrant> grantAdminWithCode(String code) async {
+    if (!_backendAvailable) return AdminCodeGrant.offline;
+    final u = _user;
+    if (u == null) return AdminCodeGrant.offline;
+    final c = code.trim();
+    if (c.isEmpty) return AdminCodeGrant.incorrectCode;
+    try {
+      await FbAdmin.admins.doc(u.uid).set({'code': c});
+      return AdminCodeGrant.granted;
+    } catch (_) {
+      _message = 'That admin access code is not right.';
+      notifyListeners();
+      return AdminCodeGrant.incorrectCode;
     }
   }
 

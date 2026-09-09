@@ -29,8 +29,21 @@ import '../../widgets/shell.dart';
 /// (`customerId == my uid` — an IDOR-safe, rules-enforced owner filter; the
 /// page never trusts a URL or a passed-in id). Guests and offline sessions
 /// see an honest locked state instead.
-class MyOrdersPage extends StatelessWidget {
-  const MyOrdersPage({super.key});
+class MyOrdersPage extends StatefulWidget {
+  const MyOrdersPage({super.key, this.highlightOrderId});
+
+  /// A notification click may deep-link here with the Firestore order doc id.
+  /// Never trusted as authorisation: the list is the signed-in customer's OWN
+  /// orders (rules-gated to `customerId == my uid`), so a foreign id simply
+  /// never matches and nothing opens.
+  final String? highlightOrderId;
+
+  @override
+  State<MyOrdersPage> createState() => _MyOrdersPageState();
+}
+
+class _MyOrdersPageState extends State<MyOrdersPage> {
+  bool _highlightHandled = false;
 
   @override
   Widget build(BuildContext context) {
@@ -95,6 +108,7 @@ class MyOrdersPage extends StatelessWidget {
                     final orders = [
                       for (final d in snap.data!.docs) _orderFromDoc(d),
                     ];
+                    _maybeOpenHighlight(orders);
                     if (orders.isEmpty) {
                       return _Note(
                         icon: Icons.receipt_long_outlined,
@@ -122,6 +136,26 @@ class MyOrdersPage extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// If a notification deep link named an order, opens its detail dialog
+  /// exactly once, the moment that order appears in this customer's own list.
+  void _maybeOpenHighlight(List<StoreOrder> orders) {
+    final highlight = widget.highlightOrderId;
+    if (highlight == null || _highlightHandled) return;
+    for (final o in orders) {
+      if (o.id == highlight) {
+        _highlightHandled = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          showDialog<void>(
+            context: context,
+            builder: (context) => _OrderDetail(order: o),
+          );
+        });
+        return;
+      }
+    }
   }
 
   static StoreOrder _orderFromDoc(

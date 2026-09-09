@@ -109,7 +109,11 @@ class AppRouter {
       case Routes.wishlist:
         return fadeRoute(const WishlistPage());
       case Routes.myOrders:
-        return fadeRoute(const MyOrdersPage());
+        // In-app navigation may pass a highlight (the Firestore order doc id)
+        // straight through; the page only ever shows the signed-in customer's
+        // own orders, so this is a display hint, never authorisation.
+        final highlight = settings.arguments as String?;
+        return fadeRoute(MyOrdersPage(highlightOrderId: highlight));
       case Routes.admin:
         return fadeRoute(const AdminGate());
       default:
@@ -120,6 +124,15 @@ class AppRouter {
         if (path.startsWith('${Routes.product}/')) {
           final id = path.substring('${Routes.product}/'.length);
           return fadeRoute(ProductPage(productId: id));
+        }
+        // A shared push-deep-link for My Orders (/my-orders/<docId>): the id is
+        // passed to the page as a highlight only - the orders list itself stays
+        // filtered to the signed-in customer's own orders by the rules, so an
+        // id for someone else's order simply never matches.
+        final myOrdersPrefix = '${Routes.myOrders}/';
+        if (path.startsWith(myOrdersPrefix)) {
+          final id = path.substring(myOrdersPrefix.length);
+          return fadeRoute(MyOrdersPage(highlightOrderId: id));
         }
         return fadeRoute(const HomePage());
     }

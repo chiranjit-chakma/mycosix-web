@@ -14,7 +14,7 @@
     "seed": "node scripts/seed_catalog.js",
     "seed:force": "node scripts/seed_catalog.js --force",
     "seed:dry": "node scripts/seed_catalog.js --dry-run",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-mycosix \"node scripts/check_carts_rules.js && node scripts/check_editorial_rules.js && node scripts/check_fcm_tokens_rules.js\""
+    "test:rules": "firebase emulators:exec --only firestore --project demo-mycosix \"node scripts/check_carts_rules.js && node scripts/check_editorial_rules.js && node scripts/check_fcm_tokens_rules.js && node scripts/check_admin_gate_rules.js\""
   },
   "dependencies": {
     "firebase-admin": "^12.7.0",

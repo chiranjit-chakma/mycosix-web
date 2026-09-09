@@ -12,13 +12,16 @@ import 'admin_scaffold.dart';
 /// Entry point for the admin area.
 ///
 /// /admin is not a public page. A signed-in administrator (persisted Firebase
-/// session) lands on the gate body, and the visible "Admin" entry on the
-/// account page arms the sign-in; everyone else — including a direct /admin
-/// visit from a stranger — is handed off to the public home route, so the
-/// admin page has no discoverable URL and no secret code guards it. All
-/// authorisation decisions come from [AuthController] state (Firebase Auth +
-/// the admins/{uid} grant, enforced by security rules), never from a
-/// client-side flag or phrase.
+/// session) lands on the gate body, and the visible "Admin" entry arms the
+/// sign-in; everyone else — including a direct /admin visit from a stranger —
+/// is handed off to the public home route, so the admin page has no
+/// discoverable URL for customers. A signed-in account WITHOUT an admins grant
+/// can unlock one with the owner-set admin access code: the code entry writes
+/// `admins/{uid}` and the Firestore rules verify it server-side against the
+/// unreadable secrets/adminGate document — a wrong code (or no code set yet)
+/// is refused exactly like a stranger's request. All authorisation decisions
+/// come from [AuthController] state (Firebase Auth + the admins/{uid} grant,
+/// enforced by security rules), never from a client-side flag or phrase.
 class AdminGate extends StatelessWidget {
   const AdminGate({super.key});
 
@@ -194,14 +197,52 @@ class _BackendOfflineView extends StatelessWidget {
   }
 }
 
-/// Signed in but not granted administrator access.
-class _NotAuthorizedView extends StatelessWidget {
+/// Signed in but not granted administrator access. Offers the owner-set admin
+/// access code entry: submitting the code creates this account's `admins/{uid}`
+/// grant through the rules-verified write, after which the grant snapshot flips
+/// and the gate rebuilds into the dashboard without asking for the code again.
+class _NotAuthorizedView extends StatefulWidget {
   const _NotAuthorizedView({required this.auth});
 
   final AuthController auth;
 
   @override
+  State<_NotAuthorizedView> createState() => _NotAuthorizedViewState();
+}
+
+class _NotAuthorizedViewState extends State<_NotAuthorizedView> {
+  final _code = TextEditingController();
+  bool _busy = false;
+  String? _codeError;
+
+  @override
+  void dispose() {
+    _code.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submitCode() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _codeError = null;
+    });
+    final result = await widget.auth.grantAdminWithCode(_code.text);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (result == AdminCodeGrant.granted) {
+      // The admins/{uid} snapshot now exists: AuthController notifies and the
+      // gate rebuilds into AdminScaffold on its own. Nothing else to do here.
+      return;
+    }
+    if (result == AdminCodeGrant.incorrectCode) {
+      setState(() => _codeError = widget.auth.message ?? 'Incorrect code.');
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final auth = widget.auth;
     final email = auth.user?.email ?? 'this account';
     final uid = auth.user?.uid;
     return _AdminChrome(
@@ -233,28 +274,48 @@ class _NotAuthorizedView extends StatelessWidget {
               textAlign: TextAlign.center,
               style: MxType.bodySm(color: MxColors.stone),
             ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _code,
+              obscureText: true,
+              enabled: !_busy,
+              onSubmitted: (_) => _submitCode(),
+              decoration: InputDecoration(
+                labelText: 'Admin access code',
+                helperText:
+                    'Owner set. Entering the right code grants this account '
+                    'admin access now.',
+                prefixIcon: const Icon(Icons.key_rounded),
+                errorText: _codeError,
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.tonal(
+              onPressed: _busy ? null : _submitCode,
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: _busy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2.2),
+                    )
+                  : const Text('Unlock admin'),
+            ),
             if (uid != null) ...[
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: MxColors.cream,
-                  borderRadius: BorderRadius.circular(MxRadius.sm),
-                  border: Border.all(color: MxColors.line),
-                ),
-                child: SelectableText(
-                  'Your account ID: $uid',
-                  textAlign: TextAlign.center,
-                  style: MxType.bodyXs(color: MxColors.charcoalSoft),
-                ),
+              const SizedBox(height: 14),
+              const Divider(color: MxColors.line, height: 1),
+              const SizedBox(height: 12),
+              Text(
+                'Your account ID: $uid',
+                textAlign: TextAlign.center,
+                style: MxType.bodyXs(color: MxColors.charcoalSoft),
               ),
               const SizedBox(height: 6),
               Text(
-                'The owner can grant access by adding this ID to the admins '
-                'list in the Firebase console.',
+                'The owner can also grant access by adding this ID to the '
+                'admins list in the Firebase console.',
                 textAlign: TextAlign.center,
                 style: MxType.bodyXs(color: MxColors.stoneLight),
               ),
@@ -280,7 +341,6 @@ class _NotAuthorizedView extends StatelessWidget {
     );
   }
 }
-
 void _goHome(BuildContext context) {
   Navigator.of(context).pushNamedAndRemoveUntil(Routes.home, (_) => false);
 }

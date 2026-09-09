@@ -25,6 +25,8 @@ class SiteSettings {
     this.shopLatitude,
     this.shopLongitude,
     this.deliveryTiers = const [],
+    this.adminNavShortcutEnabled = false,
+    this.pushVapidPublicKey = '',
   });
 
   final String businessName;
@@ -62,6 +64,19 @@ class SiteSettings {
   final double? shopLatitude;
   final double? shopLongitude;
   final List<DeliveryTier> deliveryTiers;
+
+  /// Whether the Admin entry is shown in the site's top navigation for a
+  /// signed-in administrator. A NAVIGATION-VISIBILITY flag only - it is never
+  /// proof of admin authorisation (that is always the admins/{uid} grant,
+  /// enforced server-side by the rules). Defaults false; an admin switches it
+  /// on beside the Logout button in the admin area.
+  final bool adminNavShortcutEnabled;
+
+  /// The PUBLIC half of the web-push (VAPID) key, read at runtime so the
+  /// owner can paste it from the Firebase console without rebuilding. The
+  /// private half never leaves the console. An empty key keeps FCM token
+  /// registration dormant.
+  final String pushVapidPublicKey;
 
   /// Whether distance-based delivery pricing is switched on (a shop point and
   /// at least one valid tier are configured).
@@ -127,6 +142,8 @@ class SiteSettings {
     double? shopLatitude,
     double? shopLongitude,
     List<DeliveryTier>? deliveryTiers,
+    bool? adminNavShortcutEnabled,
+    String? pushVapidPublicKey,
   }) {
     return SiteSettings(
       businessName: businessName ?? this.businessName,
@@ -145,6 +162,9 @@ class SiteSettings {
       shopLatitude: shopLatitude ?? this.shopLatitude,
       shopLongitude: shopLongitude ?? this.shopLongitude,
       deliveryTiers: deliveryTiers ?? this.deliveryTiers,
+      adminNavShortcutEnabled:
+          adminNavShortcutEnabled ?? this.adminNavShortcutEnabled,
+      pushVapidPublicKey: pushVapidPublicKey ?? this.pushVapidPublicKey,
     );
   }
 
@@ -168,6 +188,8 @@ class SiteSettings {
     if (shopLongitude != null) 'shopLongitude': shopLongitude,
     if (deliveryTiers.isNotEmpty)
       'deliveryTiers': [for (final t in deliveryTiers) t.toMap()],
+    'adminNavShortcutEnabled': adminNavShortcutEnabled,
+    if (pushVapidPublicKey.isNotEmpty) 'pushVapidPublicKey': pushVapidPublicKey,
   };
 
   factory SiteSettings.fromMap(Map<String, dynamic> map) {
@@ -202,6 +224,10 @@ class SiteSettings {
           ? null
           : (map['shopLongitude'] as num).toDouble(),
       deliveryTiers: _tiersFrom(map['deliveryTiers']),
+      adminNavShortcutEnabled:
+          map['adminNavShortcutEnabled'] as bool? ?? false,
+      pushVapidPublicKey:
+          clean(map['pushVapidPublicKey'] as String?) ?? MxConfig.pushVapidKey,
     );
   }
 

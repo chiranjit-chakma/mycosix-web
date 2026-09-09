@@ -8,24 +8,27 @@ enum AdminRevealStage {
   /// so the admin page has no discoverable URL for strangers.
   hidden,
 
-  /// The visible "Admin" entry (account page) was used: show the admin
-  /// sign-in page. There is no secret code anywhere — Firebase Auth is the
-  /// real boundary, and a signed-in administrator always lands on the gate
-  /// regardless of this stage.
+  /// The visible "Admin" entry (account page / top bar) was used: show the
+  /// admin sign-in page. Firebase Auth is the real boundary, and a signed-in
+  /// administrator always lands on the gate regardless of this stage. A
+  /// signed-in account without a grant can still unlock one with the owner-set
+  /// admin access code (a rules-verified write) - see AuthController.
   signIn,
 }
 
 /// Non-secret summoner for the admin area.
 ///
-/// The only ways to reach the admin area are (a) the visible "Admin" entry
-/// next to the account Sign-out button ([openAdmin]) and (b) an already
-/// signed-in administrator visiting `/admin` directly. A visitor who wanders
-/// to `/admin` unsummoned only ever sees the normal public site: [AdminGate]
-/// shows the sign-in or dashboard purely from this stage + Firebase auth
-/// state. Nothing ships as a secret code — this is deliberate obscurity of a
-/// URL, not the security boundary. The security boundary is server-side: a
-/// uid is an administrator only because `admins/{uid}` exists, which Firestore
-/// security rules enforce on every protected operation.
+/// The ways to reach the admin area are (a) the visible "Admin" entries (the
+/// account-page tile, the top-bar entry when the owner switched it on) via
+/// [openAdmin], (b) an already signed-in administrator visiting `/admin`
+/// directly, and (c) a signed-in account without a grant submitting the
+/// owner-set admin access code on the gate. A visitor who wanders to `/admin`
+/// unsummoned only ever sees the normal public site: [AdminGate] shows the
+/// sign-in or dashboard purely from this stage + Firebase auth state. Nothing
+/// here is a security boundary — a uid is an administrator only because
+/// `admins/{uid}` exists, which the Firestore security rules enforce on every
+/// protected operation; the admin access code (owner-set, compared only in the
+/// rules engine) is the bootstrap that creates that grant.
 class AdminReveal extends ChangeNotifier {
   AdminReveal._();
 

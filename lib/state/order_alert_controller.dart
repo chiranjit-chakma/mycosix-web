@@ -67,6 +67,30 @@ class OrderAlertController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Events presented within the dedupe window, keyed by [pushEventKey]. The
+  /// same order event arrives through two channels - the Firestore watcher and
+  /// (once enabled) the FCM foreground listener - racing each other; the
+  /// shared key keeps them to a single banner. The set is cleared on a 10s
+  /// roll so it never grows without bound.
+  final Set<String> _freshEvents = {};
+  DateTime? _freshSince;
+
+  /// Presents [alert] unless [eventKey] was already presented within the last
+  /// 10 seconds. Returns true when the alert was shown. Called by both the
+  /// Firestore watchers in this file and the FCM foreground listener in
+  /// [FcmRegistrationKeeper], which share [pushEventKey].
+  bool presentIfFresh(OrderAlert alert, {required String eventKey}) {
+    final now = DateTime.now();
+    if (_freshSince == null ||
+        now.difference(_freshSince!) > const Duration(seconds: 10)) {
+      _freshEvents.clear();
+      _freshSince = now;
+    }
+    if (!_freshEvents.add(eventKey)) return false;
+    present(alert);
+    return true;
+  }
+
   void _watchCustomer() {
     _customerAuthSub = Fb.auth.authStateChanges().listen((user) {
       _teardownCustomer();
@@ -87,8 +111,20 @@ class OrderAlertController extends ChangeNotifier {
       seeded: _customerSeeded,
     );
     _customerSeeded = true;
+    // Key the dedupe on the Firestore doc id + status (the same identity the
+    // FCM foreground listener uses), so a status event delivered by both
+    // channels never shows as two banners.
+    final byCode = {for (final r in rows) r.code: r};
     for (final alert in alerts) {
-      present(alert);
+      final row = byCode[alert.orderId];
+      presentIfFresh(
+        alert,
+        eventKey: pushEventKey(
+          kind: 'order-status',
+          orderDocId: row?.id ?? '',
+          statusLabel: row?.status.label ?? '',
+        ),
+      );
     }
   }
 
@@ -137,13 +173,18 @@ class OrderAlertController extends ChangeNotifier {
         final m = d.data(); // snapshots docs always exist: data() is non-null
         final raw = m['orderId'];
         final code = raw is String && raw.trim().isNotEmpty ? raw.trim() : d.id;
-        present(
+        presentIfFresh(
           OrderAlert(
             kind: OrderAlertKind.adminNewOrder,
             orderId: code,
             title: 'New order $code',
             body: 'An order just arrived - review it when you are ready.',
             actionLabel: 'Review',
+          ),
+          eventKey: pushEventKey(
+            kind: 'admin-new-order',
+            orderDocId: d.id,
+            statusLabel: '',
           ),
         );
       }

@@ -149,3 +149,58 @@ bool adminNewOrderWorthy({
   final neverSeen = everNew.add(id);
   return seeded && neverSeen;
 }
+
+/// One FCM data map (a backend push message), converted to the same alert the
+/// Firestore watchers raise, so the foreground banner reads identically no
+/// matter which channel delivered the event. Returns null when the message is
+/// not a notify-worthy MYCOSIX push (unknown kind, or a status the customer is
+/// not interrupted for).
+///
+/// The payload is minimal and never trusted as authorisation: the message only
+/// reaches this device because the trusted backend targeted this account's own
+/// tokens, and tapping the banner routes to a page whose data reads are still
+/// rules-gated to the viewer.
+OrderAlert? orderAlertForPushMessage({
+  required String kind,
+  required String orderDocId,
+  required String orderCode,
+  required String statusLabel,
+}) {
+  switch (kind) {
+    case 'admin-new-order':
+      return OrderAlert(
+        kind: OrderAlertKind.adminNewOrder,
+        orderId: orderCode,
+        title: 'New order $orderCode',
+        body: 'An order just arrived - review it when you are ready.',
+        actionLabel: 'Review',
+      );
+    case 'order-status':
+      final status = OrderStatus.fromLabel(statusLabel);
+      if (!kNotifyCustomerStatuses.contains(status)) return null;
+      final headline = customerStatusHeadline(orderCode, null, status);
+      if (headline == null) return null;
+      return OrderAlert(
+        kind: OrderAlertKind.customerStatus,
+        orderId: orderCode,
+        title: headline,
+        body: customerStatusBody(status),
+        actionLabel: 'View order',
+      );
+    default:
+      return null;
+  }
+}
+
+/// A stable identity for ONE push event, shared by the FCM foreground channel
+/// and the Firestore watchers so the same order event arriving twice (once per
+/// channel) is never shown as two banners. [orderDocId] is the Firestore doc
+/// id both channels carry; [statusLabel] is '' for admin new-order events.
+String pushEventKey({
+  required String kind,
+  required String orderDocId,
+  required String statusLabel,
+}) {
+  if (kind == 'admin-new-order') return 'admin-new-order:$orderDocId';
+  return 'order-status:$orderDocId:$statusLabel';
+}
