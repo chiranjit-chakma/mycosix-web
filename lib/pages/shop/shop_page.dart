@@ -17,15 +17,16 @@ import '../../widgets/shell.dart';
 /// The search box is a product search first: typing filters the catalogue and
 /// ordinary queries are never anything else. When a search is *submitted*
 /// (the search/enter key) with a single code-like word that matches nothing
-/// in the catalogue, it doubles as the owner's door to the admin area — the
-/// "type your code in the shop search" summon restored from earlier rounds.
-/// The typed value is never treated as a credential: the owner-set admin code
-/// lives only in the security rules and no client can read it, so the app can
-/// only (a) let the rules verify the word for an account already signed into
-/// the admin session, or (b) show a signed-out visitor the labelled admin
-/// door. The real boundary stays server-side (admin sign-in + the admins/{uid}
-/// grant enforced by Firestore rules), exactly as for the "Admin" entry on the
-/// account page.
+/// in the catalogue, it is the owner's summon to the admin area — the "type
+/// your code in the shop search" route the owner asked for. Submitting such a
+/// word opens the admin area (sign-in page for a signed-out owner, dashboard
+/// for a signed-in administrator); real product terms, short words and
+/// multi-word queries never do. The typed value is never itself a credential
+/// — the owner-set code lives only in the security rules and no client can
+/// read it — so it merely opens the gate, and the real boundary stays
+/// server-side (admin email/password sign-in plus the admins/{uid} grant
+/// enforced by Firestore rules), exactly as it is for the "Admin" navigation
+/// entry the owner's toggle can add.
 class ShopPage extends StatefulWidget {
   const ShopPage({super.key, this.embedded = false});
 
@@ -42,11 +43,6 @@ class _ShopPageState extends State<ShopPage> {
   String _category = 'All';
   String _query = '';
   final _search = TextEditingController();
-
-  /// Set when a signed-out visitor submits a code-like word that matches no
-  /// product: the empty state then shows the labelled owner door to the admin
-  /// area. Cleared the moment the text changes again.
-  bool _showOwnerDoor = false;
 
   static const _categories = ['All', 'Fresh', 'Dried', 'Preserved'];
 
@@ -92,30 +88,23 @@ class _ShopPageState extends State<ShopPage> {
   void _onSearchChanged(String value) {
     setState(() {
       _query = value;
-      _showOwnerDoor = false;
     });
   }
 
   /// Submit (the search/enter key). Product searches behave exactly as before.
-  /// A code-like word that matches nothing opens the way to the admin area:
-  ///  - signed into the admin session and already an administrator: straight
-  ///    to the admin area (no code re-entry — a valid session is enough);
-  ///  - signed into the admin session but not yet granted: the typed word is
-  ///    submitted to the rules for verification — right opens the admin area,
-  ///    wrong stays an ordinary (empty) search and reveals nothing;
-  ///  - not signed into the admin session: the app cannot verify the word
-  ///    (the real code is unreadable by clients), so it stays on the shop and
-  ///    surfaces the labelled owner door in the "no matches" state instead of
-  ///    yanking a customer to a sign-in page.
+  /// A submitted code-like word that matches nothing is the owner's summon: it
+  /// opens the admin area (sign-in page for a signed-out owner, dashboard for
+  /// a signed-in administrator). If an *admin* session is active but not yet
+  /// granted, the typed word is first submitted to the rules for verification
+  /// — a right word is admitted, a wrong word stays silent (an ordinary, empty
+  /// search) and reveals nothing. The word itself is never a credential and is
+  /// only ever sent as that rules-verified grant write.
   Future<void> _onSearchSubmitted(String value) async {
     final text = value.trim();
     final products = context.read<ProductsController>();
     if (!_isCodeShaped(text) ||
         !products.loaded ||
         _anyProductContains(products.products, text)) {
-      if (mounted && _showOwnerDoor) {
-        setState(() => _showOwnerDoor = false);
-      }
       return;
     }
 
@@ -126,25 +115,19 @@ class _ShopPageState extends State<ShopPage> {
       auth = null;
     }
 
-    final signedInAdminSession = auth?.user != null;
-    if (signedInAdminSession) {
-      // Let the server decide: an un-granted account is admitted only if the
-      // rules verify the typed word as the owner-set admin code.
-      if (auth!.isAdmin != true) {
-        final result = await auth.grantAdminWithCode(text);
-        if (!mounted) return;
-        if (result != AdminCodeGrant.granted) return; // wrong word: silent
-      }
-      _search.clear();
-      if (mounted) setState(() => _query = '');
-      AdminReveal.shared.openAdmin();
-      return;
+    // An active admin session that is not yet granted: let the server decide.
+    // Only a correct word proceeds; a wrong word reveals nothing.
+    if (auth?.user != null && auth!.isAdmin != true) {
+      final result = await auth.grantAdminWithCode(text);
+      if (!mounted) return;
+      if (result != AdminCodeGrant.granted) return; // wrong word: silent
     }
 
-    // Signed-out visitor: no client-side copy of the code exists to compare
-    // with, so the word alone is not enough to open the door silently. Point
-    // the owner at the labelled admin door in the empty state below.
-    if (mounted) setState(() => _showOwnerDoor = true);
+    // Open the admin area: a signed-in administrator goes straight to the
+    // dashboard; everyone else lands on the admin sign-in page.
+    _search.clear();
+    if (mounted) setState(() => _query = '');
+    AdminReveal.shared.openAdmin();
   }
 
   List<Product> _visible(List<Product> all) {
@@ -296,31 +279,6 @@ class _ShopPageState extends State<ShopPage> {
                       'Try a different word, or browse a category.',
                       style: MxType.bodyXs(color: MxColors.stone),
                     ),
-                  // A signed-out visitor who submitted a code-like word (see
-                  // [_onSearchSubmitted]) sees the labelled door to the admin
-                  // area here — the app cannot compare the word itself, so it
-                  // points the owner at the real (server-gated) entry rather
-                  // than silently doing nothing.
-                  if (_showOwnerDoor) ...[
-                    const SizedBox(height: 18),
-                    OutlinedButton.icon(
-                      onPressed: () => AdminReveal.shared.openAdmin(),
-                      icon: const Icon(
-                        Icons.admin_panel_settings_outlined,
-                        size: 17,
-                        color: MxColors.moss,
-                      ),
-                      label: const Text('Shop owner? Sign in to Admin'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: MxColors.forest,
-                        side: const BorderSide(color: MxColors.line),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),

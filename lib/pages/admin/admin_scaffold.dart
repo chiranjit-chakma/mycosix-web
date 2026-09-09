@@ -241,11 +241,11 @@ class _NavItem extends StatelessWidget {
 /// when ON, the site's navigation shows an Admin entry that leads to this
 /// area (a doorway for the owner — a signed-out visitor reaches the admin
 /// sign-in, a signed-in administrator the dashboard); when OFF the entry is
-/// hidden and admin access continues exactly as before (account-page tile /
-/// secret-code / direct gate). The entry is never treated as proof of admin
-/// authorisation — the admins/{uid} grant enforced by the security rules
-/// remains the boundary, and the gate always demands it before showing any
-/// admin content, regardless of this flag.
+/// hidden and the admin area is reached exactly as before (the shop
+/// search-bar summon / the direct /admin gate). The entry is never treated as
+/// proof of admin authorisation — the admins/{uid} grant enforced by the
+/// security rules remains the boundary, and the gate always demands it before
+/// showing any admin content, regardless of this flag.
 class _AccountFooter extends StatelessWidget {
   const _AccountFooter({this.compact = false});
 

@@ -12,9 +12,10 @@ import 'admin_scaffold.dart';
 /// Entry point for the admin area.
 ///
 /// /admin is not a public page. A signed-in administrator (persisted Firebase
-/// session) lands on the gate body, and the visible "Admin" entry arms the
-/// sign-in; everyone else — including a direct /admin visit from a stranger —
-/// is handed off to the public home route, so the admin page has no
+/// session) lands on the gate body, and the visible "Admin" entry — the shop
+/// search-bar summon or, when the owner's toggle is on, the navigation link —
+/// arms the sign-in; everyone else — including a direct /admin visit from a
+/// stranger — is handed off to the public home route, so the admin page has no
 /// discoverable URL for customers. A signed-in account WITHOUT an admins grant
 /// can unlock one with the owner-set admin access code: the code entry writes
 /// `admins/{uid}` and the Firestore rules verify it server-side against the

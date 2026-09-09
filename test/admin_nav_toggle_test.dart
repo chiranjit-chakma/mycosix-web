@@ -30,7 +30,7 @@ Future<void> _loadFont(String family, String asset) async {
 ///
 ///  * OFF (the default) — no Admin entry anywhere in the bar or drawer.
 ///  * ON — an Admin entry appears for every visitor (it is a DOORWAY, exactly
-///    like the account-page "Admin" tile — the /admin gate still demands a
+///    like the shop search-bar summon — the /admin gate still demands a
 ///    server-verified administrator before showing any admin content). Tapping
 ///    it arms the reveal, so a signed-out owner reaches the admin sign-in
 ///    rather than being silently handed back to the home page.
@@ -112,8 +112,9 @@ void main() {
     // The extra navigation entry is present in the desktop top bar.
     expect(find.text('Admin'), findsOneWidget);
 
-    // Tapping it summons the admin area (as the account-page tile does) rather
-    // than a bare route push, so a signed-out owner lands on the sign-in page.
+    // Tapping it summons the admin area (as the shop search-bar summon does)
+    // rather than a bare route push, so a signed-out owner lands on the sign-in
+    // page.
     await tester.tap(find.text('Admin'));
     await tester.pump();
     expect(AdminReveal.shared.stage, AdminRevealStage.signIn);

@@ -126,24 +126,31 @@ first; until then the WhatsApp handoff still works with an honest notice.
 
 ## Admin area
 
-The admin sign-in has no discoverable URL and is not linked anywhere on the
-customer site. It exists only for the owner:
+The admin area exists only for the owner. Entry is always gated server-side
+(Firebase email/password sign-in + the `admins/{uid}` grant, enforced by
+`firestore.rules`); nothing in the app ever grants access on its own.
 
-- A visitor who opens `/admin` is handed straight to the normal public home
-  page — the admin area never renders for anyone who is not an owner.
-- The owner summons it from the Shop page: typing the owner phrase into the
-  product search box reveals the admin sign-in instead of filtering products
-  (deliberately **not documented further here**; the site owner knows it). The
-  trigger lives in `lib/state/admin_reveal.dart`, wired to the search field in
-  `lib/pages/shop/shop_page.dart`. The brand wordmark has no hidden gesture,
-  and there is no keyboard listener anywhere.
-- Once summoned, access still passes through Firebase email/password sign-in
-  and the `admins/{uid}` grant.
+- A visitor who opens `/admin` unsummoned is handed straight to the normal
+  public home page.
+- The owner summons the admin sign-in from the Shop page by submitting the
+  owner-set access code in the product search box (it reads like a code, not a
+  product name). Because the real code is compared only in the security rules
+  — never in the app or the shipped bundle — the app treats any submitted
+  single word with no product match as the summon and opens the admin
+  sign-in. The trigger lives in `lib/pages/shop/shop_page.dart`, the shared
+  summoner state in `lib/state/admin_reveal.dart`.
+- Inside the admin area, the toggle beside Logout ("Show Admin in the site
+  navigation") adds or removes an "Admin" entry in the main navigation beside
+  Home / Shop / Journey etc. When it is on, tapping it reaches this same
+  sign-in/dashboard; when it is off the only public way in is the shop
+  search-bar summon (or a direct `/admin` visit by an already signed-in
+  administrator).
 
-The owner phrase is stored as a list of Unicode code points (never as a
-readable literal), so it cannot be found by searching the source or the shipped
-bundle. The phrase is only obscurity in front of the real boundary: Firebase
-Auth + the `admins/{uid}` grant + the `firestore.rules` write guards.
+The owner-set code lives only in the `secrets/adminGate` document that the
+rules engine compares against — no client, administrator or not, can read it,
+so it never appears in the source or the shipped bundle. It is obscurity in
+front of the real boundary: Firebase Auth + the `admins/{uid}` grant + the
+`firestore.rules` write guards.
 
 ## Security notes
 

@@ -55,9 +55,9 @@ class MxTopBar extends StatelessWidget {
 
     // The Admin entry appears when the owner switched it on in the admin area
     // (siteConfig/public adminNavShortcutEnabled). It is a DOORWAY, not a
-    // grant: the entry itself is shown to any visitor (exactly like the
-    // account-page "Admin" tile), and tapping it arms the admin gate, which
-    // still demands a server-verified administrator — a signed-in admin goes
+    // grant: the entry itself is shown to any visitor (exactly like the shop
+    // search-bar summon), and tapping it arms the admin gate, which still
+    // demands a server-verified administrator — a signed-in admin goes
     // straight to the dashboard, everyone else sees the admin sign-in. Nothing
     // here is ever an authorisation signal; the admins/{uid} grant enforced by
     // the security rules stays the boundary.
@@ -334,8 +334,8 @@ class _NavLinkState extends State<_NavLink> {
   }
 }
 
-/// Admin entry point. Uses the same arming call as the account-page tile and
-/// the top-bar Admin link, so the gate's summoner state stays consistent
+/// Admin entry point. Uses the same arming call as the shop search-bar summon
+/// and the top-bar Admin link, so the gate's summoner state stays consistent
 /// across every entry. Shown when the owner's navigation toggle is ON.
 class _AdminButton extends StatelessWidget {
   const _AdminButton({required this.onTap});

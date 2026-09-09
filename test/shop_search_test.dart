@@ -26,12 +26,14 @@ Future<void> _loadFont(String family, String asset) async {
 }
 
 /// The Shop search box: live filtering over the real catalogue. Typing is
-/// purely a product search. A *submitted* code-like word (single word, no
-/// spaces, 6+ letters, no product match) doubles as the owner's door to the
-/// admin area: a signed-out visitor stays on the shop and gets the labelled
-/// "Shop owner? Sign in to Admin" door in the empty state (the client cannot
-/// verify the owner-set code, which lives only in the security rules); real
-/// product searches and short/multi-word queries never change anything.
+/// purely a product search and never summons anything. A *submitted*
+/// code-like word (single word, no spaces, 6+ letters, no product match) is
+/// the owner's summon: it opens the admin area (in the app this lands on the
+/// admin sign-in for a signed-out owner / the dashboard for a signed-in
+/// administrator). Real product terms, short words and multi-word queries
+/// never summon. The typed value itself is never a credential — the owner-set
+/// code lives only in the security rules — so submitting merely opens the
+/// gate, which still demands a server-verified administrator.
 void main() {
   setUpAll(() async {
     await _loadFont('Manrope', 'assets/fonts/Manrope-Variable.ttf');
@@ -103,39 +105,38 @@ void main() {
   testWidgets('typing a code word never summons on its own', (tester) async {
     await pumpShop(tester);
 
-    // Just typing the code-shaped word only filters (no match, empty state) -
-    // the door appears only on submit, so ordinary typing is never disturbed.
+    // Just typing the code-shaped word only filters (no match, empty state) —
+    // nothing is summoned and nothing is cleared until submit.
     await tester.enterText(searchField(), 'mycoforest');
     await tester.pump();
 
     expect(find.text('No matches for “mycoforest”.'), findsOneWidget);
-    expect(find.text('Shop owner? Sign in to Admin'), findsNothing);
     expect(AdminReveal.shared.stage, AdminRevealStage.hidden);
   });
 
-  testWidgets('submitting a code-like word shows the owner door, no auto-nav',
+  testWidgets('submitting a code-like word that matches nothing opens admin',
       (tester) async {
     await pumpShop(tester);
 
     await tester.enterText(searchField(), 'mycoforest');
     await tester.pump();
+    expect(find.text('No matches for “mycoforest”.'), findsOneWidget);
 
-    // Submit (the search key). A signed-out visitor cannot be verified, so the
-    // shop stays put and surfaces the labelled admin door instead.
+    // Submit (the search key). A code-like word that matches nothing is the
+    // owner's summon: it arms the admin gate (goToAdmin is null in tests, so
+    // the stage flips instead of navigating), exactly as the owner asked — the
+    // admin login page must open.
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pump();
-
-    expect(find.text('Shop owner? Sign in to Admin'), findsOneWidget);
-    // No silent navigation for a guest — the door is an explicit next step.
-    expect(AdminReveal.shared.stage, AdminRevealStage.hidden);
-
-    // Tapping the door arms the admin gate (goToAdmin is null in tests).
-    await tester.tap(find.text('Shop owner? Sign in to Admin'));
     await tester.pump();
+
     expect(AdminReveal.shared.stage, AdminRevealStage.signIn);
+
+    // The summon also clears the box, so the shop grid is back.
+    expect(find.text('Fresh Oyster Mushrooms'), findsOneWidget);
   });
 
-  testWidgets('a real product search and short words never show the door',
+  testWidgets('real product searches, short words and multi-word queries never summon',
       (tester) async {
     await pumpShop(tester);
 
@@ -144,7 +145,6 @@ void main() {
     await tester.pump();
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pump();
-    expect(find.text('Shop owner? Sign in to Admin'), findsNothing);
     expect(AdminReveal.shared.stage, AdminRevealStage.hidden);
 
     // A short single word with no match is a search, not a code.
@@ -153,7 +153,6 @@ void main() {
     expect(find.text('No matches for “oats”.'), findsOneWidget);
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pump();
-    expect(find.text('Shop owner? Sign in to Admin'), findsNothing);
     expect(AdminReveal.shared.stage, AdminRevealStage.hidden);
 
     // A multi-word query is never a code.
@@ -161,11 +160,10 @@ void main() {
     await tester.pump();
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pump();
-    expect(find.text('Shop owner? Sign in to Admin'), findsNothing);
     expect(AdminReveal.shared.stage, AdminRevealStage.hidden);
   });
 
-  testWidgets('changing the search text clears a shown owner door',
+  testWidgets('a summon is idempotent; later ordinary typing stays a product search',
       (tester) async {
     await pumpShop(tester);
 
@@ -173,10 +171,24 @@ void main() {
     await tester.pump();
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pump();
-    expect(find.text('Shop owner? Sign in to Admin'), findsOneWidget);
-
-    await tester.enterText(searchField(), 'myco');
     await tester.pump();
-    expect(find.text('Shop owner? Sign in to Admin'), findsNothing);
+    expect(AdminReveal.shared.stage, AdminRevealStage.signIn);
+
+    // A second code-like submit keeps the gate armed (never double-stacks or
+    // leaves the shop) and clears the box again.
+    await tester.enterText(searchField(), 'mycoforest');
+    await tester.pump();
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pump();
+    await tester.pump();
+    expect(AdminReveal.shared.stage, AdminRevealStage.signIn);
+
+    // Ordinary typing after a summon is a normal product search again and
+    // changes nothing about the armed gate.
+    await tester.enterText(searchField(), 'powder');
+    await tester.pump();
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pump();
+    expect(AdminReveal.shared.stage, AdminRevealStage.signIn);
   });
 }
