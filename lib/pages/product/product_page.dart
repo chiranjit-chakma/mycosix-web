@@ -4,13 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/mx_colors.dart';
-import '../../config/mx_config.dart';
 import '../../config/mx_type.dart';
 import '../../models/product.dart';
 import '../../state/products_controller.dart';
 import '../../router/app_nav.dart';
 import '../../router/routes.dart';
 import '../../state/cart_controller.dart';
+import '../../state/site_config_controller.dart';
 import '../../util/product_image.dart';
 import '../../utils/money.dart';
 import '../../widgets/mx_image.dart';
@@ -325,6 +325,14 @@ class _ProductInfo extends StatelessWidget {
     final width = MediaQuery.of(context).size.width;
     final cart = context.watch<CartController>();
     final inCart = cart.quantityOf(product.id);
+    // Delivery line: an admin-set per-product note wins; otherwise the live
+    // site-wide default from Settings (orderLeadTime + serviceArea), which
+    // falls back to the built-in defaults until an admin configures Settings.
+    final settings = liveSiteSettings(context);
+    final note = product.deliveryNote;
+    final deliveryLine = (note != null && note.trim().isNotEmpty)
+        ? note.trim()
+        : '${settings.orderLeadTime} delivery in ${settings.serviceArea}';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -379,7 +387,7 @@ class _ProductInfo extends StatelessWidget {
               const SizedBox(width: 8),
               Flexible(
                 child: Text(
-                  '${MxConfig.orderLeadTime} delivery in ${MxConfig.serviceArea}',
+                  deliveryLine,
                   style: const TextStyle(
                     fontFamily: 'Manrope',
                     fontSize: 13,

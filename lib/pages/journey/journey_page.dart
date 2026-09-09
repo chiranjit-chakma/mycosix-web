@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../config/mx_colors.dart';
 import '../../config/mx_type.dart';
 import '../../router/routes.dart';
-import '../../widgets/editorial.dart';
+import '../../widgets/live_lead.dart';
 import '../../widgets/mx_cta.dart';
 import '../../widgets/mx_image.dart';
 import '../../widgets/page.dart';
@@ -25,7 +25,8 @@ class JourneyPage extends StatelessWidget {
     final body = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const MxPageHero(
+        const LiveLead(
+          docId: 'journey-hero',
           overline: 'Our Journey',
           title: 'Six students, one grow room',
           body:
@@ -37,12 +38,18 @@ class JourneyPage extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 84),
           child: Column(
             children: [
-              MxSectionHeader(
+              LiveEditorial(
+                docId: 'journey-story',
                 overline: 'The Story So Far',
                 title: 'From classroom question to weekly harvest',
                 body:
                     'We keep this page honest — the journey is still being '
                     'written, one flush at a time.',
+                builder: (overline, title, body, _) => MxSectionHeader(
+                  overline: overline,
+                  title: title,
+                  body: body,
+                ),
               ),
               const SizedBox(height: 52),
               LayoutBuilder(

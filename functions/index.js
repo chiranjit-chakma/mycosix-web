@@ -19,6 +19,10 @@ const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const { randomInt } = require('crypto');
 
+// Push-notification triggers (orders onCreate/onUpdate -> FCM). Registered but
+// dormant until functions are deployed (Blaze plan); see notify_triggers.js.
+const notifyTriggers = require('./notify_triggers');
+
 /* ------------------------------------------------------------------ *
  * Config mirroring the bundled MxConfig defaults. The single source of
  * truth at runtime is the `siteConfig/public` document, which overrides
@@ -529,3 +533,7 @@ exports.createOrder = functions.https.onCall(async (data, context) => {
 });
 
 exports._test = { placeOrder, cleanse, canonicalIndianWhatsApp, DEFAULTS, toIso, makeOrderId };
+
+// FCM notification triggers (see notify_triggers.js / notify_core.js).
+exports.notifyOrderNew = notifyTriggers.notifyOrderNew;
+exports.notifyOrderStatus = notifyTriggers.notifyOrderStatus;

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../config/mx_colors.dart';
 import '../../config/mx_type.dart';
 import '../../router/routes.dart';
+import '../../state/admin_reveal.dart';
 import '../../services/display_mode.dart';
 import '../../state/customer_auth_controller.dart';
 import '../../state/saved_location_clear.dart';
@@ -217,6 +218,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       onYahooSignIn: _yahooSignIn,
                       onSwitchMode: _switchMode,
                     ),
+                    const _OwnerAdminLink(),
                     // Installed phone-size app users always see where their
                     // Wishlist and My Orders live, locked until they sign
                     // in. Browser tabs — and the desktop installed PWA,
@@ -724,6 +726,13 @@ class _AccountHub extends StatelessWidget {
                 const SizedBox(height: 14),
                 const _UnverifiedCard(),
               ],
+              const Divider(color: MxColors.line, height: 1),
+              _AccountTile(
+                icon: Icons.admin_panel_settings_outlined,
+                title: 'Admin',
+                subtitle: 'Manage your store (owners only)',
+                onTap: AdminReveal.shared.openAdmin,
+              ),
               const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
@@ -974,6 +983,29 @@ class _LockedTile extends StatelessWidget {
             color: MxColors.stoneLight,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Quiet door to the admin sign-in for an owner who is not signed in as a
+/// customer (so they have no account card yet). Security is server-side: only
+/// a uid with an `admins` grant gets past the gate, so this is a doorway, not
+/// a password — there is no secret code anywhere.
+class _OwnerAdminLink extends StatelessWidget {
+  const _OwnerAdminLink();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Align(
+        alignment: Alignment.center,
+        child: TextButton.icon(
+          onPressed: AdminReveal.shared.openAdmin,
+          icon: const Icon(Icons.admin_panel_settings_outlined, size: 17),
+          label: const Text('Shop owner? Sign in to Admin'),
+        ),
       ),
     );
   }

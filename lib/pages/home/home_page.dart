@@ -4,12 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/mx_colors.dart';
-import '../../config/mx_config.dart';
 import '../../config/mx_type.dart';
 import '../../router/app_nav.dart';
 import '../../router/routes.dart';
 import '../../services/url_launcher.dart';
 import '../../state/products_controller.dart';
+import '../../state/site_config_controller.dart';
 import '../../widgets/mx_cta.dart';
 import '../../widgets/mx_image.dart';
 import '../../widgets/page.dart';
@@ -1347,6 +1347,9 @@ class _ContactSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Live business contact lines, so an admin editing Settings (WhatsApp,
+    // Instagram, tagline) updates this section instantly.
+    final settings = liveSiteSettings(context);
     return Container(
       color: MxColors.forest,
       child: MxPage(
@@ -1367,15 +1370,15 @@ class _ContactSection extends StatelessWidget {
               children: [
                 _ContactPill(
                   icon: Icons.chat_outlined,
-                  label: 'WhatsApp · ${MxConfig.whatsappDisplay}',
+                  label: 'WhatsApp · ${settings.whatsappDisplay}',
                   onTap: () => UrlLauncher.open(
-                    'https://wa.me/${MxConfig.whatsappNumber}',
+                    'https://wa.me/${settings.whatsappNumber}',
                   ),
                 ),
                 _ContactPill(
                   icon: Icons.camera_alt_outlined,
-                  label: 'Instagram · @${MxConfig.instagramHandle}',
-                  onTap: () => UrlLauncher.open(MxConfig.instagramUrl),
+                  label: 'Instagram · @${settings.instagramHandle}',
+                  onTap: () => UrlLauncher.open(settings.instagramUrl),
                 ),
               ],
             ),

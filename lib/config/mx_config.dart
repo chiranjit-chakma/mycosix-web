@@ -51,4 +51,17 @@ class MxConfig {
   /// in the world from here; it is only a starting view, never a restriction.
   static const defaultLatitude = 12.2958;
   static const defaultLongitude = 76.6394;
+
+  /// Closed-app / background push notifications. OFF by default: delivering
+  /// them needs (a) the paid (Blaze) plan so the notification Cloud Functions
+  /// in `functions/notify_core.js` can run, and (b) a web-push (VAPID) key
+  /// added to the Firebase console under Project settings -> Cloud Messaging,
+  /// whose PUBLIC half is pasted into [pushVapidKey]. The open-app banner
+  /// alerts do NOT depend on this flag - they work today on the free plan.
+  static const pushNotificationsEnabled = false;
+
+  /// The PUBLIC web-push key (paste here when enabling push). The PRIVATE key
+  /// lives only in the Firebase console - never put it in this repo. An empty
+  /// key keeps the registration keeper dormant.
+  static const pushVapidKey = '';
 }

@@ -276,6 +276,17 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // Push-notification registration tokens. Every signed-in user owns exactly
+    // their own token list and only they may read or change it - the Cloud
+    // Functions notification backend (Admin SDK, which bypasses rules) reads
+    // these to deliver pushes and prunes tokens that turn unregistered, but a
+    // browser can never read or overwrite someone else's tokens, so FCM tokens
+    // stay protected even if a rogue client asks for them.
+    match /fcmTokens/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow create, update, delete: if isSignedIn() && request.auth.uid == uid;
+    }
+
     // Customer account profiles. A registered customer owns exactly their own
     // document; nobody else can read it (only an admin may, for the admin
     // Customers section). The email on the profile must be the email the
@@ -380,14 +391,18 @@ service cloud.firestore {
       allow delete: if isSignedIn() && request.auth.uid == uid;
     }
 
-    // Managed editorial + team records. Read and written by admins only; the
-    // public marketing site currently ships its own copy, so nothing here is
-    // exposed until a future section reads it on purpose.
+    // Managed editorial + team records. Anyone may READ (the public marketing
+    // pages render the live "Our Team" roster and admin-written copy from these
+    // collections), but only an authorized admin may create/update/delete. The
+    // admin area writes them through the admin-scoped Firestore app; customer
+    // pages read them through the default app.
     match /team/{docId} {
-      allow read, create, update, delete: if isAdmin();
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
     }
     match /content/{docId} {
-      allow read, create, update, delete: if isAdmin();
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
     }
 
     // -----------------------------------------------------------------------

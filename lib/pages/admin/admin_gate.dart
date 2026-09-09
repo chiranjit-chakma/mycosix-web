@@ -9,15 +9,16 @@ import '../../state/auth_controller.dart';
 import '../../widgets/brand.dart';
 import 'admin_scaffold.dart';
 
-/// Entry point for the hidden admin area.
+/// Entry point for the admin area.
 ///
-/// Nothing at /admin is visible until it is summoned: a signed-in
-/// administrator (persisted Firebase session) lands on the real gate body; an
-/// owner who typed the summon phrase into the Shop search box goes straight
-/// to the sign-in page; and everyone else — including a direct /admin visit —
-/// is handed off to the public home route, so the admin page has no
-/// discoverable URL. All authorisation decisions come from [AuthController]
-/// state, never from a client flag.
+/// /admin is not a public page. A signed-in administrator (persisted Firebase
+/// session) lands on the gate body, and the visible "Admin" entry on the
+/// account page arms the sign-in; everyone else — including a direct /admin
+/// visit from a stranger — is handed off to the public home route, so the
+/// admin page has no discoverable URL and no secret code guards it. All
+/// authorisation decisions come from [AuthController] state (Firebase Auth +
+/// the admins/{uid} grant, enforced by security rules), never from a
+/// client-side flag or phrase.
 class AdminGate extends StatelessWidget {
   const AdminGate({super.key});
 

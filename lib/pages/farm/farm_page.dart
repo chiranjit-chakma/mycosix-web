@@ -5,6 +5,7 @@ import '../../config/mx_type.dart';
 import '../../router/app_nav.dart';
 import '../../router/routes.dart';
 import '../../widgets/editorial.dart';
+import '../../widgets/live_lead.dart';
 import '../../widgets/mx_cta.dart';
 import '../../widgets/mx_image.dart';
 import '../../widgets/page.dart';
@@ -25,7 +26,8 @@ class FarmPage extends StatelessWidget {
     final body = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const MxPageHero(
+        const LiveLead(
+          docId: 'farm-hero',
           overline: 'Our Farm',
           title: 'Where the mushrooms grow',
           body:
@@ -35,9 +37,8 @@ class FarmPage extends StatelessWidget {
         ),
         MxPage(
           padding: const EdgeInsets.symmetric(vertical: 84),
-          child: const MxFeature(
-            mediaFirst: true,
-            image: 'assets/images/grow_room.jpg',
+          child: LiveEditorial(
+            docId: 'farm-grow',
             overline: 'The Grow Room',
             title: 'Indoors, on purpose',
             body:
@@ -49,6 +50,14 @@ class FarmPage extends StatelessWidget {
                 'Because the room is enclosed and the substrate is pasteurised '
                 'before spawning, everything the mushrooms touch is kept clean '
                 'and controlled from start to finish.',
+            builder: (overline, title, body, bodyExtra) => MxFeature(
+              mediaFirst: true,
+              image: 'assets/images/grow_room.jpg',
+              overline: overline,
+              title: title,
+              body: body,
+              bodyExtra: bodyExtra,
+            ),
           ),
         ),
         const MxBand(

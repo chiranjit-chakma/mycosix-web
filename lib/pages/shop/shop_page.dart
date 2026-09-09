@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../../config/mx_colors.dart';
 import '../../config/mx_type.dart';
 import '../../models/product.dart';
-import '../../state/admin_reveal.dart';
 import '../../state/products_controller.dart';
 import '../../widgets/delivery_paused_notice.dart';
 import '../../widgets/page.dart';
@@ -13,9 +12,9 @@ import '../../widgets/shell.dart';
 
 /// The shop: every product, searchable and filterable by category.
 ///
-/// The search box is also the single covert way the owner summons the hidden
-/// admin area — typing the exact summon phrase there (instead of a product
-/// search) arms the admin sign-in and clears the box. See [AdminReveal].
+/// The search box is purely a product search — it filters the catalogue and
+/// nothing else. Admin entry happens from the visible "Admin" button on the
+/// account page, never from text typed here.
 class ShopPage extends StatefulWidget {
   const ShopPage({super.key, this.embedded = false});
 
@@ -52,13 +51,6 @@ class _ShopPageState extends State<ShopPage> {
   }
 
   void _onSearchChanged(String value) {
-    // The owner summon phrase is matched here and never treated as a search.
-    if (AdminReveal.shared.armFromSearchText(value)) {
-      _search.clear();
-      _query = '';
-      setState(() {});
-      return;
-    }
     setState(() => _query = value);
   }
 

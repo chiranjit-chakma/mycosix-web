@@ -8,13 +8,13 @@
   },
   "main": "index.js",
   "scripts": {
-    "test": "node --test test/create_order.test.js",
+    "test": "node --test test/create_order.test.js test/notify_core.test.js",
     "serve": "firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions",
     "seed": "node scripts/seed_catalog.js",
     "seed:force": "node scripts/seed_catalog.js --force",
     "seed:dry": "node scripts/seed_catalog.js --dry-run",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-mycosix \"node scripts/check_carts_rules.js\""
+    "test:rules": "firebase emulators:exec --only firestore --project demo-mycosix \"node scripts/check_carts_rules.js && node scripts/check_editorial_rules.js && node scripts/check_fcm_tokens_rules.js\""
   },
   "dependencies": {
     "firebase-admin": "^12.7.0",

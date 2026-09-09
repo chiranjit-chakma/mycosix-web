@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../config/mx_config.dart';
+import '../../state/site_config_controller.dart';
 import '../../widgets/legal_page.dart';
 
 class PrivacyPage extends StatelessWidget {
@@ -83,7 +83,8 @@ class PrivacyPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final whatsapp = MxConfig.whatsappDisplay;
+    // Live WhatsApp number, so an admin editing Settings updates the policy.
+    final whatsapp = liveSiteSettings(context).whatsappDisplay;
     return MxLegalPage(
       overline: 'Legal',
       title: 'Privacy Policy',

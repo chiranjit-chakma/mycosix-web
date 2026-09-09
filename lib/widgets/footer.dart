@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../config/mx_colors.dart';
-import '../config/mx_config.dart';
 import '../config/mx_type.dart';
 import '../router/app_nav.dart';
 import '../router/routes.dart';
 import '../services/url_launcher.dart';
 import '../state/cart_controller.dart';
+import '../state/site_config_controller.dart';
 import 'mx_image.dart';
 
 class MxFooter extends StatelessWidget {
@@ -18,6 +18,10 @@ class MxFooter extends StatelessWidget {
     final width = MediaQuery.of(context).size.width;
     final gutter = width >= 1024 ? 56.0 : 20.0;
     final cart = context.watch<CartController>();
+    // The footer's contact/brand lines read the live site config so an admin
+    // saving Settings (tagline, Instagram, area, WhatsApp number) updates
+    // every footer instantly, with the bundled values until then.
+    final settings = liveSiteSettings(context);
 
     return Container(
       width: double.infinity,
@@ -59,7 +63,7 @@ class MxFooter extends StatelessWidget {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        MxConfig.tagline,
+                        settings.tagline,
                         style: MxType.bodySm(
                           color: MxColors.cream.withValues(alpha: 0.72),
                         ),
@@ -71,7 +75,7 @@ class MxFooter extends StatelessWidget {
               if (width >= 768)
                 _FooterLink(
                   label: 'Instagram',
-                  onTap: () => UrlLauncher.open(MxConfig.instagramUrl),
+                  onTap: () => UrlLauncher.open(settings.instagramUrl),
                 )
               else
                 const SizedBox.shrink(),
@@ -143,7 +147,7 @@ class MxFooter extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Fresh by Us. Naturally Good.\nSix students growing more than mushrooms.',
+                  '${settings.tagline}\nSix students growing more than mushrooms.',
                   style: MxType.bodySm(
                     color: MxColors.cream.withValues(alpha: 0.7),
                   ),
@@ -163,7 +167,7 @@ class MxFooter extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  '${MxConfig.serviceArea} · ${MxConfig.whatsappDisplay}',
+                  '${settings.serviceArea} · ${settings.whatsappDisplay}',
                   style: MxType.bodyXs(
                     color: MxColors.cream.withValues(alpha: 0.55),
                   ),

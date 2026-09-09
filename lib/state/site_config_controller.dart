@@ -1,10 +1,25 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
+import 'package:provider/provider.dart';
 
 import '../firebase/fb.dart';
 import '../models/site_settings.dart';
+
+/// Live site settings for widgets that render admin-editable lines (contact
+/// number, Instagram, delivery area, tagline...). In the running app the
+/// controller is always provided above the whole tree, so this returns the
+/// live value and rebuilds when an admin saves Settings. When the controller
+/// is absent (a widget test building just one page) it falls back to the
+/// bundled defaults so the widget is harmless to render in isolation.
+SiteSettings liveSiteSettings(BuildContext context) {
+  try {
+    return context.watch<SiteConfigController>().settings;
+  } on ProviderNotFoundException {
+    return const SiteSettings();
+  }
+}
 
 /// Live site configuration the customer side watches.
 ///

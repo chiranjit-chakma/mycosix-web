@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../../config/mx_colors.dart';
-import '../../config/mx_config.dart';
 import '../../config/mx_type.dart';
 import '../../router/app_nav.dart';
 import '../../router/routes.dart';
 import '../../services/url_launcher.dart';
+import '../../state/site_config_controller.dart';
 import '../../widgets/editorial.dart';
 import '../../widgets/mx_cta.dart';
 import '../../widgets/page.dart';
@@ -18,6 +18,9 @@ class ContactPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
     final desktop = width >= 1024;
+    // Contact numbers/handles read the live site config so an admin editing
+    // Settings (WhatsApp number, Instagram URL) updates this page instantly.
+    final settings = liveSiteSettings(context);
 
     return MxShell(
       child: Column(
@@ -43,21 +46,21 @@ class ContactPage extends StatelessWidget {
                         icon: Icons.chat_bubble_rounded,
                         accent: const Color(0xFF128C4A),
                         title: 'WhatsApp',
-                        line: MxConfig.whatsappDisplay,
+                        line: settings.whatsappDisplay,
                         subtitle: 'Best for orders and quick questions. Tap to open a chat.',
                         actionLabel: 'Open WhatsApp',
                         onTap: () => UrlLauncher.open(
-                          'https://wa.me/${MxConfig.whatsappNumber}',
+                          'https://wa.me/${settings.whatsappNumber}',
                         ),
                       ),
                       _ContactCard(
                         icon: Icons.camera_alt_rounded,
                         accent: MxColors.earth,
                         title: 'Instagram',
-                        line: '@${MxConfig.instagramHandle}',
+                        line: '@${settings.instagramHandle}',
                         subtitle: 'Farm updates, harvests and behind the scenes. DM us there.',
                         actionLabel: 'Visit Instagram',
-                        onTap: () => UrlLauncher.open(MxConfig.instagramUrl),
+                        onTap: () => UrlLauncher.open(settings.instagramUrl),
                       ),
                     ];
                     return wide
@@ -245,7 +248,7 @@ class ContactPage extends StatelessWidget {
                               tone: 'ghost',
                               icon: Icons.chat_outlined,
                               onTap: () => UrlLauncher.open(
-                                'https://wa.me/${MxConfig.whatsappNumber}',
+                                'https://wa.me/${settings.whatsappNumber}',
                               ),
                             ),
                           ],
@@ -309,7 +312,7 @@ class ContactPage extends StatelessWidget {
                         tone: 'ghost',
                         icon: Icons.chat_outlined,
                         onTap: () => UrlLauncher.open(
-                          'https://wa.me/${MxConfig.whatsappNumber}',
+                          'https://wa.me/${settings.whatsappNumber}',
                         ),
                       ),
                       const SizedBox(height: 32),

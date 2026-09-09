@@ -1,10 +1,12 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../config/mx_colors.dart';
-import '../../config/mx_config.dart';
 import '../../config/mx_type.dart';
+import '../../firebase/fb.dart';
 import '../../router/app_nav.dart';
 import '../../router/routes.dart';
+import '../../state/site_config_controller.dart';
 import '../../widgets/editorial.dart';
 import '../../widgets/mx_cta.dart';
 import '../../widgets/mx_image.dart';
@@ -14,18 +16,11 @@ import '../../widgets/shell.dart';
 class TeamPage extends StatelessWidget {
   const TeamPage({super.key});
 
-  static const _names = <String>[
-    'Chandan',
-    'Hruday',
-    'Preetham',
-    'Jashwanth',
-    'Neha',
-    'Varshini',
-  ];
-
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
+    // Live contact lines so an admin editing Settings updates them instantly.
+    final settings = liveSiteSettings(context);
 
     return MxShell(
       child: Column(
@@ -53,26 +48,7 @@ class TeamPage extends StatelessWidget {
                       'the same reason: to grow something real.',
                 ),
                 const SizedBox(height: 44),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final cols = constraints.maxWidth >= 1100
-                        ? 6
-                        : (constraints.maxWidth >= 700
-                              ? 3
-                              : (constraints.maxWidth >= 420 ? 2 : 1));
-                    return GridView.count(
-                      crossAxisCount: cols,
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      mainAxisSpacing: 18,
-                      crossAxisSpacing: 18,
-                      childAspectRatio: cols >= 3 ? 0.86 : 1.1,
-                      children: [
-                        for (final name in _names) _MemberCard(name: name),
-                      ],
-                    );
-                  },
-                ),
+                const _TeamRoster(),
               ],
             ),
           ),
@@ -297,14 +273,14 @@ class TeamPage extends StatelessWidget {
                     alignment: WrapAlignment.center,
                     children: [
                       MxCta(
-                        label: 'WhatsApp ${MxConfig.whatsappDisplay}',
+                        label: 'WhatsApp ${settings.whatsappDisplay}',
                         tone: 'light',
                         icon: Icons.chat_outlined,
                         onTap: () =>
                             Navigator.of(context).pushNamed(Routes.contact),
                       ),
                       MxCta(
-                        label: 'Instagram @${MxConfig.instagramHandle}',
+                        label: 'Instagram @${settings.instagramHandle}',
                         tone: 'light',
                         icon: Icons.camera_alt_outlined,
                         onTap: () =>
@@ -322,10 +298,107 @@ class TeamPage extends StatelessWidget {
   }
 }
 
+/// The "Our Team" member grid.
+///
+/// Reads the live `team` collection (through the customer app, matching the
+/// open-read rule) and shows those members once at least one real record
+/// exists. Until an admin adds members the site shows the six founders bundled
+/// with the page, so the team section is never empty and never flashes. When
+/// Firebase is unavailable or not yet up (offline, widget tests) it renders the
+/// bundled roster and opens no stream.
+class _TeamRoster extends StatelessWidget {
+  const _TeamRoster();
+
+  @override
+  Widget build(BuildContext context) {
+    final members = _fallback();
+    if (!Fb.enabled) return _grid(members);
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: Fb.db.collection('team').snapshots(),
+      builder: (context, snap) {
+        final docs = snap.data?.docs;
+        if (docs == null) return _grid(members);
+        final live = <_Member>[];
+        for (final d in docs) {
+          final m = d.data();
+          final name = (m['name'] as String?)?.trim() ?? '';
+          if (name.isEmpty) continue;
+          final role = (m['role'] as String?)?.trim() ?? '';
+          final sort = m['sort'];
+          live.add(_Member(
+            name,
+            role,
+            sort is int
+                ? sort
+                : (sort is num ? sort.toInt() : 0x7FFFFFFF),
+          ));
+        }
+        // No real records yet -> keep the founders as-is (customers see the
+        // same team until the owner adds/edits members).
+        if (live.isEmpty) return _grid(members);
+        live.sort(_byOrder);
+        return _grid(live);
+      },
+    );
+  }
+
+  List<_Member> _fallback() => [
+    for (var i = 0; i < _founders.length; i++)
+      _Member(_founders[i], '', i),
+  ];
+
+  static int _byOrder(_Member a, _Member b) {
+    final bySort = a.sort.compareTo(b.sort);
+    if (bySort != 0) return bySort;
+    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  }
+
+  Widget _grid(List<_Member> members) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cols = constraints.maxWidth >= 1100
+            ? (members.length > 6 ? 4 : 6)
+            : (constraints.maxWidth >= 700
+                  ? 3
+                  : (constraints.maxWidth >= 420 ? 2 : 1));
+        return GridView.count(
+          crossAxisCount: cols,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 18,
+          crossAxisSpacing: 18,
+          childAspectRatio: cols >= 3 ? 0.86 : 1.1,
+          children: [
+            for (final m in members) _MemberCard(name: m.name, role: m.role),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// A team member as shown on the public page (live doc or bundled founder).
+class _Member {
+  const _Member(this.name, this.role, this.sort);
+  final String name;
+  final String role;
+  final int sort;
+}
+
+const _founders = <String>[
+  'Chandan',
+  'Hruday',
+  'Preetham',
+  'Jashwanth',
+  'Neha',
+  'Varshini',
+];
+
 class _MemberCard extends StatelessWidget {
-  const _MemberCard({required this.name});
+  const _MemberCard({required this.name, this.role = ''});
 
   final String name;
+  final String role;
 
   @override
   Widget build(BuildContext context) {
@@ -365,7 +438,9 @@ class _MemberCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'MYCOSIX',
+            // Members without a role keep the original brand label, so the
+            // site looks identical until the owner gives a member a role.
+            role.isNotEmpty ? role : 'MYCOSIX',
             textAlign: TextAlign.center,
             style: MxType.label(color: MxColors.earth),
           ),

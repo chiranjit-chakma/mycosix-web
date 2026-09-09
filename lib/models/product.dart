@@ -17,6 +17,7 @@ class Product {
     this.available = true,
     this.sortKey = 0,
     this.videoUrl,
+    this.deliveryNote,
     this.createdAt,
     this.updatedAt,
   });
@@ -26,6 +27,12 @@ class Product {
   final String description;
   final String category;
   final String image;
+
+  /// Optional per-product delivery line (e.g. "Same-day in Mysore city only").
+  /// When blank/null the shop shows the site-wide default delivery note from
+  /// the live settings instead. This field only ever drives display text — the
+  /// actual delivery charge/area logic is unchanged.
+  final String? deliveryNote;
 
   /// Additional images for the product gallery. Falls back to [image].
   final List<String> gallery;
@@ -70,6 +77,7 @@ class Product {
     bool? available,
     int? sortKey,
     String? videoUrl,
+    String? deliveryNote,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -87,6 +95,7 @@ class Product {
       available: available ?? this.available,
       sortKey: sortKey ?? this.sortKey,
       videoUrl: videoUrl ?? this.videoUrl,
+      deliveryNote: deliveryNote ?? this.deliveryNote,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -107,6 +116,8 @@ class Product {
         'sortKey': sortKey,
         if (videoUrl != null && videoUrl!.trim().isNotEmpty)
           'videoUrl': videoUrl!.trim(),
+        if (deliveryNote != null && deliveryNote!.trim().isNotEmpty)
+          'deliveryNote': deliveryNote!.trim(),
         'createdAt': createdAt?.toIso8601String(),
         'updatedAt': updatedAt?.toIso8601String(),
       };
@@ -126,6 +137,7 @@ class Product {
       available: json['available'] as bool? ?? true,
       sortKey: ((json['sortKey'] ?? 0) as num).toInt(),
       videoUrl: (json['videoUrl'] as String?)?.trim(),
+      deliveryNote: (json['deliveryNote'] as String?)?.trim(),
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'] as String)
           : null,
@@ -153,6 +165,8 @@ class Product {
         'sortKey': sortKey,
         if (videoUrl != null && videoUrl!.trim().isNotEmpty)
           'videoUrl': videoUrl!.trim(),
+        if (deliveryNote != null && deliveryNote!.trim().isNotEmpty)
+          'deliveryNote': deliveryNote!.trim(),
       };
 
   /// Reads a product document. Timestamp fields are converted by the caller
@@ -173,6 +187,7 @@ class Product {
       available: map['available'] as bool? ?? true,
       sortKey: ((map['sortKey'] ?? 0) as num).toInt(),
       videoUrl: (map['videoUrl'] as String?)?.trim(),
+      deliveryNote: (map['deliveryNote'] as String?)?.trim(),
     );
   }
 

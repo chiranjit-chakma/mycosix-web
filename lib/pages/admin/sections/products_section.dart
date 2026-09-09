@@ -337,6 +337,9 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
   late final _videoUrl = TextEditingController(
     text: widget.product?.videoUrl ?? '',
   );
+  late final _deliveryNote = TextEditingController(
+    text: widget.product?.deliveryNote ?? '',
+  );
   late bool _available = widget.product?.available ?? true;
   late bool _busy = false;
   String? _error;
@@ -465,6 +468,10 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
         'image': image,
         'gallery': gallery,
         'videoUrl': _videoUrl.text.trim(),
+        // A blank delivery note is stored as absent so the product page falls
+        // back to the site-wide default delivery line from Settings.
+        if (_deliveryNote.text.trim().isNotEmpty)
+          'deliveryNote': _deliveryNote.text.trim(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
       final existing = widget.product;
@@ -489,7 +496,17 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
           recordedByEmail: actor,
         );
       } else {
-        await FbAdmin.products.doc(existing.id).set(base, SetOptions(merge: true));
+        // On edit, an emptied delivery note must REMOVE the stored value
+        // (merge:true only touches the keys present), so it is sent as an
+        // explicit field delete and the shop falls back to the default line.
+        await FbAdmin.products.doc(existing.id).set(
+          {
+            ...base,
+            if (_deliveryNote.text.trim().isEmpty)
+              'deliveryNote': FieldValue.delete(),
+          },
+          SetOptions(merge: true),
+        );
         if (stock != existing.stock) {
           final label = existing.name +
               (existing.weight.isEmpty ? '' : ' (${existing.weight})');
@@ -584,6 +601,16 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
                       'link) or a direct .mp4/.webm web link. When set, '
                       'customers see a "Watch product video" button on the '
                       'product. Leave empty for no video.',
+                ),
+                const SizedBox(height: 10),
+                _field(
+                  _deliveryNote,
+                  'Delivery note (optional)',
+                  null,
+                  helper: 'Leave empty for the default line: "Same day or '
+                      'next morning delivery in Mysore, Karnataka" (editable in '
+                      'Settings). Type a custom line here to override it for '
+                      'just this product.',
                 ),
                 const SizedBox(height: 12),
                 _photosSection(),

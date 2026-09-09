@@ -1,31 +1,31 @@
 import 'package:flutter/widgets.dart';
 
-import '../pages/admin/admin_access_lock.dart';
 import '../router/routes.dart';
 
 /// How far a visitor has summoned the hidden admin area.
 enum AdminRevealStage {
   /// Not summoned. Direct `/admin` visits hand off to the public home route,
-  /// so the admin page has no discoverable URL.
+  /// so the admin page has no discoverable URL for strangers.
   hidden,
 
-  /// The owner summon phrase was typed into the Shop search box: show the
-  /// admin sign-in page.
+  /// The visible "Admin" entry (account page) was used: show the admin
+  /// sign-in page. There is no secret code anywhere — Firebase Auth is the
+  /// real boundary, and a signed-in administrator always lands on the gate
+  /// regardless of this stage.
   signIn,
 }
 
-/// Covert summoner for the admin area (owner phrase typed into the Shop search
-/// box - there is no other trigger and no discoverable /admin URL).
+/// Non-secret summoner for the admin area.
 ///
-/// A visitor who wanders to /admin (or is never summoned) only ever sees the
-/// normal public site: [AdminGate] shows the sign-in or dashboard purely from
-/// [AdminRevealStage] + Firebase auth state. The owner summons it by typing
-/// the exact phrase into the Shop search field - [armFromSearchText] matches
-/// it code-point for code-point and ignores everything else, so ordinary
-/// searches never trigger anything.
-///
-/// This is deliberate obscurity, not security: Firebase Auth is the real
-/// boundary, and the phrase ships (obfuscated as code points) in the bundle.
+/// The only ways to reach the admin area are (a) the visible "Admin" entry
+/// next to the account Sign-out button ([openAdmin]) and (b) an already
+/// signed-in administrator visiting `/admin` directly. A visitor who wanders
+/// to `/admin` unsummoned only ever sees the normal public site: [AdminGate]
+/// shows the sign-in or dashboard purely from this stage + Firebase auth
+/// state. Nothing ships as a secret code — this is deliberate obscurity of a
+/// URL, not the security boundary. The security boundary is server-side: a
+/// uid is an administrator only because `admins/{uid}` exists, which Firestore
+/// security rules enforce on every protected operation.
 class AdminReveal extends ChangeNotifier {
   AdminReveal._();
 
@@ -42,15 +42,10 @@ class AdminReveal extends ChangeNotifier {
   /// Tracks the current top route so a summon never stacks /admin on itself.
   final NavigatorObserver routeObserver = _TopRouteObserver();
 
-  /// Called by the Shop search box on every edit. Returns true when the typed
-  /// text is exactly the owner summon phrase - the caller must clear the box
-  /// and not treat it as a product search. Any other text returns false (a
-  /// normal search) and never changes state.
-  bool armFromSearchText(String candidate) {
-    if (!AdminAccessLock.matchesCode(candidate)) return false;
-    _armSignIn();
-    return true;
-  }
+  /// Called by the visible "Admin" entry on the account page. Arms the admin
+  /// sign-in and navigates to the gate. Idempotent — a second tap while
+  /// already heading there does nothing.
+  void openAdmin() => _armSignIn();
 
   void _armSignIn() => _set(AdminRevealStage.signIn);
 

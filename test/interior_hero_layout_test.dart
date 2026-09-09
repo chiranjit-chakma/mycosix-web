@@ -121,4 +121,24 @@ void main() {
       });
     }
   }
+
+  // The public "Our Team" roster falls back to the six bundled founders while
+  // no live team records exist (Firebase is off here), so customers never see
+  // an empty team before the owner edits. All six must still render.
+  testWidgets('team page shows all six founders from the bundled roster',
+      (tester) async {
+    await _pump(tester, 1280, 900, () => const TeamPage());
+    const founders = [
+      'Chandan',
+      'Hruday',
+      'Preetham',
+      'Jashwanth',
+      'Neha',
+      'Varshini',
+    ];
+    for (final f in founders) {
+      expect(find.text(f), findsWidgets,
+          reason: 'founder $f should still appear on the team page');
+    }
+  });
 }

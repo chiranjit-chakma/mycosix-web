@@ -19,6 +19,7 @@ import 'router/app_navigator.dart';
 import 'router/app_router.dart';
 import 'router/routes.dart';
 import 'state/admin_reveal.dart';
+import 'state/order_alert_controller.dart';
 import 'state/auth_controller.dart';
 import 'state/cart_sync_controller.dart';
 import 'state/customer_auth_controller.dart';
@@ -31,6 +32,7 @@ import 'state/saved_location_clear.dart';
 import 'state/products_controller.dart';
 import 'state/site_config_controller.dart';
 import 'state/wishlist_controller.dart';
+import 'widgets/order_alert_host.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -131,6 +133,12 @@ Future<void> main() async {
     backendAvailable: Fb.enabled,
   )..start();
 
+  // Foreground order alerts (app-open): live status nudges for the customer's
+  // own orders and a "new order" alert for an authorised administrator. The
+  // controller subscribes to Firestore only when its side of Firebase is up
+  // and stays inert otherwise (tests / offline builds).
+  final orderAlertController = OrderAlertController();
+
   runApp(
     MxApp(
       cartRepository: cartRepository,
@@ -143,6 +151,7 @@ Future<void> main() async {
       wishlistController: wishlistController,
       siteConfigController: siteConfigController,
       locationController: locationController,
+      orderAlertController: orderAlertController,
     ),
   );
 }
@@ -161,6 +170,7 @@ class MxApp extends StatelessWidget {
     required this.wishlistController,
     required this.siteConfigController,
     required this.locationController,
+    required this.orderAlertController,
   });
 
   final CartRepository cartRepository;
@@ -173,6 +183,7 @@ class MxApp extends StatelessWidget {
   final WishlistController wishlistController;
   final SiteConfigController siteConfigController;
   final LocationController locationController;
+  final OrderAlertController orderAlertController;
 
   @override
   Widget build(BuildContext context) {
@@ -219,6 +230,10 @@ class MxApp extends StatelessWidget {
         ),
         // Admin auth + authorisation (drives the /admin gate).
         ChangeNotifierProvider(create: (_) => AuthController()),
+        // Foreground order alerts host reads this; inert when Firebase is off.
+        ChangeNotifierProvider<OrderAlertController>.value(
+          value: orderAlertController,
+        ),
       ],
       child: const MxRoot(),
     );
@@ -253,6 +268,12 @@ class _MxRootState extends State<MxRoot> {
       debugShowCheckedModeBanner: false,
       theme: MxTheme.light,
       initialRoute: Routes.home,
+      // Foreground order alerts ride on MaterialApp.builder: they sit above
+      // the Navigator (every route, browser + installed app) yet the banner
+      // itself is a normal SnackBar shown through the app's own messenger, so
+      // it never overlaps an app bar or the PWA dock.
+      builder: (context, child) =>
+          OrderAlertHost(child: child ?? const SizedBox.shrink()),
       navigatorKey: appNavigatorKey,
       navigatorObservers: <NavigatorObserver>[AdminReveal.shared.routeObserver],
       onGenerateRoute: AppRouter.generateRoute,

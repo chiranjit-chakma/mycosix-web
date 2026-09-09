@@ -30,7 +30,6 @@ class _SettingsSectionState extends State<SettingsSection> {
   bool _dirty = false;
 
   late final TextEditingController _whatsapp = TextEditingController();
-  late final TextEditingController _deliveryFee = TextEditingController();
   late final TextEditingController _instagram = TextEditingController();
   late final TextEditingController _serviceArea = TextEditingController();
   late final TextEditingController _leadTime = TextEditingController();
@@ -48,7 +47,6 @@ class _SettingsSectionState extends State<SettingsSection> {
     final settings = context.read<ConfigRepository>().settings;
     _s = settings;
     _whatsapp.text = settings.whatsappNumber;
-    _deliveryFee.text = _fmt(settings.deliveryFee);
     _instagram.text = settings.instagramUrl;
     _serviceArea.text = settings.serviceArea;
     _leadTime.text = settings.orderLeadTime;
@@ -70,7 +68,6 @@ class _SettingsSectionState extends State<SettingsSection> {
   void dispose() {
     for (final c in [
       _whatsapp,
-      _deliveryFee,
       _instagram,
       _serviceArea,
       _leadTime,
@@ -97,11 +94,8 @@ class _SettingsSectionState extends State<SettingsSection> {
 
     String? err;
     final whats = _whatsapp.text.replaceAll(RegExp(r'\D'), '');
-    final fee = double.tryParse(_deliveryFee.text.trim());
     if (whats.length < 10 || whats.length > 13) {
       err = 'WhatsApp number needs 10-13 digits (country code first).';
-    } else if (fee == null || fee < 0) {
-      err = 'Delivery fee must be 0 or more.';
     } else if (_supportEmail.text.trim().isNotEmpty &&
         !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
             .hasMatch(_supportEmail.text.trim())) {
@@ -151,7 +145,10 @@ class _SettingsSectionState extends State<SettingsSection> {
 
     final patch = <String, Object?>{
       'whatsappNumber': whats,
-      'deliveryFee': fee,
+      // The flat delivery fee is gone: distance tiers now price delivery.
+      // Remove any value an older round stored so the site never mixes a
+      // stale flat fee with the distance tiers below.
+      'deliveryFee': FieldValue.delete(),
       'shopLatitude': _shopLat ?? FieldValue.delete(),
       'shopLongitude': _shopLng ?? FieldValue.delete(),
       'deliveryTiers': [
@@ -220,23 +217,6 @@ class _SettingsSectionState extends State<SettingsSection> {
                     helperText: 'e.g. 91XXXXXXXXXX - the number orders go to.',
                   ),
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _deliveryFee,
-                  onChanged: _onChanged,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-                  ],
-                  decoration: const InputDecoration(
-                    labelText: 'Flat delivery fee (Rs)',
-                    helperText:
-                        'Used for every order until you set a shop '
-                        'location and distance tiers below.',
-                  ),
-                ),
                 const SizedBox(height: 20),
                 const Divider(color: MxColors.line, height: 1),
                 const SizedBox(height: 16),
@@ -244,15 +224,12 @@ class _SettingsSectionState extends State<SettingsSection> {
                     style: MxType.h3(color: MxColors.charcoal)),
                 const SizedBox(height: 6),
                 Text(
-                  'Two ways to charge delivery:\n\n'
-                  'Option A - the flat fee above is charged for every '
-                  'order (today\'s behaviour).\n\n'
-                  'Option B - by distance: drag the pin to the shop\'s '
-                  'spot, then add distance tiers below. The straight '
-                  'line from the shop to the customer\'s pin picks the '
-                  'first tier that covers it, so "up to 2 km free, up '
-                  'to 5 km Rs 40" works exactly like that. Beyond the '
-                  'last tier, that spot is marked not available.',
+                  'Delivery is charged by distance. Drag the pin to the '
+                  'shop\'s spot, then add distance tiers below. The straight '
+                  'line from the shop to the customer\'s pin picks the first '
+                  'tier that covers it, so "up to 2 km free, up to 5 km '
+                  'Rs 40" works exactly like that. Beyond the last tier, '
+                  'that spot is marked not available.',
                   style: MxType.bodySm(color: MxColors.stone),
                 ),
                 const SizedBox(height: 16),
@@ -320,8 +297,9 @@ class _SettingsSectionState extends State<SettingsSection> {
                       border: Border.all(color: MxColors.line),
                     ),
                     child: Text(
-                      'No distance tiers - every order uses the flat '
-                      'delivery fee above.',
+                      'No distance tiers - every order keeps the standard '
+                      'delivery fee until you set the shop spot and at '
+                      'least one tier.',
                       style: MxType.bodyXs(color: MxColors.stone),
                     ),
                   )

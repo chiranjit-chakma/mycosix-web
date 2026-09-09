@@ -9,6 +9,7 @@ import 'package:mycosix/repositories/cart_repository.dart';
 import 'package:mycosix/repositories/product_repository.dart';
 import 'package:mycosix/state/cart_controller.dart';
 import 'package:mycosix/state/products_controller.dart';
+import 'package:mycosix/state/site_config_controller.dart';
 import 'package:mycosix/state/wishlist_controller.dart';
 import 'package:mycosix/widgets/mx_image.dart';
 import 'package:mycosix/widgets/product_share_button.dart';
@@ -58,6 +59,12 @@ void main() {
           ),
           ChangeNotifierProvider<WishlistController>(
             create: (_) => WishlistController(),
+          ),
+          // The product page's delivery line reads the live site settings when
+          // a product has no delivery note of its own; provide the controller
+          // (it never connects while Firebase is disabled in tests).
+          ChangeNotifierProvider<SiteConfigController>(
+            create: (_) => SiteConfigController(),
           ),
         ],
         child: const MaterialApp(

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../config/mx_config.dart';
+import '../../state/site_config_controller.dart';
 import '../../widgets/legal_page.dart';
 
 class TermsPage extends StatelessWidget {
@@ -79,8 +79,10 @@ class TermsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final whatsapp = MxConfig.whatsappDisplay;
-    final handle = MxConfig.instagramHandle;
+    // Live contact lines, so an admin editing Settings updates the terms.
+    final s = liveSiteSettings(context);
+    final whatsapp = s.whatsappDisplay;
+    final handle = s.instagramHandle;
     return MxLegalPage(
       overline: 'Legal',
       title: 'Terms & Conditions',

@@ -80,6 +80,24 @@ class SiteSettings {
     return max;
   }
 
+  /// WhatsApp number formatted for display ("+91 63638 16465"), derived from
+  /// the live [whatsappNumber] so labels always match what the admin set.
+  String get whatsappDisplay => displayNumber(whatsappNumber);
+
+  /// Instagram handle (no leading @) derived from the live [instagramUrl], so
+  /// changing the URL in Settings updates every "Instagram @..." label on the
+  /// site. Falls back to the bundled default when the URL is blank or not an
+  /// instagram.com page.
+  String get instagramHandle {
+    final uri = Uri.tryParse(instagramUrl.trim());
+    final host = uri?.host.toLowerCase() ?? '';
+    if (host != 'instagram.com' && host != 'www.instagram.com') {
+      return MxConfig.instagramHandle;
+    }
+    final segs = uri!.pathSegments.where((s) => s.isNotEmpty).toList();
+    return segs.isEmpty ? MxConfig.instagramHandle : segs.first;
+  }
+
   /// Formats a stored WhatsApp number (digits, country code first) for display.
   static String displayNumber(String digits) {
     var d = digits.replaceAll(RegExp(r'\D'), '');
