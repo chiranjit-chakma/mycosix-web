@@ -435,12 +435,13 @@ class _SummaryRow extends StatelessWidget {
   }
 }
 
-/// The account-cart offer: appears only while the signed-in account holds
-/// items this cart does not yet carry at the same quantity, and only ever
-/// brings them in when the customer taps the button - a login, logout or
-/// background sync never adds or removes anything by itself, and a load tops
-/// quantities up to the account's level (never summing, so the same saved
-/// cart can never be counted twice). Dismissing the offer hides it until the
+/// The account-cart offer: the OFFLINE FALLBACK for live cart sync. It appears
+/// only while the live account watch cannot deliver (so a customer can still
+/// pull the account's items in with a tap) AND the account holds items this
+/// cart does not yet carry at the same quantity. While the watch is delivering,
+/// account items arrive on their own and the offer stays hidden. A load tops
+/// quantities up to the account's level - never summing, so the same saved
+/// cart can never be counted twice. Dismissing the offer hides it until the
 /// cart or the account knowledge changes again.
 class _SavedCartBanner extends StatefulWidget {
   const _SavedCartBanner();
@@ -457,7 +458,7 @@ class _SavedCartBannerState extends State<_SavedCartBanner> {
   @override
   Widget build(BuildContext context) {
     final sync = context.watch<CartSyncController>();
-    final has = sync.hasSavedCart;
+    final has = sync.savedOfferVisible;
     if (has != _lastHas) {
       _lastHas = has;
       if (!has) _dismissed = false;
@@ -517,9 +518,9 @@ class _SavedCartBannerState extends State<_SavedCartBanner> {
                     Text(
                       '$count more item'
                       '${count == 1 ? '' : 's'} on this account (from another '
-                      'device or an earlier visit) than this cart. Nothing '
-                      'here changes by itself - tap Load to bring them in; '
-                      'quantities are never doubled.',
+                      'device or an earlier visit) than this cart. We couldn\'t '
+                      'reach your saved cart just now - tap Load to bring them '
+                      'in; quantities are never doubled.',
                       style: MxType.bodyXs(color: MxColors.stone),
                     ),
                   ],

@@ -22,16 +22,19 @@ class _FakeAuth extends ChangeNotifier implements CartSyncAuth {
   }
 }
 
-/// Behaves like the Firestore document: push writes and echoes a snapshot,
-/// remoteChange delivers a snapshot from "another device" (the controller no
-/// longer listens - nothing may auto-apply, so these must never land in the
-/// local cart).
+/// Behaves like the Firestore document: fetch returns the account cart, watch
+/// yields the current cart first and then live snapshots (exactly like the
+/// document's snapshot stream), push writes through and echoes a snapshot,
+/// and remoteChange delivers a snapshot from "another device". With
+/// [watchShouldFail] the watch errors instead, like a stream that cannot
+/// connect - the controller then keeps the load offer as its fallback.
 class _FakeStore implements RemoteCartStore {
   Map<String, int> cart = {};
   final _snapshots = StreamController<Map<String, int>>.broadcast();
   final List<Map<String, int>> pushed = [];
   int fetches = 0;
   bool fetchShouldFail = false;
+  bool watchShouldFail = false;
 
   /// When set, fetch waits on this gate (a slow account read) so tests can
   /// interleave a local edit with the sign-in fetch.
@@ -47,7 +50,16 @@ class _FakeStore implements RemoteCartStore {
   }
 
   @override
-  Stream<Map<String, int>> watch(String uid) => _snapshots.stream;
+  Stream<Map<String, int>> watch(String uid) async* {
+    if (watchShouldFail) {
+      yield* Stream<Map<String, int>>.error(Exception('watch offline'));
+      return;
+    }
+    // Like a Firestore snapshot stream: the current document first, then
+    // live changes.
+    yield Map.of(cart);
+    yield* _snapshots.stream;
+  }
 
   @override
   Future<void> push(String uid, Map<String, int> items) async {
@@ -75,7 +87,8 @@ Future<(CartRepository, CartController, List<Product>)> _loadedCart() async {
 Product _p(List<Product> products, String id) =>
     products.firstWhere((p) => p.id == id);
 
-/// Waits out the sign-in fetch and the 400ms push debounce.
+/// Waits out the sign-in fetch, the first live snapshot and the 400ms push
+/// debounce.
 Future<void> _settle([int ms = 120]) =>
     Future<void>.delayed(Duration(milliseconds: ms));
 void main() {
@@ -84,7 +97,7 @@ void main() {
   });
 
   test(
-    'sign-in only READS the account cart - the local cart never changes',
+    'sign-in tops the cart up to the account when the account holds more',
     () async {
       final (repo, cart, _) = await _loadedCart();
       await repo.add('fresh-oyster-250', 2); // guest items on this device
@@ -105,20 +118,25 @@ void main() {
       auth.uid = 'u1';
       await _settle();
 
-      // Not a single item changed: no merge, no sum, no apply, no removal.
-      expect(repo.items, {'fresh-oyster-250': 2});
-      expect(cart.lines.map((l) => l.quantity), [2]);
-      // And nothing was pushed either - signing in never writes the account.
-      expect(store.pushed, isEmpty);
+      // The live sync topped this cart up to the union - never summed (250
+      // stays at 2, not 3) and nothing removed.
+      expect(repo.items, {'fresh-oyster-250': 2, 'fresh-oyster-500': 4});
+      expect(cart.lines.map((l) => l.quantity), [2, 4]);
+      // The union was mirrored back to the account immediately, so the other
+      // device converges too.
+      expect(store.pushed, [
+        {'fresh-oyster-250': 2, 'fresh-oyster-500': 4},
+      ]);
       expect(store.fetches, 1);
-      // The account knowledge is available so the cart page can OFFER a load.
-      expect(sync.hasSavedCart, isTrue);
+      // Account and cart now match - no offer left standing.
+      expect(sync.hasSavedCart, isFalse);
+      expect(sync.savedOfferVisible, isFalse);
       sync.dispose();
     },
   );
 
   test(
-    'a session restored at startup also never touches the local cart',
+    'a session restored at startup tops the cart up too',
     () async {
       final (repo, cart, _) = await _loadedCart();
       await repo.add('fresh-oyster-250', 1);
@@ -134,9 +152,11 @@ void main() {
       await _settle();
 
       expect(store.fetches, 1);
-      expect(repo.items, {'fresh-oyster-250': 1});
-      expect(store.pushed, isEmpty);
-      expect(sync.hasSavedCart, isTrue);
+      expect(repo.items, {'fresh-oyster-250': 1, 'fresh-oyster-500': 3});
+      expect(store.pushed, [
+        {'fresh-oyster-250': 1, 'fresh-oyster-500': 3},
+      ]);
+      expect(sync.hasSavedCart, isFalse);
       sync.dispose();
     },
   );
@@ -180,55 +200,29 @@ void main() {
       )..start();
       auth.uid = 'u1';
       await _settle();
-      expect(repo.items, <String, int>{}); // sign-in added nothing
+      // The live sync merged the account's line in and mirrored it back.
+      expect(repo.items, {'fresh-oyster-500': 1});
 
       cart.add(_p(products, 'fresh-oyster-250'), quantity: 2);
       await _settle(700);
 
-      // Exactly one push - the customer's own edit - and no echo loop.
+      // The sign-in union first, then exactly one debounced push carrying the
+      // customer's own edit - and no echo loop beyond it.
       expect(store.pushed, [
-        {'fresh-oyster-250': 2},
+        {'fresh-oyster-500': 1},
+        {'fresh-oyster-500': 1, 'fresh-oyster-250': 2},
       ]);
       sync.dispose();
     },
   );
 
-  test('a change from ANOTHER DEVICE never touches the local cart', () async {
-    final (repo, cart, _) = await _loadedCart();
-    await repo.add('fresh-oyster-250', 2);
-    final auth = _FakeAuth();
-    final store = _FakeStore()..cart = {'fresh-oyster-250': 2};
-    final sync = CartSyncController(
-      repository: repo,
-      cart: cart,
-      auth: auth,
-      store: store,
-      backendAvailable: true,
-    )..start();
-    auth.uid = 'u1';
-    await _settle();
-    expect(sync.hasSavedCart, isFalse); // account matches this cart
-
-    // Another device changes the account cart while signed in.
-    store.remoteChange({'fresh-oyster-250': 5, 'fresh-oyster-500': 1});
-    await _settle();
-
-    // The local cart is completely untouched - no watch, no auto-apply.
-    expect(repo.items, {'fresh-oyster-250': 2});
-    // The offer is not even re-armed mid-session (knowledge refreshes only
-    // on a fresh sign-in or after a push).
-    expect(sync.hasSavedCart, isFalse);
-    sync.dispose();
-  });
-
   test(
-    'load tops the cart up - never sums - and writes the account at once',
+    'a change from ANOTHER DEVICE tops this cart up to the union on its own',
     () async {
       final (repo, cart, _) = await _loadedCart();
       await repo.add('fresh-oyster-250', 2);
       final auth = _FakeAuth();
-      final store = _FakeStore()
-        ..cart = {'fresh-oyster-250': 1, 'fresh-oyster-500': 2};
+      final store = _FakeStore()..cart = {'fresh-oyster-250': 2};
       final sync = CartSyncController(
         repository: repo,
         cart: cart,
@@ -238,18 +232,98 @@ void main() {
       )..start();
       auth.uid = 'u1';
       await _settle();
+      expect(sync.hasSavedCart, isFalse); // account matches this cart
+
+      // Another device raises a line and adds a new one while signed in.
+      store.remoteChange({'fresh-oyster-250': 5, 'fresh-oyster-500': 1});
+      await _settle();
+
+      // This cart is topped up to the union on its own - no banner, no tap.
+      expect(repo.items, {'fresh-oyster-250': 5, 'fresh-oyster-500': 1});
+      // And the union is mirrored back so the other device converges too.
+      expect(store.pushed, [
+        {'fresh-oyster-250': 5, 'fresh-oyster-500': 1},
+      ]);
+      // The echoed union holds nothing more - the merge loop ends here.
+      store.remoteChange({'fresh-oyster-250': 5, 'fresh-oyster-500': 1});
+      await _settle();
+      expect(store.pushed, hasLength(1));
+      sync.dispose();
+    },
+  );
+
+  test(
+    'a remote snapshot never shrinks the cart (an emptier account is ignored)',
+    () async {
+      final (repo, cart, _) = await _loadedCart();
+      await repo.add('fresh-oyster-250', 5);
+      final auth = _FakeAuth();
+      final store = _FakeStore()..cart = {'fresh-oyster-250': 5};
+      final sync = CartSyncController(
+        repository: repo,
+        cart: cart,
+        auth: auth,
+        store: store,
+        backendAvailable: true,
+      )..start();
+      auth.uid = 'u1';
+      await _settle();
+      expect(repo.items, {'fresh-oyster-250': 5});
+
+      // Another device lowers the line (or removes it): never applied.
+      store.remoteChange({'fresh-oyster-250': 2});
+      await _settle();
+      expect(repo.items, {'fresh-oyster-250': 5});
+      expect(store.pushed, isEmpty);
+
+      // A snapshot holding MORE of a DIFFERENT line still merges, but only
+      // tops up the 500 line - the 250 line is never reduced to the account's
+      // lower copy, and the union (not the snapshot) is what reaches the
+      // account.
+      store.remoteChange({'fresh-oyster-250': 1, 'fresh-oyster-500': 3});
+      await _settle();
+      expect(repo.items, {'fresh-oyster-250': 5, 'fresh-oyster-500': 3});
+      expect(store.pushed, [
+        {'fresh-oyster-250': 5, 'fresh-oyster-500': 3},
+      ]);
+      sync.dispose();
+    },
+  );
+
+  test(
+    'when the live watch fails, the offer is the fallback and Load tops up',
+    () async {
+      final (repo, cart, _) = await _loadedCart();
+      await repo.add('fresh-oyster-250', 2);
+      final auth = _FakeAuth();
+      final store = _FakeStore()
+        ..cart = {'fresh-oyster-250': 1, 'fresh-oyster-500': 2}
+        ..watchShouldFail = true;
+      final sync = CartSyncController(
+        repository: repo,
+        cart: cart,
+        auth: auth,
+        store: store,
+        backendAvailable: true,
+      )..start();
+      auth.uid = 'u1';
+      await _settle();
+      // The watch could not connect: the account knowledge from the read is
+      // still offered, so nothing is stranded.
+      expect(sync.savedOfferVisible, isTrue);
       expect(sync.hasSavedCart, isTrue);
 
       await sync.loadAccountCart();
       // Topped up, not summed: 250 stays at 2 (the account's 1 is this
-      // cart's own mirror), and the other device's 500 line is added at 2.
+      // cart's own mirror), and the account's 500 line is added at 2.
       expect(repo.items, {'fresh-oyster-250': 2, 'fresh-oyster-500': 2});
       // The merged cart reached the account INSIDE the load call - there is
       // no debounce window left to lose it in.
       expect(store.pushed, [
         {'fresh-oyster-250': 2, 'fresh-oyster-500': 2},
       ]);
-      expect(sync.hasSavedCart, isFalse); // offer disappears
+      expect(sync.savedOfferVisible, isFalse); // offer disappears
+      expect(sync.hasSavedCart, isFalse);
       // And the load itself triggered no duplicate debounced write.
       await _settle(700);
       expect(store.pushed, hasLength(1));
@@ -296,7 +370,7 @@ void main() {
   );
 
   test(
-    'loading then logging out at once cannot lose the load',
+    'signing out right after the live-sync merge cannot lose the merge',
     () async {
       final (repo, cart, _) = await _loadedCart();
       await repo.add('fresh-oyster-250', 1);
@@ -311,15 +385,17 @@ void main() {
       )..start();
       auth.uid = 'u1';
       await _settle();
-      expect(sync.hasSavedCart, isTrue);
-
-      await sync.loadAccountCart();
-      // The account write completed inside the call...
+      // The live sync already merged the account's items and mirrored the
+      // union back - there is no debounce window left to lose anything in.
       expect(store.pushed, hasLength(1));
-      // ...so an immediate logout (which cancels the debounce) loses nothing.
+      expect(repo.items, {'fresh-oyster-250': 1, 'fresh-oyster-500': 2});
+
+      // An immediate logout (which cancels the debounce and the watch)
+      // loses nothing.
       auth.uid = null;
       await _settle();
       expect(store.cart, {'fresh-oyster-250': 1, 'fresh-oyster-500': 2});
+      expect(repo.items, {'fresh-oyster-250': 1, 'fresh-oyster-500': 2});
 
       // The next login reads the merged cart: nothing to offer, and a stray
       // load is a no-op - the same saved cart can never be counted twice.
@@ -335,7 +411,8 @@ void main() {
   );
 
   test(
-    'edits during the sign-in read never clobber unseen account items',
+    'edits during the sign-in read are never clobbered - live sync brings the '
+    'unseen items in',
     () async {
       final (repo, cart, products) = await _loadedCart();
       final auth = _FakeAuth();
@@ -358,16 +435,14 @@ void main() {
 
       store.fetchGate!.complete();
       await _settle(700);
-      // The unseen account items were not clobbered: no auto-push happened,
-      // the load offer took over instead.
-      expect(store.pushed, isEmpty);
-      expect(sync.hasSavedCart, isTrue);
-
-      await sync.loadAccountCart();
+      // The unseen account items were not clobbered and were NOT lost either:
+      // the live watch tops them in (never summed - 250 stays at 2, the
+      // account's 4 is added) and mirrors the union back.
       expect(repo.items, {'fresh-oyster-250': 2, 'fresh-oyster-500': 4});
       expect(store.pushed, [
         {'fresh-oyster-250': 2, 'fresh-oyster-500': 4},
       ]);
+      expect(sync.hasSavedCart, isFalse);
       sync.dispose();
     },
   );
@@ -421,7 +496,7 @@ void main() {
     sync.dispose();
   });
   test(
-    'sign-out keeps the local cart and drops the saved-cart offer',
+    'sign-out keeps the live-synced cart and stops the watch',
     () async {
       final (repo, cart, _) = await _loadedCart();
       final auth = _FakeAuth();
@@ -435,17 +510,23 @@ void main() {
       )..start();
       auth.uid = 'u1';
       await _settle();
-      expect(sync.hasSavedCart, isTrue);
+      // The live sync topped the cart up while signed in.
+      expect(repo.items, {'fresh-oyster-500': 2});
 
       auth.uid = null;
       await _settle();
 
-      // The guest cart keeps exactly what was there - nothing removed, nothing
-      // reverted, nothing merged in at the last moment.
-      expect(repo.items, <String, int>{});
-      expect(store.pushed, isEmpty);
+      // The guest cart keeps exactly what was there - the synced items are
+      // not reverted or removed on sign-out.
+      expect(repo.items, {'fresh-oyster-500': 2});
       expect(sync.hasSavedCart, isFalse);
+      expect(sync.savedOfferVisible, isFalse);
       expect(sync.syncedUid, isNull);
+
+      // The watch is stopped: a remote change after sign-out never merges in.
+      store.remoteChange({'fresh-oyster-500': 9});
+      await _settle();
+      expect(repo.items, {'fresh-oyster-500': 2});
       sync.dispose();
     },
   );

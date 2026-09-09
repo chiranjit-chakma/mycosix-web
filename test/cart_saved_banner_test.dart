@@ -18,27 +18,44 @@ import 'package:mycosix/state/cart_controller.dart';
 import 'package:mycosix/state/cart_sync_controller.dart';
 import 'package:mycosix/state/site_config_controller.dart';
 
-/// The saved-items banner on the cart page: it must be MOUNTED (it sits right
-/// under the delivery-pause notice), appear only when the signed-in account
-/// holds items that differ from this cart, and only ever change the cart when
-/// the customer taps Load - "Not now" and a matching account never move
-/// anything.
+/// The saved-items offer on the cart page: the OFFLINE FALLBACK for live cart
+/// sync. While the account watch is delivering, account items sync in on their
+/// own and the offer stays hidden; it is MOUNTED (it sits right under the
+/// delivery-pause notice) only when the live watch cannot reach the account
+/// and the account holds items that differ from this cart. A load always tops
+/// up - never sums - and "Not now" never moves anything.
 void main() {
   setUpAll(() async {
     await _loadFont('Manrope', 'assets/fonts/Manrope-Variable.ttf');
     await _loadFont('Fraunces', 'assets/fonts/Fraunces-Variable.ttf');
   });
 
-  testWidgets('offers saved items when the account differs - Load combines them',
+  testWidgets('live sync tops the cart up by itself - no offer, no tap',
       (tester) async {
     final ctx = await _seed(accountHolds: {'remote-only': 2}, localQty: 0);
     await _pump(tester, ctx);
 
-    // The offer is visible and names the count.
+    // The account watch delivered, so no offer appears - the other device's
+    // items synced into this cart by themselves and the union was mirrored.
+    expect(find.byKey(const Key('saved-cart-banner')), findsNothing);
+    expect(ctx.cart.totalQuantity, 2);
+    expect(ctx.store.pushed, hasLength(1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('when live sync cannot reach the account, the offer appears and '
+      'Load combines them', (tester) async {
+    final ctx = await _seed(
+      accountHolds: {'remote-only': 2},
+      localQty: 0,
+      watchBehavior: _WatchBehavior.error,
+    );
+    await _pump(tester, ctx);
+
+    // The watch failed, so the offer appears as the fallback and names the
+    // count. The sign-in read alone pushed nothing.
     expect(find.byKey(const Key('saved-cart-banner')), findsOneWidget);
     expect(find.textContaining('2 more items on this account'), findsOneWidget);
-
-    // Nothing was pushed by the sign-in read alone.
     expect(ctx.store.pushed, isEmpty);
 
     // Tapping Load combines the account items into this cart...
@@ -54,7 +71,11 @@ void main() {
 
   testWidgets('Not now hides the offer and never touches the cart',
       (tester) async {
-    final ctx = await _seed(accountHolds: {'remote-only': 2}, localQty: 0);
+    final ctx = await _seed(
+      accountHolds: {'remote-only': 2},
+      localQty: 0,
+      watchBehavior: _WatchBehavior.error,
+    );
     await _pump(tester, ctx);
     expect(find.byKey(const Key('saved-cart-banner')), findsOneWidget);
 
@@ -72,6 +93,7 @@ void main() {
     final ctx = await _seed(accountHolds: {'remote-only': 2}, localQty: 2);
     await _pump(tester, ctx);
     expect(find.byKey(const Key('saved-cart-banner')), findsNothing);
+    expect(ctx.store.pushed, isEmpty);
     expect(tester.takeException(), isNull);
   });
 
@@ -85,6 +107,8 @@ void main() {
   });
 }
 
+enum _WatchBehavior { live, error }
+
 class _FakeAuth extends ChangeNotifier implements CartSyncAuth {
   _FakeAuth(this._uid);
 
@@ -95,21 +119,35 @@ class _FakeAuth extends ChangeNotifier implements CartSyncAuth {
 }
 
 class _FakeStore implements RemoteCartStore {
-  _FakeStore(this.cart);
+  _FakeStore(this.cart, {this.watchBehavior = _WatchBehavior.live});
 
   Map<String, int> cart;
+  final _WatchBehavior watchBehavior;
   final List<Map<String, int>> pushed = [];
+  final _snapshots = StreamController<Map<String, int>>.broadcast();
 
   @override
   Future<Map<String, int>> fetch(String uid) async => Map.of(cart);
 
   @override
-  Stream<Map<String, int>> watch(String uid) => const Stream.empty();
+  Stream<Map<String, int>> watch(String uid) async* {
+    if (watchBehavior == _WatchBehavior.error) {
+      // A stream that cannot connect: the controller keeps the load offer as
+      // its offline fallback.
+      yield* Stream<Map<String, int>>.error(Exception('watch offline'));
+      return;
+    }
+    // Like a Firestore snapshot stream: the current document first, then
+    // live changes.
+    yield Map.of(cart);
+    yield* _snapshots.stream;
+  }
 
   @override
   Future<void> push(String uid, Map<String, int> items) async {
     pushed.add(Map.of(items));
     cart = Map.of(items);
+    _snapshots.add(Map.of(items));
   }
 }
 
@@ -118,6 +156,7 @@ class _FakeStore implements RemoteCartStore {
 Future<_Ctx> _seed({
   required Map<String, int> accountHolds,
   required int localQty,
+  _WatchBehavior watchBehavior = _WatchBehavior.live,
 }) async {
   SharedPreferences.setMockInitialValues({});
   final prefs = await SharedPreferences.getInstance();
@@ -135,7 +174,7 @@ Future<_Ctx> _seed({
     for (final e in accountHolds.entries)
       e.key == 'remote-only' ? firstId : e.key: e.value,
   };
-  final store = _FakeStore(remote);
+  final store = _FakeStore(remote, watchBehavior: watchBehavior);
   final auth = _FakeAuth('u1');
   final sync = CartSyncController(
     repository: cartRepo,
@@ -167,7 +206,8 @@ Future<void> _pump(WidgetTester tester, _Ctx ctx) async {
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
   await tester.pumpWidget(ctx.app);
-  // Sign-in fetch + banner rebuild.
+  // Sign-in fetch + first live snapshot (or watch failure) + rebuild.
+  await tester.pump(const Duration(milliseconds: 100));
   await tester.pump(const Duration(milliseconds: 100));
 }
 
