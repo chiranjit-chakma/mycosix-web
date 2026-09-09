@@ -10,7 +10,6 @@ import '../pages/pwa/pwa_registry.dart';
 import '../router/app_nav.dart';
 import '../router/routes.dart';
 import '../state/admin_reveal.dart';
-import '../state/auth_controller.dart';
 import '../state/cart_controller.dart';
 import '../state/site_config_controller.dart';
 import 'brand.dart';
@@ -54,10 +53,14 @@ class MxTopBar extends StatelessWidget {
     final currentRoute = ModalRoute.of(context)?.settings.name;
     bool isActive(String route) => !pagerLive && currentRoute == route;
 
-    // The Admin entry appears only when the owner turned it on in the admin
-    // area (siteConfig/public adminNavShortcutEnabled) AND the admin-session
-    // user is a server-verified administrator (admins/{uid} grant). It is
-    // never shown to a plain customer, and never based on a client flag.
+    // The Admin entry appears when the owner switched it on in the admin area
+    // (siteConfig/public adminNavShortcutEnabled). It is a DOORWAY, not a
+    // grant: the entry itself is shown to any visitor (exactly like the
+    // account-page "Admin" tile), and tapping it arms the admin gate, which
+    // still demands a server-verified administrator — a signed-in admin goes
+    // straight to the dashboard, everyone else sees the admin sign-in. Nothing
+    // here is ever an authorisation signal; the admins/{uid} grant enforced by
+    // the security rules stays the boundary.
     final adminNavVisible = _adminNavVisible(context);
 
     return _FrostPill(
@@ -110,6 +113,9 @@ class MxTopBar extends StatelessWidget {
                 active: isActive(Routes.admin),
                 label: 'Admin',
                 route: Routes.admin,
+                // Arm the reveal so a signed-out owner lands on the admin
+                // sign-in page; the gate hands off unsummoned visits home.
+                onTap: () => AdminReveal.shared.openAdmin(),
               ),
             ],
             const SizedBox(width: 8),
@@ -147,17 +153,17 @@ class MxTopBar extends StatelessWidget {
   }
 }
 
-/// Whether the Admin entry belongs in the top bar right now. Reads two
-/// server-backed sources: the admin session's grant status (AuthController
-/// watches the FbAdmin session + the admins/{uid} rules-gated grant) and the
-/// owner's navigation toggle (siteConfig/public, public-read). Falls back to
-/// hidden when the providers are absent (standalone widget tests), so the bar
-/// renders unchanged in isolation.
+/// Whether the Admin entry belongs in the top bar right now. Reads the
+/// owner's navigation toggle from siteConfig/public (public-read), which the
+/// toggle beside Logout in the admin area writes. Falls back to hidden when
+/// the provider is absent (standalone widget tests), so the bar renders
+/// unchanged in isolation. The entry is a doorway: it does not depend on the
+/// current admin session, because its whole purpose is to lead a signed-out
+/// owner to the admin sign-in — the gate still enforces the real boundary.
 bool _adminNavVisible(BuildContext context) {
   try {
-    final auth = context.watch<AuthController>();
     final site = context.watch<SiteConfigController>();
-    return auth.isAdmin == true && site.settings.adminNavShortcutEnabled;
+    return site.settings.adminNavShortcutEnabled;
   } on ProviderNotFoundException {
     return false;
   }
@@ -244,6 +250,7 @@ class _NavLink extends StatefulWidget {
     required this.active,
     required this.label,
     required this.route,
+    this.onTap,
   });
 
   /// Whether this link names the page currently shown. Only marked in a
@@ -255,6 +262,12 @@ class _NavLink extends StatefulWidget {
   final String label;
   final String route;
 
+  /// Optional tap override. Used by the Admin entry, which must arm the
+  /// reveal (so a signed-out visitor reaches the sign-in page rather than
+  /// being handed off) before navigating to the gate. When null, the link
+  /// navigates to [route] as usual.
+  final VoidCallback? onTap;
+
   @override
   State<_NavLink> createState() => _NavLinkState();
 }
@@ -263,6 +276,11 @@ class _NavLinkState extends State<_NavLink> {
   bool _focused = false;
 
   void _go() {
+    final custom = widget.onTap;
+    if (custom != null) {
+      custom();
+      return;
+    }
     AppNav.go(context, widget.route);
   }
 
@@ -316,9 +334,9 @@ class _NavLinkState extends State<_NavLink> {
   }
 }
 
-/// Admin entry point (signed-in administrators only). Uses the same arming
-/// call as the account-page tile, so the gate's summoner state stays
-/// consistent across every entry.
+/// Admin entry point. Uses the same arming call as the account-page tile and
+/// the top-bar Admin link, so the gate's summoner state stays consistent
+/// across every entry. Shown when the owner's navigation toggle is ON.
 class _AdminButton extends StatelessWidget {
   const _AdminButton({required this.onTap});
 
@@ -539,6 +557,28 @@ class MxDrawer extends StatelessWidget {
                       ),
                     ),
                   ),
+                  // The Admin entry follows the same owner's navigation toggle
+                  // as the top-bar link/button (a doorway — see
+                  // [_adminNavVisible]): tapping it arms the gate so a
+                  // signed-out owner reaches the admin sign-in.
+                  if (liveSiteSettings(context).adminNavShortcutEnabled)
+                    ListTile(
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        AdminReveal.shared.openAdmin();
+                      },
+                      leading: const Icon(
+                        Icons.admin_panel_settings_outlined,
+                        color: MxColors.moss,
+                      ),
+                      title: Text(
+                        'Admin',
+                        style: MxType.bodySm(
+                          color: MxColors.charcoal,
+                          weight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),

@@ -238,12 +238,14 @@ class _NavItem extends StatelessWidget {
 ///
 /// The toggle is a NAVIGATION-VISIBILITY preference only (stored on
 /// siteConfig/public, public-read/admin-write like the rest of the settings):
-/// when ON, the site's top bar shows an Admin entry for a signed-in
-/// administrator; when OFF the entry is hidden and admin access continues
-/// exactly as before (account-page tile / secret-code / direct gate). It is
-/// never treated as proof of admin authorisation — the admins/{uid} grant
-/// enforced by the security rules remains the boundary, and the Admin entry
-/// only ever appears for a signed-in admin regardless of this flag.
+/// when ON, the site's navigation shows an Admin entry that leads to this
+/// area (a doorway for the owner — a signed-out visitor reaches the admin
+/// sign-in, a signed-in administrator the dashboard); when OFF the entry is
+/// hidden and admin access continues exactly as before (account-page tile /
+/// secret-code / direct gate). The entry is never treated as proof of admin
+/// authorisation — the admins/{uid} grant enforced by the security rules
+/// remains the boundary, and the gate always demands it before showing any
+/// admin content, regardless of this flag.
 class _AccountFooter extends StatelessWidget {
   const _AccountFooter({this.compact = false});
 

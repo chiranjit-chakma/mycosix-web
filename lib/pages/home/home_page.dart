@@ -401,7 +401,17 @@ class _FeaturedRailState extends State<_FeaturedRail> {
 
   void _onScroll() {
     final pos = _scroller.hasClients ? _scroller.position : null;
-    if (pos == null) return;
+    // A rail ScrollPosition can be attached (hasClients) a frame before the
+    // viewport applies it: `pixels` reads `_pixels!` and `maxScrollExtent`
+    // reads `_maxScrollExtent!`, and both are still null at that instant
+    // (deep-link boots build the home rail beneath a pushed route). The
+    // desktop post-frame refresh must no-op until the position actually has
+    // pixels and content dimensions, or it crashes on the null check.
+    if (pos == null ||
+        !pos.hasPixels ||
+        !pos.hasContentDimensions) {
+      return;
+    }
     final canPrev = pos.pixels > 1.0;
     final canNext =
         pos.maxScrollExtent > 1.0 && pos.pixels < pos.maxScrollExtent - 1.0;
