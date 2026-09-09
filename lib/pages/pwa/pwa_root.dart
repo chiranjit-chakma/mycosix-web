@@ -6,7 +6,9 @@ import 'package:flutter/services.dart';
 import '../../config/mx_colors.dart';
 import '../../router/routes.dart';
 import '../../services/app_exit.dart';
+import '../../state/admin_reveal.dart';
 import '../../state/back_press_controller.dart';
+import '../../state/site_config_controller.dart';
 import '../../widgets/footer.dart';
 import '../../widgets/top_bar.dart';
 import '../farm/farm_page.dart';
@@ -37,6 +39,37 @@ int primarySectionIndex(String route) {
   }
 }
 
+/// Dock index of the optional Admin destination, inserted between the last
+/// two primary sections (Journey and Profile) when the owner's navigation
+/// toggle is on. Admin is an ACTION, not a pager page, so with it present the
+/// Profile destination shifts one slot right on the dock.
+int adminDockIndex(int sectionCount) => sectionCount - 1;
+
+/// Dock index that shows pager section [pager] when the optional Admin dock
+/// destination is inserted before the final section (Profile).
+int dockIndexForPager({
+  required int pager,
+  required bool adminOn,
+  required int sectionCount,
+}) {
+  if (!adminOn || pager < adminDockIndex(sectionCount)) return pager;
+  return pager + 1;
+}
+
+/// Pager section a dock tap on [dock] means — Profile (the last section) sits
+/// one slot right of the Admin action when it is present. The Admin slot
+/// itself is never routed here (the dock's action handler opens it instead).
+int pagerIndexForDock({
+  required int dock,
+  required bool adminOn,
+  required int sectionCount,
+}) {
+  if (adminOn && dock >= adminDockIndex(sectionCount)) {
+    return sectionCount - 1;
+  }
+  return dock;
+}
+
 /// The five primary sections of the installed MYCOSIX app, in page order.
 /// Each page renders in its embedded form — content only, no per-page shell —
 /// because the paging shell provides the app chrome (floating top bar,
@@ -64,6 +97,31 @@ const List<IconData> kPwaSectionIcons = <IconData>[
   Icons.route_rounded,
   Icons.person_rounded,
 ];
+
+/// The Admin dock destination. Its slot sits between the last two primary
+/// sections (Journey and Profile) — see [adminDockIndex]. It is a DOORWAY to
+/// the admin gate ([AdminReveal.openAdmin]), never a section the pager can
+/// land on.
+const String kAdminDockLabel = 'Admin';
+const IconData kAdminDockIcon = Icons.admin_panel_settings_outlined;
+
+/// Dock destination labels for the installed app: the five primary sections,
+/// with the optional Admin doorway inserted between Journey and Profile while
+/// the owner's navigation toggle is on.
+List<String> pwaDockLabels({required bool adminOn}) {
+  if (!adminOn) return kPwaSectionLabels;
+  final labels = kPwaSectionLabels.toList();
+  labels.insert(adminDockIndex(labels.length), kAdminDockLabel);
+  return labels;
+}
+
+/// Dock destination icons, parallel to [pwaDockLabels].
+List<IconData> pwaDockIcons({required bool adminOn}) {
+  if (!adminOn) return kPwaSectionIcons;
+  final icons = kPwaSectionIcons.toList();
+  icons.insert(adminDockIndex(icons.length), kAdminDockIcon);
+  return icons;
+}
 
 /// Home's slot in the paging shell: the centre of the five sections
 /// (Farm 0, Shop 1, Home 2, Journey 3, Profile 4), so the shell opens and
@@ -260,6 +318,26 @@ class _MxPwaRootState extends State<MxPwaRoot>
     );
   }
 
+  /// A tap or release on dock destination [dock]. The five primary sections
+  /// switch the pager and report that the strip may rest on them; the
+  /// optional Admin doorway is an ACTION, not a section — it arms the admin
+  /// reveal (which pushes the gate over the pager) and reports false, so the
+  /// strip never rests on a slot with no page beneath it.
+  bool _onDockSelect(int dock, bool adminOn) {
+    if (adminOn && dock == adminDockIndex(widget.sections.length)) {
+      AdminReveal.shared.openAdmin();
+      return false;
+    }
+    _switchTo(
+      pagerIndexForDock(
+        dock: dock,
+        adminOn: adminOn,
+        sectionCount: widget.sections.length,
+      ),
+    );
+    return true;
+  }
+
   /// System back inside the app: any section other than Home glides back
   /// to Home (the customer's anchor, the centre of the shell) in one step;
   /// back on Home runs the exit guard (scroll to top, then "press back
@@ -303,6 +381,14 @@ class _MxPwaRootState extends State<MxPwaRoot>
     // keyboard inset inside the layout viewport.
     final keyboardOpen =
         _editingFocus || MediaQuery.viewInsetsOf(context).bottom > 80.0;
+    // The optional Admin doorway between Journey and Profile follows the
+    // owner's navigation toggle (siteConfig/public adminNavShortcutEnabled),
+    // read live so toggling it updates the dock without a reload. When the
+    // provider is absent (a widget test building the pager alone) it falls
+    // back to the bundled default: no Admin destination.
+    final adminOn = liveSiteSettings(context).adminNavShortcutEnabled;
+    final dockLabels = pwaDockLabels(adminOn: adminOn);
+    final dockIcons = pwaDockIcons(adminOn: adminOn);
     return PopScope(
       // The pager owns the system back button while it is the top route.
       canPop: false,
@@ -370,10 +456,17 @@ class _MxPwaRootState extends State<MxPwaRoot>
                           constraints: const BoxConstraints(maxWidth: 620),
                           child: PwaDock(
                             key: const Key('pwa-dock'),
-                            index: _index,
-                            labels: kPwaSectionLabels,
-                            icons: kPwaSectionIcons,
-                            onSelect: _switchTo,
+                            // The dock anchor is the current section's dock
+                            // slot; with the Admin doorway present, Profile
+                            // shifts one slot right of it.
+                            index: dockIndexForPager(
+                              pager: _index,
+                              adminOn: adminOn,
+                              sectionCount: widget.sections.length,
+                            ),
+                            labels: dockLabels,
+                            icons: dockIcons,
+                            onSelect: (dock) => _onDockSelect(dock, adminOn),
                             compression: _dockT,
                           ),
                         ),

@@ -7,18 +7,22 @@ import 'package:mycosix/state/customer_auth_controller.dart';
 /// switched on yet" state before the owner enables that provider once in the
 /// Firebase console.
 void main() {
-  test('twitter operation-not-allowed names Twitter and the console switch',
-      () {
-    final m = friendlyTwitterSignInError(
-      FirebaseAuthException(code: 'operation-not-allowed'),
-    );
-    expect(m, contains('Twitter'));
-    expect(m, contains('Firebase console'));
-    expect(m, contains('email + password'));
-    expect(m,
+  test(
+    'twitter operation-not-allowed names Twitter and the console switch',
+    () {
+      final m = friendlyTwitterSignInError(
+        FirebaseAuthException(code: 'operation-not-allowed'),
+      );
+      expect(m, contains('Twitter'));
+      expect(m, contains('Firebase console'));
+      expect(m, contains('email + password'));
+      expect(
+        m,
         isNot(contains('operation-not-allowed')),
-        reason: 'no raw error codes');
-  });
+        reason: 'no raw error codes',
+      );
+    },
+  );
 
   test('yahoo operation-not-allowed names Yahoo and the console switch', () {
     final m = friendlyYahooSignInError(
@@ -46,13 +50,15 @@ void main() {
     expect(m, contains('pop-ups'));
   });
 
-  test('account-exists-with-different-credential points at password sign-in',
-      () {
-    final m = friendlyYahooSignInError(
-      FirebaseAuthException(code: 'account-exists-with-different-credential'),
-    );
-    expect(m, contains('password'));
-  });
+  test(
+    'account-exists-with-different-credential points at password sign-in',
+    () {
+      final m = friendlyYahooSignInError(
+        FirebaseAuthException(code: 'account-exists-with-different-credential'),
+      );
+      expect(m, contains('password'));
+    },
+  );
 
   test('google messages still name Google after the shared-core refactor', () {
     final m = friendlyGoogleSignInError(
@@ -61,14 +67,27 @@ void main() {
     expect(m, contains('Google'));
   });
 
-  test('unknown twitter auth errors fall back to the shared friendly message',
-      () {
-    final m = friendlyTwitterSignInError(
-      FirebaseAuthException(code: 'unrecognised-code'),
-    );
-    expect(m, isNotEmpty);
-    expect(m, isNot(contains('Twitter')), reason: 'no provider internals');
-  });
+  test(
+    'unknown twitter auth errors fall back to the shared friendly message',
+    () {
+      final m = friendlyTwitterSignInError(
+        FirebaseAuthException(code: 'unrecognised-code'),
+      );
+      expect(m, isNotEmpty);
+      expect(m, isNot(contains('Twitter')), reason: 'no provider internals');
+    },
+  );
+
+  test(
+    'a twitter unauthorized-domain names Twitter and the console setting',
+    () {
+      final m = friendlyTwitterSignInError(
+        FirebaseAuthException(code: 'unauthorized-domain'),
+      );
+      expect(m, contains('Twitter'));
+      expect(m, contains('Authorized domains'));
+    },
+  );
 
   test('non-auth errors fall back safely too', () {
     final m = friendlyYahooSignInError(Exception('boom'));

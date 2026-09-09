@@ -44,14 +44,14 @@ double _labelOpacity(double t) {
 /// The installed phone app's primary navigation: a floating frosted-glass
 /// dock that behaves like a carousel, not a static bar.
 ///
-/// The five destinations ride a frosted glass carrier — the same blur, wash,
+/// The destinations ride a frosted glass carrier — the same blur, wash,
 /// hairline and shadow recipe as the browser's floating top pill, so the two
 /// navigations read as one system. Only the active destination is enlarged
 /// and tinted deep forest with a small brand underline and its caption;
 /// inactive destinations sit smaller and quieter, and the strip slides so
 /// the selected glyph is always the largest, centred one.
 ///
-/// Five destinations ride a strip that tracks the finger 1:1 while dragged
+/// The destinations ride a strip that tracks the finger 1:1 while dragged
 /// horizontally. The item nearest the strip's centre is the live selection;
 /// releasing springs that item into the centre and opens its section. A
 /// quick tap on any destination (or on the empty space around it, which maps
@@ -88,9 +88,13 @@ class PwaDock extends StatefulWidget {
   final List<String> labels;
   final List<IconData> icons;
 
-  /// Called with the chosen section when a tap picks it or a drag releases
-  /// on it. The parent glides the pager while the dock springs in parallel.
-  final ValueChanged<int> onSelect;
+  /// Called with the chosen destination when a tap picks it or a drag
+  /// releases on it. The parent switches the pager for a primary section and
+  /// returns true, so the strip settles centred on that destination; the
+  /// optional Admin doorway returns false (it pushed an overlay instead and
+  /// no pager section moved) and the strip glides back to [index] — it never
+  /// rests on a slot that has no page beneath it.
+  final bool Function(int) onSelect;
 
   /// Page-scroll position as a 0..1 animation (1 = fully compressed).
   final Animation<double> compression;
@@ -99,8 +103,7 @@ class PwaDock extends StatefulWidget {
   State<PwaDock> createState() => _PwaDockState();
 }
 
-class _PwaDockState extends State<PwaDock>
-    with SingleTickerProviderStateMixin {
+class _PwaDockState extends State<PwaDock> with SingleTickerProviderStateMixin {
   /// Continuous carousel position: 0 = first label centred, n-1 = last
   /// centred. Fractions are the strip mid-slide between two sections.
   double _frac = 0;
@@ -196,17 +199,25 @@ class _PwaDockState extends State<PwaDock>
 
   void _select(int target) {
     final index = target.clamp(0, _last);
+    final settledOnPage = widget.onSelect(index);
+    if (!settledOnPage) {
+      // The destination was an overlay-opening ACTION (the optional Admin
+      // doorway), not a pager section: spring back to the resting section so
+      // the strip is never left centred on a slot with no page beneath it.
+      if ((widget.index - _frac).abs() > 0.001) {
+        _animateTo(widget.index.toDouble());
+      }
+      return;
+    }
     if ((index - _frac).abs() > 0.001) _animateTo(index.toDouble());
-    widget.onSelect(index);
   }
 
   /// A tap anywhere on the dock (glyph or the empty space around it) picks
   /// the nearest item — the strip position tells us which.
   void _tapAt(double localDx) {
-    final index =
-        (_frac + (localDx - _capsuleWidth / 2) / _slotPx)
-            .round()
-            .clamp(0, _last);
+    final index = (_frac + (localDx - _capsuleWidth / 2) / _slotPx)
+        .round()
+        .clamp(0, _last);
     _select(index);
   }
 
@@ -225,7 +236,12 @@ class _PwaDockState extends State<PwaDock>
         // and the band tightens toward a compact floating cluster. Neither
         // axis is a scale transform — real spacing and sizes change, so touch
         // targets and rendering stay crisp at every compression.
-        final slotE = math.min(66.0, (screenWidth - 24.0) / 5);
+        // Slot pitch fits every destination; with the optional Admin doorway
+        // the strip simply tightens one slot.
+        final slotE = math.min(
+          66.0,
+          (screenWidth - 24.0) / widget.labels.length,
+        );
         final slot = slotE * (1.0 - _kCompress * t);
         final wideWidth = (screenWidth - 24.0).clamp(240.0, 620.0);
         _capsuleWidth = wideWidth * (1.0 - _kCompress * t);
@@ -302,9 +318,7 @@ class _PwaDockState extends State<PwaDock>
                           0,
                         ),
                         child: _DockItem(
-                          key: Key(
-                            'pwa-nav-${widget.labels[i].toLowerCase()}',
-                          ),
+                          key: Key('pwa-nav-${widget.labels[i].toLowerCase()}'),
                           label: widget.labels[i],
                           icon: widget.icons[i],
                           selected: i == active,
@@ -312,12 +326,7 @@ class _PwaDockState extends State<PwaDock>
                           labelOpacity: _labelOpacity(t),
                           slot: slot,
                           stripHeight: height,
-                          opacity: _itemOpacity(
-                            _frac,
-                            i,
-                            _capsuleWidth,
-                            slot,
-                          ),
+                          opacity: _itemOpacity(_frac, i, _capsuleWidth, slot),
                           scale: _itemScale(_frac, i),
                         ),
                       ),

@@ -47,13 +47,23 @@ class AdminReveal extends ChangeNotifier {
   /// Tracks the current top route so a summon never stacks /admin on itself.
   final NavigatorObserver routeObserver = _TopRouteObserver();
 
-  /// Called by the visible "Admin" entry (the navigation link/drawer tile the
+  /// Called by the visible "Admin" entry (the navigation link/drawer/dock the
   /// owner's toggle adds, or the shop search-bar summon). Arms the admin
-  /// sign-in and navigates to the gate. Idempotent — a second tap while
-  /// already heading there does nothing.
-  void openAdmin() => _armSignIn();
-
-  void _armSignIn() => _set(AdminRevealStage.signIn);
+  /// sign-in and navigates to the gate.
+  ///
+  /// Safe to call any number of times in a session. The summon stands down
+  /// ONLY while /admin is already the top route (the gate is revealing there,
+  /// so nothing is pushed on top of itself). The moment the visitor leaves
+  /// the admin page — without ever re-launching the app — a fresh summon
+  /// opens it again. Previously the stage stayed "armed" after the first
+  /// summon and every later summon no-op'd until the app was reloaded.
+  void openAdmin() {
+    if (_stage != AdminRevealStage.signIn) {
+      _set(AdminRevealStage.signIn);
+      return; // The transition above already navigated.
+    }
+    _goIfNeeded();
+  }
 
   /// Test hook: return to the fully hidden state.
   @visibleForTesting

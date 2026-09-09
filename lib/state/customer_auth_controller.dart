@@ -37,7 +37,6 @@ CustomerAuthStatus resolveCustomerAuthStatus({
   return CustomerAuthStatus.signedIn;
 }
 
-
 /// Maps a Google sign-in failure to a short, human-safe message. Kept free of
 /// Firebase state so it can be unit-tested without a live backend. The
 /// "operation-not-allowed" case is expected until the owner enables the
@@ -75,6 +74,20 @@ String friendlyOAuthSignInError(Object error, {required String method}) {
       case 'account-exists-with-different-credential':
         return 'An account with this email already exists with a password. '
             'Sign in with your email + password instead.';
+      case 'unauthorized-domain':
+        return '$method sign-in is not allowed from this web address yet. '
+            'The owner needs to add it in the Firebase console under '
+            'Authentication > Settings > Authorized domains.';
+      case 'web-storage-unsupported':
+        return 'This browser is blocking the storage $method sign-in needs '
+            "(Private/Incognito windows and 'block all cookies' both do "
+            'this). Use a normal window, or allow cookies for this site.';
+      case 'redirect-cancelled-by-user':
+        return 'The $method sign-in window was cancelled. Try again when '
+            'you are ready.';
+      case 'cancelled-popup-request':
+        return 'Another $method sign-in was already opening. Wait a moment '
+            'and try again.';
       case 'invalid-credential':
       case 'user-not-found':
         return '$method could not confirm this account. Try again, or use '
@@ -85,7 +98,6 @@ String friendlyOAuthSignInError(Object error, {required String method}) {
   }
   return Fb.friendlyMessage(error);
 }
-
 
 /// Customer authentication state — registration, sign-in, sign-out, password
 /// recovery and email verification, all through Firebase Auth's own secure
@@ -143,6 +155,16 @@ class CustomerAuthController extends ChangeNotifier implements CartSyncAuth {
   /// Last positive confirmation ("reset email sent"), or null.
   String? _notice;
   String? get notice => _notice;
+
+  /// True while a social sign-in is finishing through the full-page redirect
+  /// flow (its popup was blocked on the web). The whole page is on its way to
+  /// the provider; the auth-state listener completes the session when the
+  /// browser returns, so nothing may touch the navigator in the meantime.
+  bool _redirectInFlight = false;
+  bool get redirectInFlight => _redirectInFlight;
+
+  /// Clears the redirect flag once the caller has stood aside for it.
+  void clearRedirectInFlight() => _redirectInFlight = false;
 
   StreamSubscription<User?>? _authSub;
 
@@ -250,11 +272,28 @@ class CustomerAuthController extends ChangeNotifier implements CartSyncAuth {
   }) async {
     if (!_backendAvailable) return false;
     _clearFeedback();
+    _redirectInFlight = false;
     notifyListeners();
     try {
       await Fb.auth.signInWithPopup(provider);
       return true;
     } catch (e) {
+      // On the web a blocked popup - an installed-app window, an in-app
+      // browser, or a strict popup blocker - is not a dead end: retry the
+      // same provider through the full-page redirect flow. The auth-state
+      // listener signs the customer in when the browser returns, so the
+      // caller must leave the navigator alone (see [redirectInFlight]).
+      if (kIsWeb && e is FirebaseAuthException && e.code == 'popup-blocked') {
+        try {
+          await Fb.auth.signInWithRedirect(provider);
+          _redirectInFlight = true;
+          return true;
+        } catch (redirectError) {
+          _message = friendly(redirectError);
+          notifyListeners();
+          return false;
+        }
+      }
       _message = friendly(e);
       notifyListeners();
       return false;
@@ -294,10 +333,12 @@ class CustomerAuthController extends ChangeNotifier implements CartSyncAuth {
       // Verification email: best effort, reported honestly.
       try {
         await cred.user?.sendEmailVerification();
-        _notice = 'Account created. We sent a verification link to '
+        _notice =
+            'Account created. We sent a verification link to '
             '$trimmedEmail — tap it when you get a moment.';
       } catch (e) {
-        _notice = 'Account created. We could not send the verification email '
+        _notice =
+            'Account created. We could not send the verification email '
             'right now — you can resend it from this page.';
         debugPrint('MYCOSIX: verification email not sent ($e)');
       }
@@ -318,7 +359,8 @@ class CustomerAuthController extends ChangeNotifier implements CartSyncAuth {
     notifyListeners();
     try {
       await Fb.auth.sendPasswordResetEmail(email: email.trim());
-      _notice = 'If that email has an account, a reset link is on its way. '
+      _notice =
+          'If that email has an account, a reset link is on its way. '
           'Check your inbox (and spam folder).';
       notifyListeners();
       return true;

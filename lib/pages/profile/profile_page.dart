@@ -100,6 +100,13 @@ class _ProfilePageState extends State<ProfilePage> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (!ok) return;
+    // A web redirect fallback (the popup was blocked) is navigating the whole
+    // page to the provider; the auth-state listener signs the customer in
+    // when the browser returns, so the navigator must be left alone here.
+    if (_auth.redirectInFlight) {
+      _auth.clearRedirectInFlight();
+      return;
+    }
     // The session is live; go back to wherever sent the customer here (or the
     // account hub appears below).
     if (widget.returnRoute != null) {
