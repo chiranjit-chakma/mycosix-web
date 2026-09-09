@@ -1,4 +1,5 @@
 import '../config/mx_config.dart';
+import 'delivery_tier.dart';
 
 /// Site-wide configuration the business controls.
 ///
@@ -21,6 +22,9 @@ class SiteSettings {
     this.mapsEmbedUrl = MxConfig.mapsEmbedUrl,
     this.supportEmail,
     this.phoneNumber,
+    this.shopLatitude,
+    this.shopLongitude,
+    this.deliveryTiers = const [],
   });
 
   final String businessName;
@@ -49,6 +53,33 @@ class SiteSettings {
   final String? supportEmail;
   final String? phoneNumber;
 
+  /// The farm/shop delivery point, and the distance bands that price
+  /// delivery. Until an admin sets BOTH the shop coordinates AND at least one
+  /// tier, delivery stays on the flat [deliveryFee] (the legacy behaviour);
+  /// once set, every delivery charge is the fee of the first tier whose
+  /// `upToKm` covers the straight-line distance from the customer's pin to
+  /// the shop — and a pin beyond the last tier is outside the delivery area.
+  final double? shopLatitude;
+  final double? shopLongitude;
+  final List<DeliveryTier> deliveryTiers;
+
+  /// Whether distance-based delivery pricing is switched on (a shop point and
+  /// at least one valid tier are configured).
+  bool get hasDistancePricing =>
+      shopLatitude != null &&
+      shopLongitude != null &&
+      deliveryTiers.any((t) => t.isValid);
+
+  /// The furthest distance any tier covers; null when pricing is not on.
+  double? get maxDeliveryKm {
+    if (!hasDistancePricing) return null;
+    var max = 0.0;
+    for (final t in deliveryTiers) {
+      if (t.isValid && t.upToKm > max) max = t.upToKm;
+    }
+    return max;
+  }
+
   /// Formats a stored WhatsApp number (digits, country code first) for display.
   static String displayNumber(String digits) {
     var d = digits.replaceAll(RegExp(r'\D'), '');
@@ -75,6 +106,9 @@ class SiteSettings {
     String? mapsEmbedUrl,
     String? supportEmail,
     String? phoneNumber,
+    double? shopLatitude,
+    double? shopLongitude,
+    List<DeliveryTier>? deliveryTiers,
   }) {
     return SiteSettings(
       businessName: businessName ?? this.businessName,
@@ -90,6 +124,9 @@ class SiteSettings {
       mapsEmbedUrl: mapsEmbedUrl ?? this.mapsEmbedUrl,
       supportEmail: supportEmail ?? this.supportEmail,
       phoneNumber: phoneNumber ?? this.phoneNumber,
+      shopLatitude: shopLatitude ?? this.shopLatitude,
+      shopLongitude: shopLongitude ?? this.shopLongitude,
+      deliveryTiers: deliveryTiers ?? this.deliveryTiers,
     );
   }
 
@@ -109,6 +146,10 @@ class SiteSettings {
     'mapsEmbedUrl': mapsEmbedUrl,
     'supportEmail': supportEmail,
     'phoneNumber': phoneNumber,
+    if (shopLatitude != null) 'shopLatitude': shopLatitude,
+    if (shopLongitude != null) 'shopLongitude': shopLongitude,
+    if (deliveryTiers.isNotEmpty)
+      'deliveryTiers': [for (final t in deliveryTiers) t.toMap()],
   };
 
   factory SiteSettings.fromMap(Map<String, dynamic> map) {
@@ -136,6 +177,28 @@ class SiteSettings {
           clean(map['mapsEmbedUrl'] as String?) ?? MxConfig.mapsEmbedUrl,
       supportEmail: clean(map['supportEmail'] as String?),
       phoneNumber: clean(map['phoneNumber'] as String?),
+      shopLatitude: map['shopLatitude'] == null
+          ? null
+          : (map['shopLatitude'] as num).toDouble(),
+      shopLongitude: map['shopLongitude'] == null
+          ? null
+          : (map['shopLongitude'] as num).toDouble(),
+      deliveryTiers: _tiersFrom(map['deliveryTiers']),
     );
+  }
+
+  /// Reads the stored tier list defensively: invalid or non-map entries are
+  /// dropped, valid tiers are kept and sorted by distance ascending (the
+  /// pricing walk relies on that order). Anything unreadable reads as no
+  /// tiers — which simply means flat-fee delivery, never a crash.
+  static List<DeliveryTier> _tiersFrom(Object? raw) {
+    if (raw is! List) return const [];
+    final tiers = <DeliveryTier>[];
+    for (final entry in raw) {
+      final t = DeliveryTier.fromMap(entry);
+      if (t.isValid) tiers.add(t);
+    }
+    tiers.sort((a, b) => a.upToKm.compareTo(b.upToKm));
+    return tiers;
   }
 }

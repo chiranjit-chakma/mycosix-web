@@ -314,10 +314,15 @@ class _SummaryCard extends StatelessWidget {
           _SummaryRow(label: 'Subtotal', value: formatRupees(cart.subtotal)),
           const SizedBox(height: 10),
           _SummaryRow(
-            label: 'Delivery',
-            value: cart.deliveryFee > 0
-                ? formatRupees(cart.deliveryFee)
-                : 'Free',
+            label: cart.deliveryQuote.known &&
+                    cart.deliveryQuote.distanceKm != null
+                ? 'Delivery (${cart.deliveryQuote.distanceLabel})'
+                : 'Delivery',
+            value: cart.deliveryUnavailable
+                ? 'Not available here'
+                : (cart.deliveryFee > 0
+                    ? formatRupees(cart.deliveryFee)
+                    : 'Free'),
           ),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),

@@ -45,4 +45,10 @@ class MxConfig {
   /// Delivery service area shown in site copy (footer, product pages). This is
   /// the business's call — edit here when the delivery footprint changes.
   static const serviceArea = 'Mysore, Karnataka';
+
+  /// Where the delivery map first centres when a customer has no saved pin
+  /// yet (the business's home city). The customer can drag the pin anywhere
+  /// in the world from here; it is only a starting view, never a restriction.
+  static const defaultLatitude = 12.2958;
+  static const defaultLongitude = 76.6394;
 }

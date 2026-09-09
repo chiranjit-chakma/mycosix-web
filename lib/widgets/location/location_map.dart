@@ -21,13 +21,15 @@ import 'location_math.dart';
 ///    over an oversized canvas, elastic-banded at its edges — dragging can
 ///    never expose an empty gap; releasing re-centers the embed on the spot
 ///    now under the pin.
-///  * Pinch two fingers in or out: zoom (street level 14 .. 20) around the
+///  * Pinch two fingers in or out: zoom (world 3 .. street 20) around the
 ///    spot under the pin; releasing settles on the nearest whole level,
 ///    exactly like the + / - buttons.
 ///  * Tap anywhere: drops the pin exactly under the finger (no reload).
 ///  * Drag the pin: fine-tunes the spot without any reload.
-///  * + / - zoom (street level 14 .. 20) scales around the pin's spot too, so
+///  * + / - zoom (world 3 .. street 20) scales around the pin's spot too, so
 ///    the customer can zoom right down to their building without losing it.
+///    Zooming all the way OUT to level 3 shows whole countries, so a long
+///    drag can take the pin across towns or across the world in a few moves.
 ///
 /// The pin marks the exact candidate in every state. Re-centering the embed
 /// (a pan release, a zoom step, or an external move such as GPS) swaps the
@@ -56,9 +58,12 @@ class LocationMap extends StatefulWidget {
 
 class _LocationMapState extends State<LocationMap> {
   /// Zoom bounds for the embed. 20 is close enough to read a building
-  /// outline; 14 still shows the surrounding streets so the customer can
-  /// find their block first.
-  static const int minZoom = 14;
+  /// outline; 3 is whole-countries wide, so zooming out makes a long drag
+  /// (even to another city or country) possible — the customer first finds
+  /// the area, then zooms back in to their spot. The Google embed reliably
+  /// renders country-level tiles from level 3 down; lower levels would show
+  /// blank oceans.
+  static const int minZoom = 3;
   static const int maxZoom = 20;
   static const int initialZoom = 17;
 
@@ -189,11 +194,13 @@ class _LocationMapState extends State<LocationMap> {
     tip.dy.clamp(2.0, math.max(2.0, _size.height - 2)),
   );
 
-  /// Canvas margin for paper travel on each axis: 60% of that axis, so a
-  /// whole generous drag can slide before resistance builds. The embed
-  /// viewport is larger than the map's clip by one band on every side.
-  double get _paperBandX => _size.width * 0.60;
-  double get _paperBandY => _size.height * 0.60;
+  /// Canvas margin for paper travel on each axis: 75% of that axis, so a
+  /// whole long drag can slide before resistance builds (at world zoom a
+  /// single drag can cross a country; at street zoom a single drag covers a
+  /// neighbourhood). The embed viewport is larger than the map's clip by one
+  /// band on every side.
+  double get _paperBandX => _size.width * 0.75;
+  double get _paperBandY => _size.height * 0.75;
 
   /// Elastic bound on paper travel: the paper eases toward the canvas edge
   /// as the finger keeps pushing, and can never pass it — real imagery

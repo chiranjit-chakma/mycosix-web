@@ -80,6 +80,20 @@ function round2(v) {
   return Math.round(v * 100) / 100;
 }
 
+/** Great-circle (haversine) distance in km between two coordinates. */
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const radiusKm = 6371.0;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  return 2 * radiusKm * Math.asin(Math.sqrt(a));
+}
+
 function str(v, fallback) {
   return typeof v === 'string' && v.trim() ? v.trim() : fallback;
 }
@@ -201,13 +215,10 @@ function cleanse(data) {
   if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
     throw fail('invalid-argument', 'The delivery location was not recognised.');
   }
-  if (lat < LAT_MIN || lat > LAT_MAX || lng < LNG_MIN || lng > LNG_MAX) {
-    throw fail(
-      'failed-precondition',
-      'That pinned delivery location is outside the area we deliver to.',
-    );
-  }
-
+  // No delivery-area check here: the area rule is a property of how the
+  // site charges delivery, not of the coordinates themselves. The flat-fee
+  // fallback applies the generous India plausibility box below, while
+  // distance pricing lets the configured tiers (and their coverage) decide.
   const mapsUrl = typeof data.mapsUrl === 'string' ? data.mapsUrl.trim() : '';
   if (!isValidMapsUrl(mapsUrl)) {
     throw fail(
@@ -327,6 +338,56 @@ async function placeOrder(
     }
     let deliveryFee = toNonNeg(cfg.deliveryFee);
     if (deliveryFee === null) deliveryFee = DEFAULTS.deliveryFee;
+    let deliveryDistanceKm = null;
+    // Distance-based pricing: when the site runs a shop point + tiers (the
+    // same siteConfig/public document the customer site quotes from), the
+    // straight-line distance from the shop to the pin picks the FIRST tier
+    // that covers it (fee 0 = free). Beyond every tier the order is refused
+    // - that spot is outside the delivery area. Without distance pricing the
+    // legacy flat fee applies, and only then does the generous India
+    // plausibility box below come into play.
+    const shopLat = typeof cfg.shopLatitude === 'number' ? cfg.shopLatitude : NaN;
+    const shopLng = typeof cfg.shopLongitude === 'number' ? cfg.shopLongitude : NaN;
+    const rawTiers = Array.isArray(cfg.deliveryTiers) ? cfg.deliveryTiers : null;
+    const tiers = Array.isArray(rawTiers)
+      ? rawTiers
+          .filter(
+            (t) =>
+              t && Number.isFinite(t.km) && Number.isFinite(t.fee) &&
+              t.km > 0 && t.fee >= 0,
+          )
+          .sort((a, b) => a.km - b.km)
+      : [];
+    const distancePricing =
+      Number.isFinite(shopLat) && shopLat >= -90 && shopLat <= 90 &&
+      Number.isFinite(shopLng) && shopLng >= -180 && shopLng <= 180 &&
+      tiers.length > 0;
+    if (distancePricing) {
+      const km = haversineKm(shopLat, shopLng, c.latitude, c.longitude);
+      deliveryDistanceKm = round2(km);
+      let matched = false;
+      for (const t of tiers) {
+        if (km <= t.km) {
+          deliveryFee = Math.max(0, t.fee);
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) {
+        throw fail(
+          'failed-precondition',
+          'That pinned delivery location is outside the area we deliver to.',
+        );
+      }
+    } else if (
+      c.latitude < LAT_MIN || c.latitude > LAT_MAX ||
+      c.longitude < LNG_MIN || c.longitude > LNG_MAX
+    ) {
+      throw fail(
+        'failed-precondition',
+        'That pinned delivery location is outside the area we deliver to.',
+      );
+    }
     const currency = typeof cfg.currency === 'string' && cfg.currency.trim()
       ? cfg.currency.trim()
       : DEFAULTS.currency;
@@ -392,6 +453,7 @@ async function placeOrder(
       items: lines,
       subtotal,
       deliveryFee,
+      deliveryDistanceKm,
       total,
       currency,
       latitude: c.latitude,

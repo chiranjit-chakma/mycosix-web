@@ -331,6 +331,21 @@ class _CheckoutPageState extends State<CheckoutPage> {
     }
 
     final cart = context.read<CartController>();
+
+    // Distance gate: when the site prices by distance and the confirmed pin
+    // is beyond every delivery tier, the order is refused here too (belt and
+    // braces behind the disabled button - the live config/cart can change
+    // between renders). Nothing is ever written to this spot.
+    if (cart.deliveryUnavailable) {
+      if (!mounted) return;
+      setState(() {
+        _submitted = true;
+        _orderError =
+            'That delivery spot is outside the area we deliver to. Open the '
+            'map and move the pin closer - or change the delivery location.';
+      });
+      return;
+    }
     final loc = context.read<LocationController>().location;
     final canSend =
         !cart.isEmpty &&
@@ -685,7 +700,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
         location.confirmed &&
         location.mapsUrl.trim().isNotEmpty;
     final detailsValid = _detailsValid();
-    final canSend = !cart.isEmpty && detailsValid && locationReady;
+    final canSend =
+        !cart.isEmpty &&
+        detailsValid &&
+        locationReady &&
+        !cart.deliveryUnavailable;
     final config = context.watch<SiteConfigController>();
     final paused = !config.deliveryEnabled;
 
@@ -707,6 +726,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
       ctaHint = 'Set and confirm your delivery location on the map';
     } else if (!locationReady) {
       ctaHint = 'Confirm the delivery location pin on the map';
+    } else if (cart.deliveryUnavailable) {
+      ctaHint =
+          'This spot is outside our delivery area - open the map and move '
+          'the pin closer.';
     } else if (phoneCanonical != null && !_provenNow(phoneCanonical)) {
       ctaHint = config.whatsappCodeFallback
           ? 'Verify your number under the field (temporary code 123456 is '
@@ -904,11 +927,28 @@ class _SummaryCard extends StatelessWidget {
           _Row(label: 'Subtotal', value: formatRupees(cart.subtotal)),
           const SizedBox(height: 8),
           _Row(
-            label: 'Delivery',
-            value: cart.deliveryFee > 0
-                ? formatRupees(cart.deliveryFee)
-                : 'Free',
+            label: cart.deliveryQuote.known &&
+                    cart.deliveryQuote.distanceKm != null
+                ? 'Delivery (${cart.deliveryQuote.distanceLabel})'
+                : 'Delivery',
+            value: cart.deliveryUnavailable
+                ? 'Not available here'
+                : (cart.deliveryFee > 0
+                    ? formatRupees(cart.deliveryFee)
+                    : 'Free'),
+            valueColor: cart.deliveryUnavailable
+                ? MxColors.danger
+                : null,
           ),
+          if (cart.deliveryUnavailable)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'This spot is outside our delivery area - open the map and '
+                'move the pin closer.',
+                style: MxType.bodyXs(color: MxColors.danger),
+              ),
+            ),
           const Divider(color: MxColors.line, height: 24),
           _Row(label: 'Total', value: formatRupees(cart.total), bold: true),
           const SizedBox(height: 4),
@@ -923,11 +963,19 @@ class _SummaryCard extends StatelessWidget {
 }
 
 class _Row extends StatelessWidget {
-  const _Row({required this.label, required this.value, this.bold = false});
+  const _Row({
+    required this.label,
+    required this.value,
+    this.bold = false,
+    this.valueColor,
+  });
 
   final String label;
   final String value;
   final bool bold;
+
+  /// Overrides the value colour (e.g. danger red for "Not available here").
+  final Color? valueColor;
 
   @override
   Widget build(BuildContext context) {
@@ -944,7 +992,7 @@ class _Row extends StatelessWidget {
         Text(
           value,
           style: MxType.bodySm(
-            color: MxColors.forest,
+            color: valueColor ?? MxColors.forest,
             weight: bold ? FontWeight.w800 : FontWeight.w600,
           ),
         ),

@@ -36,10 +36,11 @@ void main() {
     await _pump(tester, ctx);
 
     // The account watch delivered, so no offer appears - the other device's
-    // items synced into this cart by themselves and the union was mirrored.
+    // items synced into this cart by themselves (the account already held the
+    // union, so no write-back was needed).
     expect(find.byKey(const Key('saved-cart-banner')), findsNothing);
     expect(ctx.cart.totalQuantity, 2);
-    expect(ctx.store.pushed, hasLength(1));
+    expect(ctx.store.pushed, isEmpty);
     expect(tester.takeException(), isNull);
   });
 
@@ -102,7 +103,11 @@ void main() {
     final ctx = await _seed(accountHolds: {'remote-only': 1}, localQty: 2);
     await _pump(tester, ctx);
     expect(find.byKey(const Key('saved-cart-banner')), findsNothing);
-    expect(ctx.store.pushed, isEmpty);
+    // The account's 1 is this cart's own mirror; signing in raises the
+    // account to the union (2) - never re-offered, never doubled.
+    expect(ctx.store.pushed, [
+      RemoteCartSnapshot(items: {ctx.firstId: 2}),
+    ]);
     expect(tester.takeException(), isNull);
   });
 }
@@ -121,33 +126,48 @@ class _FakeAuth extends ChangeNotifier implements CartSyncAuth {
 class _FakeStore implements RemoteCartStore {
   _FakeStore(this.cart, {this.watchBehavior = _WatchBehavior.live});
 
-  Map<String, int> cart;
+  RemoteCartSnapshot cart;
   final _WatchBehavior watchBehavior;
-  final List<Map<String, int>> pushed = [];
-  final _snapshots = StreamController<Map<String, int>>.broadcast();
+  final List<RemoteCartSnapshot> pushed = [];
+  final _snapshots = StreamController<RemoteCartSnapshot>.broadcast();
 
   @override
-  Future<Map<String, int>> fetch(String uid) async => Map.of(cart);
+  Future<RemoteCartSnapshot> fetch(String uid) async => RemoteCartSnapshot(
+        items: Map.of(cart.items),
+        removed: List.of(cart.removed),
+      );
 
   @override
-  Stream<Map<String, int>> watch(String uid) async* {
+  Stream<RemoteCartSnapshot> watch(String uid) async* {
     if (watchBehavior == _WatchBehavior.error) {
       // A stream that cannot connect: the controller keeps the load offer as
       // its offline fallback.
-      yield* Stream<Map<String, int>>.error(Exception('watch offline'));
+      yield* Stream<RemoteCartSnapshot>.error(Exception('watch offline'));
       return;
     }
     // Like a Firestore snapshot stream: the current document first, then
     // live changes.
-    yield Map.of(cart);
+    yield RemoteCartSnapshot(
+      items: Map.of(cart.items),
+      removed: List.of(cart.removed),
+    );
     yield* _snapshots.stream;
   }
 
   @override
-  Future<void> push(String uid, Map<String, int> items) async {
-    pushed.add(Map.of(items));
-    cart = Map.of(items);
-    _snapshots.add(Map.of(items));
+  Future<void> push(String uid, RemoteCartSnapshot snapshot) async {
+    pushed.add(RemoteCartSnapshot(
+      items: Map.of(snapshot.items),
+      removed: List.of(snapshot.removed),
+    ));
+    cart = RemoteCartSnapshot(
+      items: Map.of(snapshot.items),
+      removed: List.of(snapshot.removed),
+    );
+    _snapshots.add(RemoteCartSnapshot(
+      items: Map.of(snapshot.items),
+      removed: List.of(snapshot.removed),
+    ));
   }
 }
 
@@ -174,7 +194,7 @@ Future<_Ctx> _seed({
     for (final e in accountHolds.entries)
       e.key == 'remote-only' ? firstId : e.key: e.value,
   };
-  final store = _FakeStore(remote, watchBehavior: watchBehavior);
+  final store = _FakeStore(RemoteCartSnapshot(items: remote), watchBehavior: watchBehavior);
   final auth = _FakeAuth('u1');
   final sync = CartSyncController(
     repository: cartRepo,
@@ -190,6 +210,7 @@ Future<_Ctx> _seed({
     cart: local,
     store: store,
     sync: sync,
+    firstId: firstId,
     app: MultiProvider(
       providers: [
         ChangeNotifierProvider<CartController>.value(value: local),
@@ -217,12 +238,16 @@ class _Ctx {
     required this.store,
     required this.sync,
     required this.app,
+    required this.firstId,
   });
 
   final CartController cart;
   final _FakeStore store;
   final CartSyncController sync;
   final Widget app;
+
+  /// The first catalogue product's id - what 'remote-only' maps to.
+  final String firstId;
 }
 
 /// Loads the real bundled fonts so text metrics match production.

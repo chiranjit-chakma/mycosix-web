@@ -53,3 +53,18 @@ double centerLongitudeForPin(
     pinDxPx *
         metersPerPixel /
         (111320.0 * math.cos(latitudeDeg * math.pi / 180));
+
+/// Great-circle (haversine) distance in kilometres between two coordinates.
+/// This is the distance delivery pricing measures: the straight-line
+/// (crow-flies) distance from the shop point to the customer's pin.
+double haversineKm(double lat1, double lng1, double lat2, double lng2) {
+  const radiusKm = 6371.0;
+  final dLat = (lat2 - lat1) * math.pi / 180;
+  final dLng = (lng2 - lng1) * math.pi / 180;
+  final a =
+      math.pow(math.sin(dLat / 2), 2) +
+      math.cos(lat1 * math.pi / 180) *
+          math.cos(lat2 * math.pi / 180) *
+          math.pow(math.sin(dLng / 2), 2);
+  return 2 * radiusKm * math.asin(math.sqrt(a.toDouble()));
+}

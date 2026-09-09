@@ -20,21 +20,33 @@ abstract class CartSyncAuth extends ChangeNotifier {
 /// of this device) reaches this cart on its own.
 ///
 /// The local cart is always the instant UI source, and a live snapshot never
-/// REMOVES or LOWERS a quantity: it tops every product up to the HIGHER of the
-/// two quantities - never summed (so the same cart can never be counted twice)
-/// and never shrunk (so a stale or emptier account can never delete a
-/// customer's items). The topped-up union is mirrored back to the account
-/// immediately (awaited, not left on the debounce), so every device converges
-/// to the same union and the snapshot echoing that union back is a no-op -
-/// there is no merge loop.
+/// REMOVES or LOWERS a quantity on its own: it tops every product up to the
+/// HIGHER of the two quantities - never summed (so the same cart can never be
+/// counted twice) and never shrunk (so a stale or emptier account can never
+/// delete a customer's items). The topped-up union is mirrored back to the
+/// account immediately (awaited, not left on the debounce), so every device
+/// converges to the same union and the snapshot echoing that union back is a
+/// no-op - there is no merge loop.
+///
+/// REMOVALS DO PROPAGATE, through tombstones. Each cart document carries a
+/// bounded `removed` list (the account-wide tombstones, newest appended last).
+/// A removal on one device tombstones the product account-wide: every other
+/// device holding that line drops it on its next snapshot, and a stale device
+/// can never resurrect it (its push never re-adds an account-tombstoned line
+/// unless the customer explicitly re-added it on that device, which lifts the
+/// tombstone again). The tombstone list is bounded to the newest 100, so the
+/// account doc can never grow without bound.
 ///
 /// * On sign-in (including a session restored at startup): the account cart is
 ///   read first, then live-watched. If the account already holds more than
 ///   this cart, the first snapshot tops this cart up on its own - the same
-///   merge a Load would have done.
+///   merge a Load would have done. Any cart actions this device is still
+///   owed by the account (added before signing in, or during the read) are
+///   written through as soon as the read settles.
 /// * While signed in: every local cart change is written through (debounced,
 ///   so rapid +/- taps produce one write), and every account snapshot that
-///   holds more is merged in and mirrored back.
+///   holds more - or carries a tombstone for a line this cart still holds -
+///   is merged in and mirrored back.
 /// * The "saved items" offer is now the OFFLINE FALLBACK: it appears only when
 ///   the live watch cannot deliver the account cart (a watch failure, or no
 ///   snapshot has arrived), so a customer can still pull the account's items
@@ -42,14 +54,15 @@ abstract class CartSyncAuth extends ChangeNotifier {
 ///   items arrive by themselves and the offer stays hidden.
 /// * On sign-out: the watch stops and the local cart simply continues as the
 ///   guest cart - nothing is lost, nothing is removed. A snapshot that lands
-///   after sign-out is ignored.
+///   after sign-out is ignored. Un-acknowledged actions stay pending in the
+///   repository and are written to whichever account is next signed in (the
+///   guest cart itself becomes that account's cart, so this is consistent).
 ///
-/// Merge never subtracts, which has one honest consequence: a REMOVAL on one
-/// device does not propagate by itself. An item removed here can still be
-/// sitting in the other device's open cart, and if that device pushes next it
-/// can come back. Top-up-only is the deliberate trade that can never destroy
-/// items; the other device shows what this one removed only after it, too, has
-/// removed the item.
+/// Honest limits: a removal propagates only to a device that is signed in and
+/// connected (the watch delivers it); a device that is offline when the
+/// tombstone lands drops the line on its next snapshot. A quantity race is
+/// last-write-wins between devices. And a removal on a device that is not yet
+/// signed in travels with the cart when it signs in.
 ///
 /// Two ordering guards keep knowledge honest: while the first account read of
 /// a session is still settling, local edits are recorded but never written
@@ -76,11 +89,11 @@ class CartSyncController extends ChangeNotifier {
   /// The account this controller is currently signed in with.
   String? _syncedUid;
 
-  /// The last known account-cart item map. It feeds the live-sync merge and,
+  /// The last known account-cart snapshot. It feeds the live-sync merge and,
   /// when the watch cannot deliver, the load offer. It is replaced by each
   /// successful write-through, so the offer disappears once the account and
   /// this cart match again.
-  Map<String, int>? _accountCart;
+  RemoteCartSnapshot? _accountCart;
 
   /// True between sign-in and the first account-cart read resolving. While it
   /// is pending, local edits are only recorded (never written through): a
@@ -100,7 +113,7 @@ class CartSyncController extends ChangeNotifier {
   /// Live subscription to the account document. Its first emission is the
   /// current account cart, exactly like the Firestore document it mirrors;
   /// later emissions come from other devices (or other tabs).
-  StreamSubscription<Map<String, int>>? _watchSub;
+  StreamSubscription<RemoteCartSnapshot>? _watchSub;
 
   /// True while the live account watch is (or is expected to be) delivering.
   /// Set optimistically when the watch starts so the load offer never flashes
@@ -114,16 +127,22 @@ class CartSyncController extends ChangeNotifier {
 
   /// The account cart as last read (null before the first read completes, or
   /// after sign-out).
-  Map<String, int>? get accountCart => _accountCart;
+  RemoteCartSnapshot? get accountCart => _accountCart;
 
   /// How many account items this cart does not yet carry at that quantity -
   /// exactly what a load would bring in. 0 means there is nothing to load.
+  /// Lines this device removed (pending tombstones) and lines the account
+  /// itself tombstoned are never offered: loading must not resurrect them.
   int get loadableCount {
     final remote = _accountCart;
     if (remote == null || remote.isEmpty) return 0;
     final local = repository.items;
+    final pending = repository.pendingActions;
+    final tombstoned = remote.removed.toSet();
     var n = 0;
-    for (final entry in remote.entries) {
+    for (final entry in remote.items.entries) {
+      if (tombstoned.contains(entry.key)) continue;
+      if (pending.removed.contains(entry.key)) continue;
       final have = local[entry.key] ?? 0;
       if (entry.value > have) n += entry.value - have;
     }
@@ -159,37 +178,28 @@ class CartSyncController extends ChangeNotifier {
   /// Pulls the account cart in by hand (the offline-fallback button). Every
   /// product the account holds at a HIGHER quantity is topped up to that
   /// quantity - never summed, so the same saved cart can be loaded twice, or
-  /// again after a re-login, without ever doubling a line. The topped-up cart
-  /// is written to the account immediately (awaited here, not left on the
-  /// cancellable debounce) so a fast logout or app close after a load cannot
-  /// leave the account behind and re-offer the same items. This is the manual
-  /// twin of the automatic live-sync merge ([_applyRemoteCart]): the local
-  /// cart absorbs the account cart here only on this explicit tap, or by
-  /// itself when a live snapshot holds more.
+  /// again after a re-login, without ever doubling a line. Lines the account
+  /// tombstoned are dropped here first (never resurrected), and lines this
+  /// device removed itself are not pulled back. The topped-up cart is written
+  /// to the account immediately (awaited here, not left on the cancellable
+  /// debounce) so a fast logout or app close after a load cannot leave the
+  /// account behind and re-offer the same items. This is the manual twin of
+  /// the automatic live-sync merge ([_applyRemoteCart]).
   Future<void> loadAccountCart() async {
     final uid = _syncedUid;
     final remote = _accountCart;
     if (uid == null || remote == null) return;
     if (loadableCount == 0) return; // already carried - never re-sum
-    final merged = await cart.mergeRemoteCart(remote);
-    // The account now mirrors this cart, so the offer disappears at once.
-    _accountCart = merged;
-    notifyListeners();
-    // Advance the account copy NOW. Any pending debounce is dropped: this
-    // write carries the whole cart state, including those earlier edits.
-    _cancelDebounce();
-    final seq = ++_writeSeq;
     try {
-      await _store.push(uid, merged);
-      if (_syncedUid == uid && seq == _writeSeq) {
-        _accountCart = Map.of(merged);
-        notifyListeners();
-      }
+      await cart.applyRemoteRemovals(remote.removed.toSet());
+      await cart.mergeRemoteCart(_effectiveRemoteItems(remote));
+      _cancelDebounce();
+      await _pushToAccount(uid);
     } catch (e) {
       // The local cart already holds the merged items; the account copy is
       // retried on the debounce. Even if the write never lands, a later load
       // of the same saved cart is a no-op - merging tops up, never doubles.
-      debugPrint('MYCOSIX: account cart push failed after load ($e)');
+      debugPrint('MYCOSIX: account cart load/sync failed ($e)');
       if (_syncedUid == uid) _schedulePush(uid);
     }
   }
@@ -266,42 +276,47 @@ class CartSyncController extends ChangeNotifier {
     );
   }
 
-  void _onRemoteCart(String uid, Map<String, int> remote) {
+  void _onRemoteCart(String uid, RemoteCartSnapshot remote) {
     if (_syncedUid != uid) return; // signed out again - ignore stale snapshots
     _watchActive = true;
-    _accountCart = Map.of(remote); // keep the fallback knowledge fresh
-    if (!_remoteHoldsMore(remote)) return;
+    _accountCart = remote; // keep the fallback knowledge fresh
+    if (!_remoteNeedsApplication(remote)) return;
     unawaited(_applyRemoteCart(uid, remote));
   }
 
-  /// True when the account cart holds a product at a quantity this cart has
-  /// not yet reached - i.e. a snapshot that must be merged in. Checking against
-  /// the LIVE local cart (never a stale copy) is what stops the mirror echo:
-  /// once the union has been merged and pushed, the echoed snapshot holds
-  /// nothing more, so it is a no-op and the loop ends.
-  bool _remoteHoldsMore(Map<String, int> remote) {
+  /// True when a snapshot must be applied: the account holds a TOMBSTONE for
+  /// a line this cart still carries (not re-added), or holds an item at a
+  /// quantity this cart has not reached, or this device still owes the
+  /// account actions (its last push has not been acknowledged). Checking
+  /// against the LIVE local cart (never a stale copy) is what stops the
+  /// mirror echo: once the union has been merged and pushed and the pending
+  /// actions acknowledged, the echoed snapshot holds nothing to do, so it is
+  /// a no-op and the loop ends.
+  bool _remoteNeedsApplication(RemoteCartSnapshot remote) {
     final local = repository.items;
-    for (final entry in remote.entries) {
+    final pending = repository.pendingActions;
+    for (final id in remote.removed) {
+      if (local.containsKey(id) && !pending.added.contains(id)) return true;
+    }
+    for (final entry in remote.items.entries) {
+      if (pending.removed.contains(entry.key)) continue; // we removed it
       if (entry.value > (local[entry.key] ?? 0)) return true;
     }
-    return false;
+    return pending.added.isNotEmpty || pending.removed.isNotEmpty;
   }
 
-  /// Applies a live snapshot: tops this cart up to the union (never summing,
-  /// never shrinking), then mirrors the union back to the account right away
+  /// Applies a live snapshot: drops the lines the account tombstoned, tops
+  /// this cart up to the union (never summing, never shrinking), then
+  /// reconciles and mirrors the result back to the account right away
   /// (awaited, not debounced) so every other device converges too.
-  Future<void> _applyRemoteCart(String uid, Map<String, int> remote) async {
+  Future<void> _applyRemoteCart(String uid, RemoteCartSnapshot remote) async {
     try {
-      final merged = await cart.mergeRemoteCart(remote);
-      _accountCart = Map.of(merged);
-      notifyListeners();
+      await cart.applyRemoteRemovals(remote.removed.toSet());
+      final effective = _effectiveRemoteItems(remote);
+      await cart.mergeRemoteCart(effective);
       _cancelDebounce();
-      final seq = ++_writeSeq;
-      await _store.push(uid, merged);
-      if (_syncedUid == uid && seq == _writeSeq) {
-        _accountCart = Map.of(merged);
-        notifyListeners();
-      }
+      final ok = await _pushToAccount(uid);
+      if (!ok && _syncedUid == uid) _schedulePush(uid);
     } catch (e) {
       // The local cart already holds the topped-up items; the union is
       // retried on the next local change or debounce. The cart still works.
@@ -310,20 +325,34 @@ class CartSyncController extends ChangeNotifier {
     }
   }
 
-  /// Mirrors a local change that arrived while the account read was pending -
-  /// but only when the account holds nothing this cart lacks, so an account
-  /// cart that has never been offered is not silently overwritten. Otherwise
-  /// the load offer (or the live watch, which delivers the same account) tops
-  /// the union in and writes it through.
-  void _mirrorDeferredEdits(String uid) {
-    if (!_changeDuringFetch || _syncedUid != uid) return;
-    _changeDuringFetch = false;
-    if (loadableCount > 0) return; // the load/watch takes over
-    final items = repository.items;
-    final known = _accountCart;
-    if (known == null || !_sameItems(known, items)) {
-      _schedulePush(uid);
+  /// The account items this device may merge in: the account's items minus
+  /// anything the account itself tombstoned, minus anything THIS device
+  /// removed (its pending tombstones) - so a merge can never resurrect a line
+  /// that was removed, on either side.
+  Map<String, int> _effectiveRemoteItems(RemoteCartSnapshot remote) {
+    final tombstoned = remote.removed.toSet();
+    final pending = repository.pendingActions;
+    final out = <String, int>{};
+    for (final entry in remote.items.entries) {
+      if (tombstoned.contains(entry.key)) continue;
+      if (pending.removed.contains(entry.key)) continue;
+      out[entry.key] = entry.value;
     }
+    return out;
+  }
+
+  /// Writes through any cart action this device owes the account that the
+  /// account read was settling for: local changes that arrived during the
+  /// fetch, plus actions taken earlier as a guest. The push itself is a no-op
+  /// when the account already mirrors this cart exactly.
+  void _mirrorDeferredEdits(String uid) {
+    if (_syncedUid != uid) return;
+    final pending = repository.pendingActions;
+    final owes = _changeDuringFetch ||
+        pending.added.isNotEmpty ||
+        pending.removed.isNotEmpty;
+    _changeDuringFetch = false;
+    if (owes) _schedulePush(uid);
   }
 
   void _schedulePush(String uid) {
@@ -332,26 +361,59 @@ class CartSyncController extends ChangeNotifier {
       _pushDebounce = null;
       final uidNow = _syncedUid;
       if (uidNow == null) return;
-      final items = repository.items;
-      final seq = ++_writeSeq;
-      unawaited(_pushItems(uidNow, items, seq));
+      unawaited(_pushToAccount(uidNow));
     });
   }
 
-  Future<void> _pushItems(String uid, Map<String, int> items, int seq) async {
-    try {
-      await _store.push(uid, items);
-      // The account now mirrors this cart; the load offer disappears. Only
-      // the newest write-through may refresh the knowledge, so a slow older
-      // write cannot resurrect a stale offer.
-      if (_syncedUid == uid && seq == _writeSeq) {
-        _accountCart = Map.of(items);
-        notifyListeners();
-      }
-    } catch (e) {
-      // The cart still works locally; the next local change retries the push.
-      debugPrint('MYCOSIX: account cart push failed ($e)');
+  /// Reconciles this device's cart against the account knowledge and writes
+  /// the account document, unless it already mirrors this cart exactly (the
+  /// echo case - returns true without writing). True when the account now
+  /// mirrors this cart; false when the write failed (the pending actions are
+  /// kept and retried on the next event).
+  Future<bool> _pushToAccount(String uid) async {
+    final remote = _accountCart;
+    final pending = repository.pendingActions;
+    final reconciled = reconcileAccountCart(
+      accountItems: remote?.items ?? const {},
+      accountRemoved: remote?.removed ?? const [],
+      localItems: repository.items,
+      addedPending: pending.added,
+      removedPending: pending.removed,
+      capFor: repository.capForId,
+    );
+    if (remote != null &&
+        _sameItems(remote.items, reconciled.items) &&
+        _sameRemoved(remote.removed, reconciled.removed)) {
+      return true; // account already mirrors this cart - no write, no ack
     }
+    final seq = ++_writeSeq;
+    try {
+      await _store.push(
+        uid,
+        RemoteCartSnapshot(items: reconciled.items, removed: reconciled.removed),
+      );
+    } catch (e) {
+      // The cart still works locally; the pending actions stay and the next
+      // event (local change, snapshot, or debounce) retries the push.
+      debugPrint('MYCOSIX: account cart push failed ($e)');
+      return false;
+    }
+    // The account now mirrors this cart; the pending actions it carried are
+    // cleared, and the load offer disappears. Only the newest write-through
+    // may refresh the knowledge, so a slow older write cannot resurrect a
+    // stale offer.
+    if (_syncedUid == uid && seq == _writeSeq) {
+      repository.ackPush(
+        added: reconciled.items.keys.toSet(),
+        removed: reconciled.removed,
+      );
+      _accountCart = RemoteCartSnapshot(
+        items: Map.of(reconciled.items),
+        removed: List.of(reconciled.removed),
+      );
+      notifyListeners();
+    }
+    return true;
   }
 
   void _teardown() {
@@ -379,6 +441,14 @@ class CartSyncController extends ChangeNotifier {
     if (a.length != b.length) return false;
     for (final entry in a.entries) {
       if (b[entry.key] != entry.value) return false;
+    }
+    return true;
+  }
+
+  static bool _sameRemoved(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
     }
     return true;
   }

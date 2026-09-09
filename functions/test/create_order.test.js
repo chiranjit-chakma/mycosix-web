@@ -491,3 +491,122 @@ test('fallback flag never overrides delivery pause or pricing defaults', async (
     /not accepting delivery orders/,
   );
 });
+
+/* ------------------------------------------------------------------ *
+ * Distance-based delivery pricing
+ * ------------------------------------------------------------------ */
+// The shop point + tiers live in the same siteConfig/public document the
+// customer site quotes from. Hyderabad (draft's default pin) is the shop.
+const SHOP = { latitude: 17.385, longitude: 78.4867 };
+
+function distanceDb(tiers, shopOverrides = {}) {
+  return seededDb({
+    'siteConfig/public': Object.assign({}, CONFIG, {
+      shopLatitude:
+        shopOverrides.latitude !== undefined
+          ? shopOverrides.latitude
+          : SHOP.latitude,
+      shopLongitude:
+        shopOverrides.longitude !== undefined
+          ? shopOverrides.longitude
+          : SHOP.longitude,
+      deliveryTiers: tiers,
+    }),
+  });
+}
+
+// Independent reference implementation (not the code under test).
+function haversine(lat1, lng1, lat2, lng2) {
+  const R = 6371.0;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+test('distance pricing: within the first tier is free', async () => {
+  const db = distanceDb([
+    { km: 2, fee: 0 },
+    { km: 5, fee: 40 },
+  ]);
+  const res = await placeOrder(db, draft()); // pin == shop
+  approx(res.order.deliveryFee, 0);
+  approx(res.order.deliveryDistanceKm, 0);
+  approx(res.order.total, res.order.subtotal);
+  assert.equal(
+    db.dump()['orders/' + res.id].deliveryDistanceKm,
+    res.order.deliveryDistanceKm,
+    'the order document records the measured distance',
+  );
+});
+
+test('distance pricing: a mid tier sets its fee', async () => {
+  // ~4.8 km west of the shop - just inside the 5 km tier.
+  const lat = 17.385;
+  const lng = 78.4867 - 0.045;
+  const db = distanceDb([
+    { km: 2, fee: 0 },
+    { km: 5, fee: 40 },
+    { km: 60, fee: 80 },
+  ]);
+  const res = await placeOrder(db, draft({ latitude: lat, longitude: lng }));
+  approx(
+    res.order.deliveryDistanceKm,
+    Math.round(haversine(lat, lng, SHOP.latitude, SHOP.longitude) * 100) / 100,
+  );
+  approx(res.order.deliveryFee, 40);
+  approx(res.order.total, res.order.subtotal + 40);
+});
+
+test('distance pricing: beyond every tier is refused', () => {
+  const db = distanceDb([
+    { km: 2, fee: 0 },
+    { km: 5, fee: 40 },
+  ]);
+  // Kolkata (22N, 88E) is inside India but ~1000 km from the shop.
+  const d = draft({ latitude: 22.0, longitude: 88.0 });
+  return expectRejected(
+    placeOrder(db, d),
+    'failed-precondition',
+    /outside the area/,
+  );
+});
+
+test('distance pricing: tiers replace the India plausibility box', async () => {
+  // lat 0 / lng 0 is far outside India, but distance pricing decides
+  // coverage by the tiers, not the flat-fee box.
+  const db = distanceDb([{ km: 20000, fee: 250 }]);
+  const res = await placeOrder(db, draft({ latitude: 0, longitude: 0 }));
+  approx(res.order.deliveryFee, 250);
+  assert.ok(res.order.deliveryDistanceKm > 1500);
+});
+
+test('distance pricing: unordered and invalid tiers still price correctly', async () => {
+  // The backend must sort tiers by km and skip invalid ones, exactly like
+  // the customer side.
+  const db = distanceDb([
+    { km: 5, fee: 40 },
+    { km: 'free', fee: -1 }, // invalid - skipped
+    { km: 2, fee: 0 }, // out of order - wins for a pin at the shop
+    { km: 200, fee: 90 },
+  ]);
+  const res = await placeOrder(db, draft());
+  approx(res.order.deliveryFee, 0); // nearest pin -> the 2 km tier is free
+});
+
+test('distance pricing: shop without tiers keeps the flat fee', async () => {
+  const db = seededDb({
+    'siteConfig/public': Object.assign({}, CONFIG, {
+      shopLatitude: SHOP.latitude,
+      shopLongitude: SHOP.longitude,
+      deliveryTiers: [],
+    }),
+  });
+  const res = await placeOrder(db, draft());
+  approx(res.order.deliveryFee, 39);
+  assert.equal(res.order.deliveryDistanceKm, null);
+});

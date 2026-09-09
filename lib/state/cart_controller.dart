@@ -2,7 +2,11 @@ import 'package:flutter/foundation.dart';
 
 import '../models/cart_item.dart';
 import '../models/product.dart';
+import '../models/site_settings.dart';
 import '../repositories/cart_repository.dart';
+import '../services/delivery_pricing.dart';
+import 'location_controller.dart';
+import 'site_config_controller.dart';
 
 /// Application state for the shopping cart.
 class CartController extends ChangeNotifier {
@@ -11,9 +15,28 @@ class CartController extends ChangeNotifier {
   /// prices a real order). 0 means free delivery. The app shell supplies it so
   /// the fee a customer sees can never drift from the fee the backend will
   /// actually charge for the order.
-  CartController(this._repo, {required this.siteDeliveryFee});
+  ///
+  /// [siteConfig] and [location] are optional live sources: when both are
+  /// provided and the site has switched on distance-based delivery (a shop
+  /// point + tiers), the quoted fee is computed from the customer's pin
+  /// distance to the shop instead of this flat fee. The controller listens to
+  /// both, so the quote updates live as the customer drags the pin or an
+  /// admin edits the tiers.
+  CartController(
+    this._repo, {
+    required this.siteDeliveryFee,
+    this._siteConfig,
+    this._location,
+  }) {
+    _siteConfig?.addListener(_externalChanged);
+    _location?.addListener(_externalChanged);
+  }
 
   final CartRepository _repo;
+  final SiteConfigController? _siteConfig;
+  final LocationController? _location;
+
+  void _externalChanged() => notifyListeners();
 
   /// The business delivery fee for the current site configuration.
   final double siteDeliveryFee;
@@ -26,8 +49,28 @@ class CartController extends ChangeNotifier {
 
   double get subtotal => lines.fold(0, (a, l) => a + l.lineTotal);
 
+  /// The live delivery quote for this cart: distance-based when the site has
+  /// switched it on and a pin exists, the flat fallback otherwise. `known`
+  /// distinguishes a real distance quote from the flat estimate.
+  DeliveryQuote get deliveryQuote => computeDeliveryQuote(
+    settings: _siteConfig?.settings ?? const SiteSettings(),
+    customer: _location?.location,
+    fallbackFee: siteDeliveryFee,
+  );
+
+  /// The straight-line distance (km) the quote was based on, when any.
+  double? get deliveryDistanceKm => deliveryQuote.distanceKm;
+
+  /// True when the current pin is outside every delivery tier: the order
+  /// cannot be placed to this spot.
+  bool get deliveryUnavailable => deliveryQuote.unavailable;
+
+  /// Whether the quoted fee is genuinely distance-based (vs the flat
+  /// estimate shown before a pin or tiers exist).
+  bool get deliveryPricedByDistance => deliveryQuote.known;
+
   /// Charged only on a non-empty cart; an empty cart is never charged.
-  double get deliveryFee => subtotal > 0 ? siteDeliveryFee : 0;
+  double get deliveryFee => subtotal > 0 ? (deliveryQuote.unavailable ? 0 : deliveryQuote.fee) : 0;
 
   double get total => subtotal + deliveryFee;
 
@@ -99,5 +142,21 @@ class CartController extends ChangeNotifier {
     final merged = await _repo.mergeRemote(remote);
     notifyListeners();
     return merged;
+  }
+
+  /// Applies the account's REMOVAL TOMBSTONES to the local cart (live sync):
+  /// drops local lines the account removed, unless this device explicitly
+  /// re-added them. Not a customer action - the dropped lines are not
+  /// recorded as pending removals, because the account already knows.
+  Future<void> applyRemoteRemovals(Set<String> tombstoned) async {
+    final dropped = await _repo.applyRemoteRemovals(tombstoned);
+    if (dropped.isNotEmpty) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _siteConfig?.removeListener(_externalChanged);
+    _location?.removeListener(_externalChanged);
+    super.dispose();
   }
 }

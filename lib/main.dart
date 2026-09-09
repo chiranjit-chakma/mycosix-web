@@ -22,7 +22,7 @@ import 'state/admin_reveal.dart';
 import 'state/auth_controller.dart';
 import 'state/cart_sync_controller.dart';
 import 'state/customer_auth_controller.dart';
-import 'services/geo_location_service.dart';
+import 'services/browser_geo_location_service.dart';
 import 'services/whatsapp_order_service.dart';
 import 'services/whatsapp_otp.dart';
 import 'state/cart_controller.dart';
@@ -96,9 +96,25 @@ Future<void> main() async {
   // Customer accounts + cart sync. Both stay fully dormant when the backend
   // is offline: the site behaves exactly as the guest-only site did.
   final customerAuth = CustomerAuthController();
+
+  // Live site configuration and the delivery location controller. Both are
+  // app-lifetime singletons created here (not inside the provider tree) so
+  // the cart can listen to them: the delivery fee the customer sees reacts
+  // live to an admin editing the shop point/tiers and to the customer moving
+  // their pin. They are still provided to the tree below.
+  final siteConfigController = SiteConfigController(
+    initial: configRepository.settings,
+  )..start();
+  final locationController = LocationController(
+    cartRepository,
+    BrowserGeoLocationService(),
+  );
+
   final cartController = CartController(
     cartRepository,
     siteDeliveryFee: configRepository.deliveryFee,
+    siteConfig: siteConfigController,
+    location: locationController,
   );
   final cartSync = CartSyncController(
     repository: cartRepository,
@@ -125,6 +141,8 @@ Future<void> main() async {
       cartController: cartController,
       cartSync: cartSync,
       wishlistController: wishlistController,
+      siteConfigController: siteConfigController,
+      locationController: locationController,
     ),
   );
 }
@@ -141,6 +159,8 @@ class MxApp extends StatelessWidget {
     required this.cartController,
     required this.cartSync,
     required this.wishlistController,
+    required this.siteConfigController,
+    required this.locationController,
   });
 
   final CartRepository cartRepository;
@@ -151,6 +171,8 @@ class MxApp extends StatelessWidget {
   final CartController cartController;
   final CartSyncController cartSync;
   final WishlistController wishlistController;
+  final SiteConfigController siteConfigController;
+  final LocationController locationController;
 
   @override
   Widget build(BuildContext context) {
@@ -169,9 +191,8 @@ class MxApp extends StatelessWidget {
         ChangeNotifierProvider<WishlistController>.value(
           value: wishlistController,
         ),
-        ChangeNotifierProvider(
-          create: (_) =>
-              LocationController(cartRepository, BrowserGeoLocationService()),
+        ChangeNotifierProvider<LocationController>.value(
+          value: locationController,
         ),
         // Same controller under the narrow sign-out contract, so the profile
         // page can clear the saved delivery point without importing web-only
@@ -182,11 +203,9 @@ class MxApp extends StatelessWidget {
         Provider<ConfigRepository>(create: (_) => configRepository),
         // Live site configuration: subscribes to siteConfig/public so an admin
         // toggling "Delivery enabled" off stops customer ordering immediately,
-        // with no reload. Starts at boot (lazy: false) so the value is warm.
-        ChangeNotifierProvider<SiteConfigController>(
-          lazy: false,
-          create: (_) =>
-              SiteConfigController(initial: configRepository.settings)..start(),
+        // with no reload. Started at boot (in main) so the value is warm.
+        ChangeNotifierProvider<SiteConfigController>.value(
+          value: siteConfigController,
         ),
         Provider<OrderRepository>(create: (_) => orderRepository),
         // One-time-code WhatsApp verification for checkout (Firebase Phone

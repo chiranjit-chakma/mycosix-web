@@ -31,7 +31,7 @@ class LocationController extends ChangeNotifier implements SavedLocationClear {
 
   /// Sets a candidate location from the map (NOT confirmed yet).
   Future<void> setCandidate(double lat, double lng) async {
-    final url = BrowserGeoLocationService.mapsUrlFor(lat, lng);
+    final url = GeoLocationService.mapsUrlFor(lat, lng);
     await _repo.saveLocation(
       DeliveryLocation(
         latitude: lat,
@@ -69,7 +69,7 @@ class LocationController extends ChangeNotifier implements SavedLocationClear {
 
     try {
       final pos = await _geo.currentPosition();
-      final url = BrowserGeoLocationService.mapsUrlFor(pos.lat, pos.lng);
+      final url = GeoLocationService.mapsUrlFor(pos.lat, pos.lng);
       final candidate = DeliveryLocation(
         latitude: pos.lat,
         longitude: pos.lng,

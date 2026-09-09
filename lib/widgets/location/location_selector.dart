@@ -4,12 +4,16 @@ import 'package:provider/provider.dart';
 import '../../config/mx_colors.dart';
 import '../../config/mx_type.dart';
 import '../../state/location_controller.dart';
-import 'location_map.dart';
+import 'fullscreen_map_sheet.dart';
 
 /// Panel to set a delivery location.
 ///
-/// Flow: drag/tap the map OR use GPS → set an UNCONFIRMED candidate →
-/// the user EXPLICITLY confirms → the pin location becomes final.
+/// Flow: OPEN THE MAP (or use GPS) → set an UNCONFIRMED candidate by
+/// dragging/tapping the pin → the customer EXPLICITLY confirms → the pin
+/// location becomes final. The map itself lives in a near-full-screen sheet
+/// ([showDeliveryMapSheet]) so the pin can be dragged anywhere in the world
+/// on a map that is actually big enough to see where you are going; this
+/// panel stays compact and points there.
 class LocationSelector extends StatefulWidget {
   const LocationSelector({super.key, this.compact = false});
 
@@ -58,8 +62,10 @@ class _LocationSelectorState extends State<LocationSelector> {
           const SizedBox(height: 14),
           Text(
             hasLocation
-                ? 'Drag the map to find your spot, tap to drop the pin, or drag the pin to fine-tune it. Zoom with + / - for precision.'
-                : 'Set your delivery location - grant current location once, or tap Use Current Location below to open the map.',
+                ? 'Your pin is set below. Open the full map to move it — drag '
+                      'it anywhere (even to another country), then confirm.'
+                : 'Set your delivery location: tap Open the map and drag the '
+                      'pin to your spot, or use your current location.',
             style: MxType.bodySm(color: MxColors.charcoalSoft),
           ),
           const SizedBox(height: 16),
@@ -69,6 +75,12 @@ class _LocationSelectorState extends State<LocationSelector> {
               spacing: 10,
               runSpacing: 10,
               children: [
+                _ActionBtn(
+                  key: const Key('location-open-map'),
+                  icon: Icons.map_outlined,
+                  label: 'Open the map',
+                  onTap: () => _openMap(),
+                ),
                 _ActionBtn(
                   icon: Icons.my_location_rounded,
                   label: loc.locating
@@ -92,62 +104,73 @@ class _LocationSelectorState extends State<LocationSelector> {
           ],
           const SizedBox(height: 18),
           if (hasLocation) ...[
-            LocationMap(
-              latitude: current.latitude,
-              longitude: current.longitude,
-              height: widget.compact ? 300 : 420,
-              onChanged: (latLng) => loc.setCandidate(latLng.$1, latLng.$2),
-            ),
-            const SizedBox(height: 16),
-            // Confirm step — always explicit.
-            if (!loc.isConfirmed)
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () => loc.confirm(),
-                  icon: const Icon(
-                    Icons.check_circle_outline_rounded,
-                    size: 18,
-                  ),
-                  label: const Text('Confirm this location'),
-                ),
-              )
-            else ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: MxColors.okSoft,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.check_circle_rounded,
-                      size: 18,
-                      color: MxColors.ok,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Location confirmed',
-                        style: MxType.bodySm(
-                          color: MxColors.ok,
-                          weight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () => loc.invalidate(),
-                      child: const Text('Change'),
-                    ),
-                  ],
+            // Pin readout + the explicit confirm step (or a Change button).
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: loc.isConfirmed
+                    ? MxColors.okSoft
+                    : MxColors.creamDeep,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: loc.isConfirmed
+                      ? MxColors.ok
+                      : MxColors.line,
                 ),
               ),
-            ],
+              child: Row(
+                children: [
+                  Icon(
+                    loc.isConfirmed
+                        ? Icons.check_circle_rounded
+                        : Icons.place_outlined,
+                    size: 18,
+                    color: loc.isConfirmed ? MxColors.ok : MxColors.warn,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${current.latitude.toStringAsFixed(5)}, '
+                          '${current.longitude.toStringAsFixed(5)}',
+                          style: MxType.bodySm(
+                            color: MxColors.charcoal,
+                            weight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          loc.isConfirmed
+                              ? 'This delivery spot is confirmed.'
+                              : 'Not confirmed yet - tap Confirm below.',
+                          style: MxType.bodyXs(color: MxColors.stone),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (loc.isConfirmed)
+                    TextButton(
+                      onPressed: _openMap,
+                      child: const Text('Change'),
+                    )
+                  else
+                    FilledButton.icon(
+                      onPressed: () => loc.confirm(),
+                      icon: const Icon(
+                        Icons.check_circle_outline_rounded,
+                        size: 18,
+                      ),
+                      label: const Text('Confirm'),
+                    ),
+                ],
+              ),
+            ),
           ] else
             SizedBox(
-              height: width >= 768 ? 260 : 220,
+              height: width >= 768 ? 200 : 170,
               width: double.infinity,
               child: Container(
                 decoration: BoxDecoration(
@@ -170,7 +193,8 @@ class _LocationSelectorState extends State<LocationSelector> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Tap "Use Current Location" - the map then opens right here with your pin.',
+                        'Tap "Open the map" - a big map slides up where you '
+                        'can drop your pin anywhere.',
                         style: MxType.bodyXs(color: MxColors.stoneLight),
                       ),
                     ],
@@ -181,6 +205,10 @@ class _LocationSelectorState extends State<LocationSelector> {
         ],
       ),
     );
+  }
+
+  Future<void> _openMap() async {
+    await showDeliveryMapSheet(context);
   }
 
   Future<void> _useGps() async {
@@ -218,6 +246,7 @@ class _StatusChip extends StatelessWidget {
 
 class _ActionBtn extends StatelessWidget {
   const _ActionBtn({
+    super.key,
     required this.icon,
     required this.label,
     this.onTap,
