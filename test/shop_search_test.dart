@@ -11,10 +11,35 @@ import 'package:mycosix/pages/shop/shop_page.dart';
 import 'package:mycosix/repositories/cart_repository.dart';
 import 'package:mycosix/repositories/product_repository.dart';
 import 'package:mycosix/state/admin_reveal.dart';
+import 'package:mycosix/state/auth_controller.dart';
 import 'package:mycosix/state/cart_controller.dart';
 import 'package:mycosix/state/products_controller.dart';
 import 'package:mycosix/state/site_config_controller.dart';
 import 'package:mycosix/state/wishlist_controller.dart';
+
+/// An admin session with nothing behind it. The shop box asks a session only
+/// two things - whether somebody is signed in, and whether the server accepts
+/// the submitted word - so this stands in for a real signed-in administrator
+/// without touching Firebase. [submitted] records the last word that actually
+/// reached the server, which is how a test proves a wrongly-shaped word was
+/// never sent at all (and therefore cannot leak that a code is even a thing).
+class _StubAdminSession extends AuthController {
+  _StubAdminSession({required this.signedIn, required this.result});
+
+  final bool signedIn;
+  final AdminCodeGrant result;
+
+  String? submitted;
+
+  @override
+  bool get hasAdminSession => signedIn;
+
+  @override
+  Future<AdminCodeGrant> grantAdminWithCode(String code) async {
+    submitted = code;
+    return result;
+  }
+}
 
 /// Loads the real bundled fonts so text metrics match production (the default
 /// test font is far too wide and would produce false card overflows).
@@ -26,14 +51,14 @@ Future<void> _loadFont(String family, String asset) async {
 }
 
 /// The Shop search box: live filtering over the real catalogue. Typing is
-/// purely a product search and never summons anything. A *submitted*
-/// code-like word (single word, no spaces, 6+ letters, no product match) is
-/// the owner's summon: it opens the admin area (in the app this lands on the
-/// admin sign-in for a signed-out owner / the dashboard for a signed-in
-/// administrator). Real product terms, short words and multi-word queries
-/// never summon. The typed value itself is never a credential — the owner-set
-/// code lives only in the security rules — so submitting merely opens the
-/// gate, which still demands a server-verified administrator.
+/// purely a product search and never summons anything. A *submitted* single
+/// word (4-64 characters, no spaces, no product match) is the quiet way an
+/// administrator enters their own code: the word goes to the server, which
+/// alone can tell whether it is the code set for THIS account's email, and
+/// only a word it accepts opens the admin area. A wrong word, a word from an
+/// account no code was set for, and a word from a visitor who is not signed in
+/// are all the same ordinary empty product search — so the box can never be
+/// used to discover that an admin area, or a code, exists.
 void main() {
   setUpAll(() async {
     await _loadFont('Manrope', 'assets/fonts/Manrope-Variable.ttf');
@@ -45,7 +70,7 @@ void main() {
 
   Finder searchField() => find.byType(TextField);
 
-  Future<void> pumpShop(WidgetTester tester) async {
+  Future<void> pumpShop(WidgetTester tester, {AuthController? adminAuth}) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final productsRepo = LocalProductRepository();
@@ -62,6 +87,8 @@ void main() {
       MultiProvider(
         providers: [
           ChangeNotifierProvider.value(value: products),
+          if (adminAuth != null)
+            ChangeNotifierProvider<AuthController>.value(value: adminAuth),
           ChangeNotifierProvider(
             create: (_) =>
                 CartController(cartRepo, siteDeliveryFee: MxConfig.deliveryFee),
@@ -114,7 +141,7 @@ void main() {
     expect(AdminReveal.shared.stage, AdminRevealStage.hidden);
   });
 
-  testWidgets('submitting a code-like word that matches nothing opens admin',
+  testWidgets('a code word from a visitor who is not signed in reveals nothing',
       (tester) async {
     await pumpShop(tester);
 
@@ -122,73 +149,89 @@ void main() {
     await tester.pump();
     expect(find.text('No matches for “mycoforest”.'), findsOneWidget);
 
-    // Submit (the search key). A code-like word that matches nothing is the
-    // owner's summon: it arms the admin gate (goToAdmin is null in tests, so
-    // the stage flips instead of navigating), exactly as the owner asked — the
-    // admin login page must open.
+    // Submit (the search key). A code belongs to an email and only the account
+    // that email belongs to can use it, so with nobody signed in this stays an
+    // ordinary empty product search: not the admin page, not even a sign-in
+    // page, and no hint that either exists.
     await tester.testTextInput.receiveAction(TextInputAction.search);
-    await tester.pump();
-    await tester.pump();
+    await tester.pumpAndSettle();
 
+    expect(AdminReveal.shared.stage, AdminRevealStage.hidden);
+    expect(find.text('No matches for “mycoforest”.'), findsOneWidget);
+  });
+
+  testWidgets('a code the server refuses changes nothing at all', (tester) async {
+    final admin = _StubAdminSession(
+      signedIn: true,
+      result: AdminCodeGrant.incorrectCode,
+    );
+    await pumpShop(tester, adminAuth: admin);
+
+    await tester.enterText(searchField(), 'wrongword');
+    await tester.pump();
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+
+    // The word did reach the server — that is the only way anyone can know
+    // whether it is somebody's code — but the refusal is silent: the shop box
+    // simply carries on showing no matches.
+    expect(admin.submitted, 'wrongword');
+    expect(AdminReveal.shared.stage, AdminRevealStage.hidden);
+    expect(find.text('No matches for “wrongword”.'), findsOneWidget);
+  });
+
+  testWidgets('a code the server accepts opens the admin area', (tester) async {
+    final admin = _StubAdminSession(
+      signedIn: true,
+      result: AdminCodeGrant.granted,
+    );
+    await pumpShop(tester, adminAuth: admin);
+
+    await tester.enterText(searchField(), 'mycoforest');
+    await tester.pump();
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+
+    expect(admin.submitted, 'mycoforest');
+    // goToAdmin is null in tests, so the stage flipping stands for the admin
+    // page opening; the box is cleared, so the shop grid is back.
     expect(AdminReveal.shared.stage, AdminRevealStage.signIn);
-
-    // The summon also clears the box, so the shop grid is back.
     expect(find.text('Fresh Oyster Mushrooms'), findsOneWidget);
   });
 
-  testWidgets('real product searches, short words and multi-word queries never summon',
+  testWidgets('a word that is not code-shaped never reaches the server',
       (tester) async {
-    await pumpShop(tester);
+    final admin = _StubAdminSession(
+      signedIn: true,
+      result: AdminCodeGrant.granted,
+    );
+    await pumpShop(tester, adminAuth: admin);
 
-    // A product term (matches the catalogue) — submit stays a pure search.
+    // A product term is a product search, however it is shaped.
     await tester.enterText(searchField(), 'powder');
     await tester.pump();
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pump();
-    expect(AdminReveal.shared.stage, AdminRevealStage.hidden);
+    expect(admin.submitted, isNull);
 
-    // A short single word with no match is a search, not a code.
-    await tester.enterText(searchField(), 'oats');
-    await tester.pump();
-    expect(find.text('No matches for “oats”.'), findsOneWidget);
-    await tester.testTextInput.receiveAction(TextInputAction.search);
-    await tester.pump();
-    expect(AdminReveal.shared.stage, AdminRevealStage.hidden);
+    // Three characters: too short to be a code. Two words: not a single
+    // token. 65 characters: longer than the Admins manager will ever store.
+    for (final word in <String>['oat', 'dried mushroom', 'x' * 65]) {
+      await tester.enterText(searchField(), word);
+      await tester.pump();
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pump();
+      expect(admin.submitted, isNull, reason: 'submitted "$word"');
+      expect(AdminReveal.shared.stage, AdminRevealStage.hidden);
+    }
 
-    // A multi-word query is never a code.
-    await tester.enterText(searchField(), 'dried mushroom');
-    await tester.pump();
-    await tester.testTextInput.receiveAction(TextInputAction.search);
-    await tester.pump();
-    expect(AdminReveal.shared.stage, AdminRevealStage.hidden);
-  });
-
-  testWidgets('a summon is idempotent; later ordinary typing stays a product search',
-      (tester) async {
-    await pumpShop(tester);
-
-    await tester.enterText(searchField(), 'mycoforest');
+    // A four-character single word IS code-shaped — real admin codes can be
+    // that short — so it does go to the server.
+    await tester.enterText(searchField(), 'abcd');
     await tester.pump();
     await tester.testTextInput.receiveAction(TextInputAction.search);
-    await tester.pump();
-    await tester.pump();
-    expect(AdminReveal.shared.stage, AdminRevealStage.signIn);
-
-    // A second code-like submit keeps the gate armed (never double-stacks or
-    // leaves the shop) and clears the box again.
-    await tester.enterText(searchField(), 'mycoforest');
-    await tester.pump();
-    await tester.testTextInput.receiveAction(TextInputAction.search);
-    await tester.pump();
-    await tester.pump();
-    expect(AdminReveal.shared.stage, AdminRevealStage.signIn);
-
-    // Ordinary typing after a summon is a normal product search again and
-    // changes nothing about the armed gate.
-    await tester.enterText(searchField(), 'powder');
-    await tester.pump();
-    await tester.testTextInput.receiveAction(TextInputAction.search);
-    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(admin.submitted, 'abcd');
     expect(AdminReveal.shared.stage, AdminRevealStage.signIn);
   });
 }

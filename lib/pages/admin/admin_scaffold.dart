@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../config/mx_colors.dart';
 import '../../config/mx_type.dart';
 import '../../firebase/fb_admin.dart';
+import '../../router/routes.dart';
 import '../../state/auth_controller.dart';
 import '../../state/site_config_controller.dart';
 import '../../widgets/brand.dart';
@@ -42,6 +43,27 @@ class AdminScaffold extends StatefulWidget {
 
   @override
   State<AdminScaffold> createState() => _AdminScaffoldState();
+}
+
+/// The MYCOSIX wordmark in the admin area, tappable: clicking the app icon
+/// or name takes the administrator back to the public home page (the admin
+/// route is cleared, so the browser back button does not drop them straight
+/// back into the dashboard).
+class _HomeLogo extends StatelessWidget {
+  const _HomeLogo({required this.size});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil(Routes.home, (route) => false),
+      borderRadius: BorderRadius.circular(6),
+      child: MxLogo(dark: true, size: size, showFull: true),
+    );
+  }
 }
 
 class _AdminScaffoldState extends State<AdminScaffold> {
@@ -84,7 +106,7 @@ class _AdminScaffoldState extends State<AdminScaffold> {
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
-                  child: MxLogo(dark: true, size: 34, showFull: true),
+                  child: _HomeLogo(size: 34),
                 ),
                 const Divider(color: MxColors.lineDark, height: 1),
                 const SizedBox(height: 10),
@@ -126,7 +148,7 @@ class _AdminScaffoldState extends State<AdminScaffold> {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
               child: Row(
                 children: [
-                  MxLogo(dark: true, size: 26, showFull: true),
+                  _HomeLogo(size: 26),
                   const Spacer(),
                   const _AccountFooter(compact: true),
                 ],

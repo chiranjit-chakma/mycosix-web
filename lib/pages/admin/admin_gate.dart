@@ -19,10 +19,12 @@ import 'admin_scaffold.dart';
 /// arms the sign-in; everyone else — including a direct /admin visit from a
 /// stranger — is handed off to the public home route, so the admin page has no
 /// discoverable URL for customers. A signed-in account WITHOUT an admins grant
-/// can unlock one with the owner-set admin access code: the code entry writes
-/// `admins/{uid}` and the Firestore rules verify it server-side against the
-/// unreadable secrets/adminGate document — a wrong code (or no code set yet)
-/// is refused exactly like a stranger's request. All authorisation decisions
+/// can unlock one with the code an administrator set for its own email: the
+/// code entry claims `adminCodes/{email}` and the Firestore rules compare the
+/// submitted code against the stored one server-side (no client can read it),
+/// then allow `admins/{uid}` to be created — a wrong code, or an account no
+/// code was set for, is refused exactly like a stranger's request. All
+/// authorisation decisions
 /// come from [AuthController] state (Firebase Auth + the admins/{uid} grant,
 /// enforced by security rules), never from a client-side flag or phrase.
 class AdminGate extends StatelessWidget {
@@ -279,9 +281,12 @@ class _NotAuthorizedViewState extends State<_NotAuthorizedView> {
               style: MxType.h4(color: MxColors.charcoal),
             ),
             const SizedBox(height: 8),
+            // Deliberately states that the sign-in itself worked: a fresh
+            // Google sign-in lands here until a code is entered, and "not an
+            // administrator" alone reads as "the sign-in failed".
             Text(
-              '$email is signed in, but it has not been granted admin access '
-              'on this project.',
+              'Signed in successfully as $email - but this account has not '
+              'been granted admin access on this project.',
               textAlign: TextAlign.center,
               style: MxType.bodySm(color: MxColors.stone),
             ),
@@ -294,9 +299,9 @@ class _NotAuthorizedViewState extends State<_NotAuthorizedView> {
               decoration: InputDecoration(
                 labelText: 'Admin access code',
                 helperText:
-                    'Your personal code - an admin set one for your email - or '
-                    'the owner-set master code. The right code grants this '
-                    'account admin access now.',
+                    'The code an administrator set for this email address. It '
+                    'is checked on the server - no device ever sees it - and '
+                    'the right code grants this account admin access now.',
                 prefixIcon: const Icon(Icons.key_rounded),
                 errorText: _codeError,
               ),

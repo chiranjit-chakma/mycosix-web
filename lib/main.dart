@@ -323,6 +323,11 @@ class _MxRootState extends State<MxRoot> {
       navigatorKey: appNavigatorKey,
       navigatorObservers: <NavigatorObserver>[AdminReveal.shared.routeObserver],
       onGenerateRoute: AppRouter.generateRoute,
+      // The very first page is drawn in its first frame rather than fading in
+      // from nothing behind the splash, which is what made a launch look like
+      // a flash of blank cream before the app appeared. Every later route
+      // keeps the ordinary transition (see AppRouter).
+      onGenerateInitialRoutes: AppRouter.generateInitialRoutes,
     );
   }
 }

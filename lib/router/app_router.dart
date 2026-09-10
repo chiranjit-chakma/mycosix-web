@@ -17,41 +17,68 @@ import '../pages/profile/wishlist_page.dart';
 import '../pages/shop/shop_page.dart';
 import '../pages/team/team_page.dart';
 import '../services/display_mode.dart';
+import 'initial_routes.dart';
 import 'routes.dart';
 
 /// Route table + transitions.
 class AppRouter {
   AppRouter._();
 
-  static Route<dynamic> generateRoute(RouteSettings settings) {
-    final name = settings.name ?? Routes.home;
+  /// The page an inner route opens on, as an animated route.
+  static Route<dynamic> generateRoute(RouteSettings settings) =>
+      _build(settings, laterArrival);
 
-    // Shared page transition — subtle fade + slide up.
-    Route<T> fadeRoute<T>(Widget page) {
-      return PageRouteBuilder<T>(
-        settings: settings,
-        transitionDuration: const Duration(milliseconds: 380),
-        reverseTransitionDuration: const Duration(milliseconds: 260),
-        pageBuilder: (context, animation, secondary) => page,
-        transitionsBuilder: (context, animation, secondary, child) {
-          final curved = CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-            reverseCurve: Curves.easeInCubic,
-          );
-          return FadeTransition(
-            opacity: curved,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 0.015),
-                end: Offset.zero,
-              ).animate(curved),
-              child: child,
-            ),
-          );
-        },
-      );
-    }
+  /// The routes a cold start begins with (see [initialRouteNames]).
+  ///
+  /// Same stack Navigator would have built on its own, with one difference:
+  /// the route the visitor is actually opening is rendered in its very first
+  /// frame instead of fading in from fully transparent (see [launchArrival]).
+  /// That fade ran on the initial route too, so the splash handed over to a
+  /// beat of blank cream before the page arrived — the flash on open. Anything
+  /// stacked underneath keeps the ordinary transition.
+  static List<Route<dynamic>> generateInitialRoutes(String initialRouteName) {
+    final names = initialRouteNames(initialRouteName);
+    return <Route<dynamic>>[
+      for (var i = 0; i < names.length; i++)
+        _build(
+          RouteSettings(name: names[i]),
+          launchArrival(i, names.length),
+        ),
+    ];
+  }
+
+  static Route<dynamic> _build(RouteSettings settings, RouteArrival arrival) {
+    final page = _pageFor(settings);
+    return PageRouteBuilder<dynamic>(
+      settings: settings,
+      transitionDuration: arrival.forward,
+      reverseTransitionDuration: arrival.reverse,
+      pageBuilder: (context, animation, secondary) => page,
+      transitionsBuilder: (context, animation, secondary, child) {
+        if (!arrival.animated) return child;
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return FadeTransition(
+          opacity: curved,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.015),
+              end: Offset.zero,
+            ).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
+  /// The page for [settings]: the installed-app shell, a named route, or the
+  /// recovery of a shared real-path deep link.
+  static Widget _pageFor(RouteSettings settings) {
+    final name = settings.name ?? Routes.home;
 
     // Installed *phone-size* PWA: the five primary sections live in a
     // paging shell with the carousel dock, so a primary route becomes the
@@ -64,34 +91,34 @@ class AppRouter {
     if (isStandaloneMobile()) {
       final idx = primarySectionIndex(name);
       if (idx >= 0 && !(name == Routes.profile && settings.arguments != null)) {
-        return fadeRoute(MxPwaRoot(initialIndex: idx));
+        return MxPwaRoot(initialIndex: idx);
       }
     }
 
     switch (name) {
       case Routes.home:
-        return fadeRoute(const HomePage());
+        return const HomePage();
       case Routes.shop:
-        return fadeRoute(const ShopPage());
+        return const ShopPage();
       case Routes.farm:
-        return fadeRoute(const FarmPage());
+        return const FarmPage();
       case Routes.journey:
-        return fadeRoute(const JourneyPage());
+        return const JourneyPage();
       case Routes.team:
-        return fadeRoute(const TeamPage());
+        return const TeamPage();
       case Routes.contact:
-        return fadeRoute(const ContactPage());
+        return const ContactPage();
       case Routes.privacy:
-        return fadeRoute(const PrivacyPage());
+        return const PrivacyPage();
       case Routes.terms:
-        return fadeRoute(const TermsPage());
+        return const TermsPage();
       case Routes.cart:
-        return fadeRoute(const CartPage());
+        return const CartPage();
       case Routes.checkout:
-        return fadeRoute(const CheckoutPage());
+        return const CheckoutPage();
       case Routes.product:
         final id = settings.arguments as String? ?? '';
-        return fadeRoute(ProductPage(productId: id));
+        return ProductPage(productId: id);
       case Routes.profile:
         // [arguments] is either a bare returnRoute (String) or a
         // [ProfileRouteRequest] (returnRoute + which tab to open). Both come
@@ -100,22 +127,20 @@ class AppRouter {
         final request = arg is ProfileRouteRequest
             ? arg
             : ProfileRouteRequest(returnRoute: arg as String?);
-        return fadeRoute(
-          ProfilePage(
-            returnRoute: request.returnRoute,
-            initialMode: request.startMode,
-          ),
+        return ProfilePage(
+          returnRoute: request.returnRoute,
+          initialMode: request.startMode,
         );
       case Routes.wishlist:
-        return fadeRoute(const WishlistPage());
+        return const WishlistPage();
       case Routes.myOrders:
         // In-app navigation may pass a highlight (the Firestore order doc id)
         // straight through; the page only ever shows the signed-in customer's
         // own orders, so this is a display hint, never authorisation.
         final highlight = settings.arguments as String?;
-        return fadeRoute(MyOrdersPage(highlightOrderId: highlight));
+        return MyOrdersPage(highlightOrderId: highlight);
       case Routes.admin:
-        return fadeRoute(const AdminGate());
+        return const AdminGate();
       default:
         // A shared real-path product URL (/product/<id>) arrives with the whole
         // path as the route name and no arguments, so it would fall through to
@@ -123,7 +148,7 @@ class AppRouter {
         final path = (settings.name ?? '').trim();
         if (path.startsWith('${Routes.product}/')) {
           final id = path.substring('${Routes.product}/'.length);
-          return fadeRoute(ProductPage(productId: id));
+          return ProductPage(productId: id);
         }
         // A shared push-deep-link for My Orders (/my-orders/<docId>): the id is
         // passed to the page as a highlight only - the orders list itself stays
@@ -132,9 +157,9 @@ class AppRouter {
         final myOrdersPrefix = '${Routes.myOrders}/';
         if (path.startsWith(myOrdersPrefix)) {
           final id = path.substring(myOrdersPrefix.length);
-          return fadeRoute(MyOrdersPage(highlightOrderId: id));
+          return MyOrdersPage(highlightOrderId: id);
         }
-        return fadeRoute(const HomePage());
+        return const HomePage();
     }
   }
 }

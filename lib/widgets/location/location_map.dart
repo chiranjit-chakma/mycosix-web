@@ -198,13 +198,18 @@ class _LocationMapState extends State<LocationMap> {
     tip.dy.clamp(2.0, math.max(2.0, _size.height - 2)),
   );
 
-  /// Canvas margin for paper travel on each axis: 75% of that axis, so a
-  /// whole long drag can slide before resistance builds (at world zoom a
-  /// single drag can cross a country; at street zoom a single drag covers a
-  /// neighbourhood). The embed viewport is larger than the map's clip by one
-  /// band on every side.
-  double get _paperBandX => _size.width * 0.75;
-  double get _paperBandY => _size.height * 0.75;
+  /// Canvas margin for paper travel on each axis: twice that axis, so one
+  /// long continuous drag carries the map two whole screens before resistance
+  /// builds - the reach that makes the pin feel like it can be taken anywhere
+  /// instead of a few hundred metres (it was 75%, which ran out almost
+  /// immediately at street zoom). The embed viewport is larger than the map's
+  /// clip by one band on every side, and the imagery for that whole band is
+  /// really loaded, so sliding into it never shows empty ground. Releasing
+  /// re-centers the embed on the spot under the pin, so repeating the drag
+  /// walks the map anywhere in the world - and at world zoom a single drag
+  /// already crosses a continent.
+  double get _paperBandX => _size.width * 2.0;
+  double get _paperBandY => _size.height * 2.0;
 
   /// Elastic bound on paper travel: the paper eases toward the canvas edge
   /// as the finger keeps pushing, and can never pass it — real imagery

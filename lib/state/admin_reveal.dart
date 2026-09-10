@@ -12,7 +12,7 @@ enum AdminRevealStage {
   /// or the shop search-bar summon) was used: show the admin sign-in page.
   /// Firebase Auth is the real boundary, and a signed-in administrator always
   /// lands on the gate regardless of this stage. A signed-in account without a
-  /// grant can still unlock one with the owner-set admin access code (a
+  /// grant can still unlock one with the code set for its own email (a
   /// rules-verified write) - see AuthController.
   signIn,
 }
@@ -23,14 +23,14 @@ enum AdminRevealStage {
 /// entry (added when the owner switches the toggle on) and the shop
 /// search-bar summon — both via [openAdmin], (b) an already signed-in
 /// administrator visiting `/admin` directly, and (c) a signed-in account
-/// without a grant submitting the owner-set admin access code on the gate. A
+/// without a grant submitting the code set for its own email on the gate. A
 /// visitor who wanders to `/admin` unsummoned only ever sees the normal
 /// public site: [AdminGate] shows the sign-in or dashboard purely from this
 /// stage + Firebase auth state. Nothing here is a security boundary — a uid is
 /// an administrator only because `admins/{uid}` exists, which the Firestore
-/// security rules enforce on every protected operation; the admin access code
-/// (owner-set, compared only in the rules engine) is the bootstrap that
-/// creates that grant.
+/// security rules enforce on every protected operation; that account's own
+/// code (compared only in the rules engine, against the value stored for its
+/// email) is the bootstrap that creates that grant.
 class AdminReveal extends ChangeNotifier {
   AdminReveal._();
 

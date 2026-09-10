@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 import '../firebase/fb_admin.dart';
+import '../services/display_mode.dart';
 
 /// Where a visitor stands on the way into the admin area.
 enum AdminGateStatus {
@@ -125,6 +126,11 @@ class AuthController extends ChangeNotifier {
   User? _user;
   User? get user => _user;
 
+  /// Whether an account is signed in on the ADMIN session at all. Callers that
+  /// only need "is there somebody here who could hold an admin code" use this
+  /// rather than [user], so it is a single, overridable seam.
+  bool get hasAdminSession => _user != null;
+
   /// `true`/`false` once known; `null` while the grant is being watched.
   bool? _isAdmin;
   bool? get isAdmin => _isAdmin;
@@ -141,6 +147,11 @@ class AuthController extends ChangeNotifier {
       _resolving = false;
       return;
     }
+    // A Google sign-in may have just come back through the full-page
+    // redirect flow (the installed-app path in [signInWithGoogle]).
+    // Completing it here is what surfaces a failure from that round trip; a
+    // successful one is already handled by the auth-state listener above.
+    unawaited(_completePendingRedirect());
     _authSub = FbAdmin.auth.authStateChanges().listen(
       (u) {
         _user = u;
@@ -204,34 +215,99 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  /// Signs the administrator in with their Google account (a popup window). A
-  /// first Google sign-in also creates the account. When the browser blocks
-  /// the popup the same provider is retried through the full-page redirect and
-  /// the auth-state listener signs the admin in when the browser returns, so
-  /// the caller must not navigate away meanwhile. Google must be switched on
-  /// for the project once in the Firebase console; failures surface as a
-  /// human-safe message on [message].
+  /// Signs the administrator in with their Google account. A first Google
+  /// sign-in also creates the account, and the account's email is what the
+  /// admin code is matched against, so the address used here has to be the one
+  /// an administrator set a code for.
+  ///
+  /// Which flow is used depends on where the app is running. In an INSTALLED
+  /// app window (a home-screen PWA, on a phone or a desktop) the popup is
+  /// never used: such a window has no reliable popup - it is either blocked
+  /// outright or opens behind the app and is never seen again - which is what
+  /// made Google sign-in look broken on a phone. Those windows go straight to
+  /// Google's full-page redirect, which the browser finishes and returns from.
+  /// A browser tab keeps the popup, and retries through the redirect whenever
+  /// the popup fails for any reason other than the visitor deliberately
+  /// closing it (the error a strict or in-app browser reports instead of
+  /// popup-blocked varies far too much to enumerate).
+  ///
+  /// Either way the caller must not navigate away while a redirect is in
+  /// flight: the auth-state listener signs the admin in when the browser comes
+  /// back. Failures surface as a human-safe message on [message].
   Future<bool> signInWithGoogle() async {
     if (!_backendAvailable) return false;
     _message = null;
     notifyListeners();
+    final provider = GoogleAuthProvider();
+    if (kIsWeb && isStandaloneDisplay()) {
+      return _redirectSignIn(provider);
+    }
     try {
-      await FbAdmin.auth.signInWithPopup(GoogleAuthProvider());
+      await FbAdmin.auth.signInWithPopup(provider);
       return true;
     } catch (e) {
-      if (kIsWeb && e is FirebaseAuthException && e.code == 'popup-blocked') {
-        try {
-          await FbAdmin.auth.signInWithRedirect(GoogleAuthProvider());
-          return true;
-        } catch (redirectError) {
-          _message = friendlyAdminGoogleSignInError(redirectError);
-          notifyListeners();
-          return false;
-        }
+      if (kIsWeb && _shouldRetryAsRedirect(e)) {
+        return _redirectSignIn(provider);
       }
       _message = friendlyAdminGoogleSignInError(e);
       notifyListeners();
       return false;
+    }
+  }
+
+  /// Whether a failed popup attempt is worth retrying through the redirect.
+  /// Only the visitor ending it themselves (and a second popup being asked for
+  /// while one is already opening) is taken at face value; everything else is
+  /// a popup the browser would not give us.
+  static bool _shouldRetryAsRedirect(Object error) {
+    if (error is! FirebaseAuthException) return true;
+    switch (error.code) {
+      case 'popup-closed-by-user':
+      case 'cancelled-popup-request':
+      // These are the provider/project setup itself, not the popup: the
+      // redirect would fail the same way, so it is not worth a round trip.
+      case 'operation-not-allowed':
+      case 'unauthorized-domain':
+      case 'account-exists-with-different-credential':
+        return false;
+      default:
+        return true;
+    }
+  }
+
+  /// Sends the browser to Google and back. Returns true once the browser has
+  /// been sent; the sign-in itself completes on the way back - the auth-state
+  /// listener picks it up, and [_completePendingRedirect] reports a failure.
+  Future<bool> _redirectSignIn(AuthProvider provider) async {
+    try {
+      await FbAdmin.auth.signInWithRedirect(provider);
+      return true;
+    } catch (e) {
+      _message = friendlyAdminGoogleSignInError(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Completes a Google sign-in that came back through the full-page redirect.
+  /// Web only - there is no redirect round trip anywhere else - and a failure
+  /// is reported on the gate exactly like a popup failure would be. A launch
+  /// with nothing pending is not an error, so it stays silent.
+  Future<void> _completePendingRedirect() async {
+    if (!kIsWeb || !_backendAvailable) return;
+    try {
+      await FbAdmin.auth.getRedirectResult();
+    } catch (e) {
+      if (e is FirebaseAuthException) {
+        switch (e.code) {
+          // "Nothing was pending": the ordinary case on almost every launch.
+          case 'no-auth-event':
+          case 'no-current-user':
+            return;
+        }
+      }
+      _message = friendlyAdminGoogleSignInError(e);
+      notifyListeners();
     }
   }
 
@@ -250,25 +326,37 @@ class AuthController extends ChangeNotifier {
     }
   }
 
+  /// The one message a refused code ever produces. It is deliberately the
+  /// same for a wrong code, for an account no code was ever set for, and for
+  /// an account signed in with a different email, so nothing about who is an
+  /// administrator can be learned by trying words.
+  static const String _wrongCodeMessage = 'That admin access code is not right.';
+
   /// Restores the server-verified secret-code entry: grants this account admin
-  /// access by submitting [code]. Two server-verified doors exist, tried in
-  /// order:
+  /// access by submitting [code]. There is exactly ONE door, and it is this
+  /// account's OWN code:
   ///
-  /// 1. A per-email invite (the Admins manager): if this email has an
-  ///    `adminCodes` row, CLAIMING it with the right code stamps this uid onto
-  ///    that row, then the `admins/{uid}` create is verified against the stamp
-  ///    and records a code-free `{email, addedAt}` grant. A wrong per-email
-  ///    code - or no invite - changes nothing and falls through to ...
-  /// 2. ... the owner-set admin access code (the master code): create
-  ///    `admins/{uid}` = `{code}`; the rules compare the code against the
-  ///    unreadable secrets/adminGate document and refuse unless it matches
-  ///    exactly and the write is the submitter's own uid with exactly one
-  ///    field.
+  ///   * `adminCodes/{email}` - keyed by the lowercased email this account
+  ///     signed in with - holds the code an administrator set for that email.
+  ///     No client can read it: the rules engine alone compares a submitted
+  ///     code against the stored one.
+  ///   * CLAIMING that row with the right code stamps this uid onto it, and
+  ///     that stamp is the only thing which then lets `admins/{uid}` be
+  ///     created, with a code-free `{email, addedAt}` grant.
   ///
-  /// Either way a wrong code (or no code configured yet) surfaces as
-  /// [AdminCodeGrant.incorrectCode] and leaves the account non-admin. On
-  /// success the admin grant snapshot watched here flips to exists -> the gate
-  /// rebuilds into the dashboard without any further code.
+  /// So a code only ever works for the email it was set for, and changing a
+  /// code retires the previous one immediately - the comparison is against the
+  /// stored value, and the stored value is exactly what changed. There is no
+  /// shared or master code and no second way in: a wrong code, an account with
+  /// no code set for it, and an account signed in with a different email are
+  /// all refused by the rules alike, and all surface as
+  /// [AdminCodeGrant.incorrectCode] with nothing revealed.
+  ///
+  /// An account that is ALREADY an administrator only needs the claim to
+  /// succeed (there is no grant left to create), so its own code keeps working
+  /// after a fresh sign-in. On success the admin grant snapshot watched here
+  /// flips to exists -> the gate rebuilds into the dashboard without any
+  /// further code.
   Future<AdminCodeGrant> grantAdminWithCode(String code) async {
     if (!_backendAvailable) return AdminCodeGrant.offline;
     final u = _user;
@@ -276,43 +364,41 @@ class AuthController extends ChangeNotifier {
     final c = code.trim();
     if (c.isEmpty) return AdminCodeGrant.incorrectCode;
     final email = (u.email ?? '').trim().toLowerCase();
-    var claimed = false;
-    if (email.isNotEmpty) {
-      // Door 1: per-email invite. Reading adminCodes is denied to every
-      // client, so whether a row exists is discovered by attempting the claim:
-      // it only succeeds when a row exists for this email, the submitted code
-      // matches it, and this uid may stamp itself onto it.
-      try {
-        await FbAdmin.adminCodes.doc(email).update({
-          'code': c,
-          'uid': u.uid,
-          'grantedAt': FieldValue.serverTimestamp(),
-        });
-        claimed = true;
-      } catch (_) {
-        claimed = false;
-      }
-      if (claimed) {
-        try {
-          await FbAdmin.admins.doc(u.uid).set({
-            'email': email,
-            'addedAt': FieldValue.serverTimestamp(),
-          });
-          return AdminCodeGrant.granted;
-        } catch (_) {
-          // The claim landed but the grant create was refused (e.g. a transient
-          // network failure). Re-submitting re-claims (rules allow uid == self)
-          // so this is never a dead end; fall through to door 2 this attempt.
-          claimed = false;
-        }
-      }
-    }
-    // Door 2: owner-set master code.
+    if (email.isEmpty) return AdminCodeGrant.incorrectCode;
+
+    // The one door. Reading adminCodes is denied to every client, so whether a
+    // code exists for this email is discovered by ATTEMPTING the claim: it
+    // only succeeds when a row exists for this email, the submitted code
+    // matches the stored one, and this uid may stamp itself onto it.
     try {
-      await FbAdmin.admins.doc(u.uid).set({'code': c});
+      await FbAdmin.adminCodes.doc(email).update({
+        'code': c,
+        'uid': u.uid,
+        'grantedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {
+      _message = _wrongCodeMessage;
+      notifyListeners();
+      return AdminCodeGrant.incorrectCode;
+    }
+
+    // Already an administrator: the claim above was the whole check, and the
+    // grant must not be rewritten (client writes to admins/{uid} are denied).
+    if (_isAdmin == true) return AdminCodeGrant.granted;
+
+    try {
+      await FbAdmin.admins.doc(u.uid).set({
+        'email': email,
+        'addedAt': FieldValue.serverTimestamp(),
+      });
       return AdminCodeGrant.granted;
     } catch (_) {
-      _message = 'That admin access code is not right.';
+      // The claim landed but the grant create was refused - most likely this
+      // account was already an administrator and the watched snapshot had not
+      // caught up yet. Either way, re-submitting re-claims (the rules allow a
+      // repeat by the same uid), so this is never a dead end.
+      if (_isAdmin == true) return AdminCodeGrant.granted;
+      _message = _wrongCodeMessage;
       notifyListeners();
       return AdminCodeGrant.incorrectCode;
     }

@@ -18,9 +18,10 @@ import '../admin_widgets.dart';
 /// and the `adminCodes/{email}` rows, so a capability here is never implied by
 /// being on the page.
 ///
-/// * **Roster** — every `admins/{uid}` grant (readable to any admin). Invited
-///   admins show their email and when they were added; an admin who signed in
-///   through the owner-set master code shows their email too (backfilled once).
+/// * **Roster** — every `admins/{uid}` grant (readable to any admin), each
+///   showing the email it was granted for and when it was added. A legacy
+///   grant from before per-email codes existed has no email stored yet and
+///   shows its id until that admin signs in and sets their own code.
 /// * **Add an administrator** — an admin picks an email and a secret code for
 ///   that person. The code is stored unreadably in `adminCodes/{email}` and
 ///   never shown back; the invitee signs in (Google or email) and enters the

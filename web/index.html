@@ -85,6 +85,19 @@
       100% { transform: translateX(260%); }
     }
     #mx-boot.done { opacity: 0; pointer-events: none; }
+
+    /* Flutter's own engine elements. The app paints every pixel of these, so
+       they are transparent in normal use - but "transparent" leaves the
+       browser's default white showing for the instants when the engine has a
+       view and has not painted into it yet (which is exactly the moment the
+       splash hands over). Giving them the page colour as well means every
+       layer of the stack is cream from the first paint, so there is no white
+       left anywhere for a flash to come from. */
+    flutter-view,
+    flt-glass-pane,
+    flt-scene-host {
+      background: #F2ECDF;
+    }
   </style>
 
   <!-- Open the connections the app is about to need while the app itself is

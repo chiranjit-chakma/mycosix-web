@@ -17,16 +17,19 @@ import '../../widgets/shell.dart';
 /// The search box is a product search first: typing filters the catalogue and
 /// ordinary queries are never anything else. When a search is *submitted*
 /// (the search/enter key) with a single code-like word that matches nothing
-/// in the catalogue, it is the owner's summon to the admin area — the "type
-/// your code in the shop search" route the owner asked for. Submitting such a
-/// word opens the admin area (sign-in page for a signed-out owner, dashboard
-/// for a signed-in administrator); real product terms, short words and
-/// multi-word queries never do. The typed value is never itself a credential
-/// — the owner-set code lives only in the security rules and no client can
-/// read it — so it merely opens the gate, and the real boundary stays
-/// server-side (admin email/password sign-in plus the admins/{uid} grant
-/// enforced by Firestore rules), exactly as it is for the "Admin" navigation
-/// entry the owner's toggle can add.
+/// in the catalogue, it is the quiet way an administrator enters their own
+/// code — the "type your code in the shop search" route the owner asked for.
+/// The word is sent to the server, where the Firestore rules compare it with
+/// the code stored for THIS account's email (no client ever sees a code), and
+/// only a word the server accepts opens the admin area.
+///
+/// Nothing else does, and nothing else is revealed. A wrong word, a word from
+/// an account no code was set for, and a word typed by a visitor who is not
+/// signed in are all the same ordinary empty product search — "no matches" —
+/// with no hint that an admin area exists at all. The real boundary therefore
+/// stays entirely server-side (the code comparison plus the admins/{uid}
+/// grant, enforced by Firestore rules), exactly as it is for the visible
+/// "Admin" navigation entry the owner's toggle can add.
 class ShopPage extends StatefulWidget {
   const ShopPage({super.key, this.embedded = false});
 
@@ -46,13 +49,14 @@ class _ShopPageState extends State<ShopPage> {
 
   static const _categories = ['All', 'Fresh', 'Dried', 'Preserved'];
 
-  /// A submitted search looks like a possible owner code when it is one word
-  /// (no spaces) of at least six characters. Everything else — multi-word
-  /// queries, short words, anything the catalogue matches — is purely a
-  /// product search and is never treated as a summon.
+  /// A submitted search looks like a possible admin code when it is a single
+  /// word (no spaces) of 4 to 64 characters — the same shape the Admins
+  /// manager accepts when an administrator sets a code. Everything else —
+  /// multi-word queries, shorter words, anything the catalogue matches — is
+  /// purely a product search and is never treated as a code attempt.
   static bool _isCodeShaped(String text) {
     final t = text.trim();
-    return t.length >= 6 && !t.contains(RegExp(r'\s'));
+    return t.length >= 4 && t.length <= 64 && !t.contains(RegExp(r'\s'));
   }
 
   /// Whether any product in the whole catalogue contains [token] (ignoring
@@ -92,13 +96,13 @@ class _ShopPageState extends State<ShopPage> {
   }
 
   /// Submit (the search/enter key). Product searches behave exactly as before.
-  /// A submitted code-like word that matches nothing is the owner's summon: it
-  /// opens the admin area (sign-in page for a signed-out owner, dashboard for
-  /// a signed-in administrator). If an *admin* session is active but not yet
-  /// granted, the typed word is first submitted to the rules for verification
-  /// — a right word is admitted, a wrong word stays silent (an ordinary, empty
-  /// search) and reveals nothing. The word itself is never a credential and is
-  /// only ever sent as that rules-verified grant write.
+  /// A submitted code-like word that matches nothing is the quiet code entry:
+  /// the word is handed to the server, which alone can tell whether it is the
+  /// code set for THIS account's email, and only a word it accepts opens the
+  /// admin area. Everything else — a wrong word, a word from an account with
+  /// no code, a visitor who is not signed in at all — stays an ordinary empty
+  /// product search and reveals nothing, so the shop box can never be used to
+  /// discover that an admin area, or a code, exists.
   Future<void> _onSearchSubmitted(String value) async {
     final text = value.trim();
     final products = context.read<ProductsController>();
@@ -114,17 +118,18 @@ class _ShopPageState extends State<ShopPage> {
     } on ProviderNotFoundException {
       auth = null;
     }
+    // A code belongs to an email, and the rules only accept the claim from the
+    // account that email belongs to, so an account that is not signed in has
+    // no code to enter: it gets the ordinary empty search, never a sign-in
+    // page and never a hint.
+    if (auth?.hasAdminSession != true) return;
 
-    // An active admin session that is not yet granted: let the server decide.
-    // Only a correct word proceeds; a wrong word reveals nothing.
-    if (auth?.user != null && auth!.isAdmin != true) {
-      final result = await auth.grantAdminWithCode(text);
-      if (!mounted) return;
-      if (result != AdminCodeGrant.granted) return; // wrong word: silent
-    }
+    final result = await auth!.grantAdminWithCode(text);
+    if (!mounted) return;
+    if (result != AdminCodeGrant.granted) return; // wrong word: silent
 
-    // Open the admin area: a signed-in administrator goes straight to the
-    // dashboard; everyone else lands on the admin sign-in page.
+    // The server accepted the word: this account is an administrator now (or
+    // already was), so the shop box steps aside and the admin area opens.
     _search.clear();
     if (mounted) setState(() => _query = '');
     AdminReveal.shared.openAdmin();
