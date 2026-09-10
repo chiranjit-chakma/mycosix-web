@@ -19,6 +19,7 @@ import 'router/app_navigator.dart';
 import 'router/app_router.dart';
 import 'router/routes.dart';
 import 'state/admin_reveal.dart';
+import 'state/admin_session_binding.dart';
 import 'state/order_alert_controller.dart';
 import 'state/auth_controller.dart';
 import 'state/cart_sync_controller.dart';
@@ -183,6 +184,27 @@ Future<void> main() async {
     auth: customerAuth,
     backendAvailable: Fb.enabled,
   )..start();
+
+  // The admin session is tied to the shop session it was opened under. The
+  // admin area signs in through its own Firebase app, so without this its
+  // session would simply outlive the shop account: signing out of the shop -
+  // or a different account signing in on the same device - would leave the
+  // previous admin's session sitting there, ready for whoever is at the
+  // keyboard next. Both sides are watched as live auth state, and the binding
+  // is remembered on the device, so this holds across a refresh, a PWA
+  // relaunch and a browser restart. Only when both apps are up: with the admin
+  // app unavailable there is no admin session for this to govern, and with the
+  // shop side unavailable there is no session to tie it to. It is app-lifetime
+  // and needs no reference kept here - the two auth-state subscriptions it
+  // registers hold it for as long as the app runs.
+  if (Fb.enabled && FbAdmin.enabled) {
+    AdminSessionBinding(
+      prefs: prefs,
+      shopUids: Fb.auth.authStateChanges().map((u) => u?.uid),
+      adminUids: FbAdmin.auth.authStateChanges().map((u) => u?.uid),
+      endAdminSession: () => FbAdmin.auth.signOut(),
+    ).start();
+  }
 
   // Foreground order alerts (app-open): live status nudges for the customer's
   // own orders and a "new order" alert for an authorised administrator. The

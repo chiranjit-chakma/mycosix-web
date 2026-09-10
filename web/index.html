@@ -111,16 +111,33 @@
     }
   </style>
 
+  <!-- Start the app's own download immediately. main.dart.js is the largest
+       thing a launch waits for and it is only asked for once the bootstrap
+       script has been fetched, parsed and run - which on a phone is most of a
+       second in which nothing at all is downloading. Naming it here lets the
+       browser's preload scanner start it while the page is still being read,
+       so that second of dead air is spent fetching instead of waiting.
+
+       The path is relative on purpose: it resolves against the <base href>
+       above, so it follows the app wherever it is served from. If this link is
+       ever wrong the browser simply discards it and the bootstrap fetches the
+       file as it always did - a launch can never be broken by it. -->
+  <link rel="preload" as="script" href="main.dart.js">
+
   <!-- Open the connections the app is about to need while the app itself is
        still downloading, so no request waits on a handshake. www.gstatic.com
        serves the graphics engine and the Firebase client library; the two
-       googleapis hosts are the database and the sign-in. -->
+       googleapis hosts are the database and the sign-in; fonts.gstatic.com is
+       the fallback text font the engine asks for on the way to the first
+       frame. -->
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
   <link rel="dns-prefetch" href="https://www.gstatic.com">
   <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
   <link rel="dns-prefetch" href="https://firestore.googleapis.com">
   <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
   <link rel="dns-prefetch" href="https://identitytoolkit.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="dns-prefetch" href="https://fonts.gstatic.com">
 
   <!-- Boot-screen hand-off. This listener has to be in place before the engine
        can reach its first frame: flutter_bootstrap.js is an async script, so on
