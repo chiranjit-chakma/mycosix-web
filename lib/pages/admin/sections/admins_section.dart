@@ -7,6 +7,7 @@ import '../../../config/mx_type.dart';
 import '../../../firebase/fb_admin.dart';
 import '../../../state/auth_controller.dart';
 import '../../../utils/admin_emails.dart';
+import '../../../utils/admin_team.dart';
 import '../admin_widgets.dart';
 
 /// Admins manager.
@@ -30,10 +31,15 @@ import '../admin_widgets.dart';
 /// * **My admin code** — each admin can change only their own code. There is
 ///   no way (and no rule) to change another administrator's code once it has
 ///   been claimed.
-///
-/// Removing an admin is a deliberate, owner-only action and is done in the
-/// Firebase console (delete the `admins/{uid}` row and its `adminCodes/{email}`
-/// row) - no client can revoke an admin, by design.
+/// * **Removing an admin** - every
+///   row of the roster carries the way out: an admin can give up their own
+///   access ("Leave"), and any admin can take another's back ("Remove") -
+///   all admins are equal, so whoever handed the access out is not the only
+///   one who can withdraw it, and one admin can always step in if another
+///   goes rogue or leaves. A removal cancels the person's code first and then
+///   deletes their grant, so the code they were given cannot let them back in.
+///   The one refusal is the last administrator - see
+///   [AdminTeam.removalBlockedReason].
 class AdminsSection extends StatelessWidget {
   const AdminsSection({super.key});
 
@@ -47,8 +53,8 @@ class AdminsSection extends StatelessWidget {
             title: 'Admins',
             subtitle:
                 'Who can manage the shop. Invite an administrator with an email '
-                'and a secret code just for them; every admin can change only '
-                'their own code.',
+                'and a secret code just for them. Any admin can take another’s '
+                'access back, and every admin can give up their own.',
           ),
           const SizedBox(height: 16),
           _AddAdminCard(),
@@ -58,9 +64,12 @@ class AdminsSection extends StatelessWidget {
           _RosterCard(),
           SizedBox(height: 14),
           Text(
-            'Removing an admin is done in the Firebase console - delete their '
-            'row under admins and adminCodes. Codes are stored so no client can '
-            'read them, and are never shown back on this page.',
+            'Any admin can take another\u2019s access back, and every admin can '
+            'give up their own - from the list above. Removing someone cancels '
+            'their code as well, so the code they were given will not let them '
+            'back in. The last administrator cannot be removed, because that '
+            'would leave nobody able to run the shop. Codes are stored so no '
+            'client can read them, and are never shown back on this page.',
             style: MxType.bodyXs(color: MxColors.stoneLight),
           ),
         ],
@@ -427,8 +436,22 @@ class _MyCodeCardState extends State<_MyCodeCard> {
 /// The roster of every admin grant. Streamed live from Firestore; only admins
 /// can read it (rules), and the reader here is always an admin because the
 /// whole section lives inside the dashboard.
-class _RosterCard extends StatelessWidget {
+///
+/// Every row carries the way out: your own row offers "Leave", and every other
+/// row offers "Remove", so an admin can give up their own access and any admin
+/// can take another's back. Both are the same confirmed two-step removal -
+/// cancel the person's code, then delete their grant.
+class _RosterCard extends StatefulWidget {
   const _RosterCard();
+
+  @override
+  State<_RosterCard> createState() => _RosterCardState();
+}
+
+class _RosterCardState extends State<_RosterCard> {
+  /// The grant being removed right now, so its row shows progress and no
+  /// second removal can start while the writes are in flight.
+  String? _busyUid;
 
   @override
   Widget build(BuildContext context) {
@@ -486,11 +509,12 @@ class _RosterCard extends StatelessWidget {
                   icon: Icons.people_outline_rounded,
                   text:
                       'No admin grants yet. Add the first administrator above, '
-                      'or use the owner-set access code on the sign-in page.',
+                      'then they sign in and enter the code you set for them.',
                 )
               : Column(
                   children: [
-                    for (final doc in docs) _rosterRow(context, doc, myUid),
+                    for (final doc in docs)
+                      _rosterRow(context, doc, myUid, docs.length),
                   ],
                 ),
         );
@@ -502,14 +526,16 @@ class _RosterCard extends StatelessWidget {
     BuildContext context,
     DocumentSnapshot<Map<String, dynamic>> doc,
     String? myUid,
+    int adminCount,
   ) {
     final m = doc.data() ?? const <String, dynamic>{};
     final email = (m['email'] as String?)?.trim();
     final added = m['addedAt'];
     final me = doc.id == myUid;
+    final busy = _busyUid == doc.id;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
       decoration: BoxDecoration(
         color: me ? MxColors.mossTint : Colors.transparent,
         borderRadius: BorderRadius.circular(MxRadius.md),
@@ -518,7 +544,9 @@ class _RosterCard extends StatelessWidget {
       child: Row(
         children: [
           Icon(
-            me ? Icons.account_circle_rounded : Icons.admin_panel_settings_outlined,
+            me
+                ? Icons.account_circle_rounded
+                : Icons.admin_panel_settings_outlined,
             size: 22,
             color: me ? MxColors.moss : MxColors.earth,
           ),
@@ -557,9 +585,186 @@ class _RosterCard extends StatelessWidget {
                 ),
               ),
             ),
+          const SizedBox(width: 4),
+          if (busy)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 14),
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else
+            TextButton.icon(
+              onPressed: _busyUid != null
+                  ? null
+                  : () => _remove(context, doc, myUid, adminCount),
+              icon: Icon(
+                me ? Icons.logout_rounded : Icons.person_remove_alt_1_rounded,
+                size: 16,
+              ),
+              label: Text(me ? 'Leave' : 'Remove'),
+              style: TextButton.styleFrom(
+                foregroundColor: MxColors.danger,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                minimumSize: const Size(0, 36),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
         ],
       ),
     );
+  }
+
+  /// Removes one admin grant: the confirmed, two-step removal.
+  ///
+  /// Step 1 cancels the person's `adminCodes/{email}` row. Step 2 deletes the
+  /// grant. The order matters - while the code survives, the person could type
+  /// it again and be let straight back in - so a code that will not cancel
+  /// stops the whole removal instead of half-completing it. The rules allow
+  /// both writes for any admin, and for the person's own row, so nothing here
+  /// is a capability the caller did not already have.
+  Future<void> _remove(
+    BuildContext context,
+    DocumentSnapshot<Map<String, dynamic>> doc,
+    String? myUid,
+    int adminCount,
+  ) async {
+    if (_busyUid != null) return;
+    final me = doc.id == myUid;
+    final storedEmail = ((doc.data()?['email'] as String?) ?? '').trim();
+    // A legacy grant stores no email. Your own row still has a known address -
+    // the one you signed in with; someone else's row does not, and there is
+    // nothing to cancel under an email we cannot name.
+    final email = storedEmail.isNotEmpty
+        ? storedEmail
+        : (me ? (context.read<AuthController>().user?.email ?? '') : '');
+    final named = adminEmailKey(email);
+
+    final blocked =
+        AdminTeam.removalBlockedReason(isSelf: me, adminCount: adminCount);
+    if (blocked != null) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Cannot remove this admin'),
+          content: Text(blocked),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Got it'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          me
+              ? 'Leave the admin team?'
+              : named.isEmpty
+                  ? 'Remove this admin?'
+                  : 'Remove $named?',
+        ),
+        content: Text(
+          me
+              ? 'Your admin access is removed straight away and your secret '
+                  'code is cancelled, so your old code will not let you back '
+                  'in. The shop, orders and products go back to the normal '
+                  'customer view. Another administrator has to invite you '
+                  'again to bring you back.'
+              : named.isEmpty
+                  ? 'This administrator loses the admin area straight away - '
+                      'the shop, orders, products and settings go back to the '
+                      'normal customer view for them. You can add them again '
+                      'at any time.'
+                  : '$named loses the admin area straight away - the shop, '
+                      'orders, products and settings all go back to the normal '
+                      'customer view for them. Their secret code is cancelled '
+                      'too, so the code they were given will not let them back '
+                      'in. You can invite them again at any time.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(me ? 'Stay an admin' : 'Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: MxColors.danger,
+              foregroundColor: Colors.white,
+            ),
+            child: Text(me ? 'Leave admin' : 'Remove access'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    // Captured before any await: the messenger belongs to the app, so it
+    // survives your own removal tearing this page down.
+    final messenger = ScaffoldMessenger.of(this.context);
+    setState(() => _busyUid = doc.id);
+
+    final codeDocId = AdminTeam.codeDocIdFor(email);
+    if (codeDocId != null) {
+      try {
+        await FbAdmin.adminCodes.doc(codeDocId).delete();
+      } catch (e) {
+        if (mounted) setState(() => _busyUid = null);
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(
+                'Nothing was removed. The secret code could not be cancelled '
+                'first, and leaving it behind would let them walk straight '
+                'back in. ${FbAdmin.friendlyMessage(e)}',
+              ),
+            ),
+          );
+        return;
+      }
+    }
+
+    try {
+      await FbAdmin.admins.doc(doc.id).delete();
+      if (mounted) setState(() => _busyUid = null);
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              me
+                  ? 'You have left the admin team, and your code is cancelled.'
+                  : named.isEmpty
+                      ? 'That administrator has been removed, and their code '
+                          'is cancelled.'
+                      : '$named is no longer an admin, and their code is '
+                          'cancelled.',
+            ),
+          ),
+        );
+    } catch (e) {
+      if (mounted) setState(() => _busyUid = null);
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              'The code was cancelled, but the admin access could not be '
+              'removed. Try again. ${FbAdmin.friendlyMessage(e)}',
+            ),
+          ),
+        );
+    }
   }
 
   String _addedLabel(Object? added,

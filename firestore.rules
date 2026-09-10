@@ -308,8 +308,12 @@ service cloud.firestore {
     //          (!('uid' in the doc)), so a lost invite code can be replaced
     //          before the invitee uses it. Once claimed, only that admin
     //          (case B) may change it.
-    //  * delete - never by clients. Revoking an admin is a console action that
-    //    removes BOTH the admins/{uid} grant and this adminCodes/{email} row.
+    //  * delete - by the row's OWN person (clearing the code set for their own
+    //    email, which is the last step of leaving the admin team), or by any
+    //    admin (taking back someone's access). Deleting this row is what stops
+    //    a removed admin from simply summoning the admin area again: without a
+    //    code of their own, and with their grant gone, the shop box goes back
+    //    to being an ordinary product search for them.
     match /adminCodes/{email} {
       allow read: if false;
       allow create: if isAdmin()
@@ -346,7 +350,8 @@ service cloud.firestore {
                  .affectedKeys().hasOnly(['code', 'updatedAt'])
           )
         );
-      allow delete: if false;
+      allow delete: if isSignedIn()
+        && (email == request.auth.token.email || isAdmin());
     }
 
     // Admin grants. A signed-in user may read their own grant (so the app can
@@ -366,9 +371,20 @@ service cloud.firestore {
     // value is what changed). The security boundary stays server-side: a
     // stranger is still denied unless their OWN email has a code and they
     // submit it. Once the grant exists, the gate opens without any code.
-    // Grants are revoked by the owner through the console (delete the
-    // admins/{uid} row AND its adminCodes/{email} row) - client
-    // updates/deletes stay denied.
+    // A grant is given up in one of two ways, both from the admin area:
+    //   * the admin leaves the team - deleting their OWN grant
+    //     (request.auth.uid == uid); or
+    //   * another admin takes their access back - any current admin may
+    //     delete any grant (isAdmin()). All admins are equal here: there is no
+    //     separate "owner" rank in this project, so the person who handed the
+    //     access out is not the only one who can withdraw it, which also means
+    //     one admin can always step in if another goes rogue or leaves.
+    // Removing a grant is only half the job: the app also deletes the matching
+    // adminCodes/{email} row (allowed above), otherwise the removed person
+    // could simply claim their code again and walk straight back in.
+    // NOT enforced here: "the last admin cannot be removed". Rules cannot
+    // count a collection, so the admin area refuses that case in the app
+    // instead - see AdminTeam.removalBlockedReason.
     match /admins/{uid} {
       allow read: if isSignedIn()
         && (request.auth.uid == uid || isAdmin());
@@ -382,7 +398,11 @@ service cloud.firestore {
         && get(
              /databases/$(database)/documents/adminCodes/$(request.resource.data.email))
              .data.uid == request.auth.uid;
-      allow update, delete: if false;
+      // A grant is never rewritten - only given up. Updating would let an
+      // admin change whose email a grant belongs to, so it stays closed.
+      allow update: if false;
+      allow delete: if isSignedIn()
+        && (request.auth.uid == uid || isAdmin());
     }
 
     // Push-notification registration tokens. Every signed-in user owns exactly
@@ -455,7 +475,14 @@ service cloud.firestore {
           && (!('phoneVerifiedAt' in request.resource.data)
               || request.resource.data.phoneVerifiedAt is timestamp)
         );
-      allow delete: if false;
+      // Closing your own account. Only the customer themselves may do this -
+      // an admin can DISABLE an account (status above) but never erase one, so
+      // a customer's record cannot be destroyed by anyone but its owner. The
+      // app deletes this profile together with the owner's cart, wishlist and
+      // push tokens, then asks Firebase Auth to delete the sign-in itself.
+      // Past orders are deliberately NOT deleted: they are the shop's sales
+      // records, and the profile page says so before the customer confirms.
+      allow delete: if isSignedIn() && request.auth.uid == uid;
     }
 
     // Account cart mirror (carts/{uid}). Owner-only: a customer reads and

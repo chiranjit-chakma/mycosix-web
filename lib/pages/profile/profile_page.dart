@@ -9,8 +9,6 @@ import '../../state/customer_auth_controller.dart';
 import '../../state/saved_location_clear.dart';
 import '../../utils/validators.dart';
 import '../../widgets/google_sign_in_button.dart';
-import '../../widgets/twitter_sign_in_button.dart';
-import '../../widgets/yahoo_sign_in_button.dart';
 import '../../widgets/page.dart';
 import '../../widgets/shell.dart';
 import '../../widgets/sign_out_confirm.dart';
@@ -85,14 +83,9 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _googleSignIn() => _providerSignIn(_auth.signInWithGoogle);
 
-  Future<void> _twitterSignIn() => _providerSignIn(_auth.signInWithTwitter);
-
-  Future<void> _yahooSignIn() => _providerSignIn(_auth.signInWithYahoo);
-
-  /// Runs one social popup sign-in (Google / Twitter / Yahoo) under the
-  /// shared busy state, then sends the customer back wherever they came from
-  /// on success (the account hub appears below when there is no return
-  /// route).
+  /// Runs the Google popup sign-in under the shared busy state, then sends the
+  /// customer back wherever they came from on success (the account hub appears
+  /// below when there is no return route).
   Future<void> _providerSignIn(Future<bool> Function() signIn) async {
     if (_busy) return;
     setState(() => _busy = true);
@@ -220,8 +213,6 @@ class _ProfilePageState extends State<ProfilePage> {
                           setState(() => _obscure = !_obscure),
                       onSubmit: _submit,
                       onGoogleSignIn: _googleSignIn,
-                      onTwitterSignIn: _twitterSignIn,
-                      onYahooSignIn: _yahooSignIn,
                       onSwitchMode: _switchMode,
                     ),
                     // Installed phone-size app users always see where their
@@ -380,8 +371,6 @@ class _AuthPanel extends StatelessWidget {
     required this.onToggleObscure,
     required this.onSubmit,
     required this.onGoogleSignIn,
-    required this.onTwitterSignIn,
-    required this.onYahooSignIn,
     required this.onSwitchMode,
   });
 
@@ -396,8 +385,6 @@ class _AuthPanel extends StatelessWidget {
   final VoidCallback onToggleObscure;
   final Future<void> Function() onSubmit;
   final Future<void> Function() onGoogleSignIn;
-  final Future<void> Function() onTwitterSignIn;
-  final Future<void> Function() onYahooSignIn;
   final void Function(_AuthMode) onSwitchMode;
 
   @override
@@ -407,20 +394,16 @@ class _AuthPanel extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Continue with Google / Twitter / Yahoo - shown for both sign-in and
-        // create-account; reset is reached from a link under the sign-in form.
+        // Continue with Google - shown for both sign-in and create-account;
+        // reset is reached from a link under the sign-in form. Google is the
+        // only social provider: Twitter and Yahoo were never switched on for
+        // this project and were removed rather than left as buttons that could
+        // only ever fail.
         if (mode != _AuthMode.reset) ...[
           GoogleSignInButton(
             onPressed: busy ? null : onGoogleSignIn,
             busy: busy,
           ),
-          const SizedBox(height: 10),
-          TwitterSignInButton(
-            onPressed: busy ? null : onTwitterSignIn,
-            busy: busy,
-          ),
-          const SizedBox(height: 10),
-          YahooSignInButton(onPressed: busy ? null : onYahooSignIn, busy: busy),
           const SizedBox(height: 16),
           Row(
             children: [
@@ -740,10 +723,54 @@ class _AccountHub extends StatelessWidget {
                   label: const Text('Sign out'),
                 ),
               ),
+              const SizedBox(height: 26),
+              const Divider(color: MxColors.line, height: 1),
+              const SizedBox(height: 16),
+              // Closing the account lives here rather than behind another menu,
+              // but it is set apart from Sign out and worded plainly, so it can
+              // never be mistaken for it.
+              Text('Close your account', style: MxType.label(color: MxColors.stone)),
+              const SizedBox(height: 8),
+              Text(
+                'Leaving MYCOSIX? You can delete your account and everything '
+                'saved with it at any time. This cannot be undone.',
+                style: MxType.bodyXs(color: MxColors.stone),
+              ),
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => _confirmDeleteAccount(context),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                  label: const Text('Delete my account'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: MxColors.danger,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  /// Asks the customer to confirm, then closes the account. The dialog owns
+  /// the whole exchange - it stays open and shows the reason if the account
+  /// could not be closed, so a failed attempt never looks like a successful
+  /// one.
+  Future<void> _confirmDeleteAccount(BuildContext context) async {
+    final auth = context.read<CustomerAuthController>();
+    auth.clearMessage();
+    final deleted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _DeleteAccountDialog(auth: auth),
+    );
+    if (deleted != true || !context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Your account has been deleted.')),
     );
   }
 
@@ -763,6 +790,201 @@ class _AccountHub extends StatelessWidget {
       'Dec',
     ];
     return '${months[d.month - 1]} ${d.year}';
+  }
+}
+
+/// The confirmation a customer reads before closing their account, and the
+/// place the account is actually closed from.
+///
+/// Two things it is careful about. First, it says exactly what will go and
+/// exactly what will stay - past orders are kept, because they are the shop's
+/// sales records - so nobody deletes an account without knowing what that
+/// means. Second, it asks for proof of identity in the same breath: the
+/// password for an account that has one, a Google confirmation for an account
+/// that does not. The account is only ever touched after that proof is
+/// accepted, so a wrong password or a closed Google window leaves everything
+/// exactly as it was.
+///
+/// The dialog stays open and shows the reason if a step fails; it closes only
+/// on a confirmed deletion, which is what tells the page to say so.
+class _DeleteAccountDialog extends StatefulWidget {
+  const _DeleteAccountDialog({required this.auth});
+
+  final CustomerAuthController auth;
+
+  @override
+  State<_DeleteAccountDialog> createState() => _DeleteAccountDialogState();
+}
+
+class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
+  final TextEditingController _password = TextEditingController();
+  bool _obscure = true;
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _password.dispose();
+    super.dispose();
+  }
+
+  Future<void> _delete() async {
+    if (_busy) return;
+    final withPassword = widget.auth.confirmsDeletionWithPassword;
+    if (withPassword && _password.text.isEmpty) return;
+    setState(() => _busy = true);
+    final outcome = await widget.auth.deleteAccount(
+      withPassword
+          ? AccountProof.password(_password.text)
+          : const AccountProof.google(),
+    );
+    if (!mounted) return;
+    if (outcome == AccountDeletionOutcome.deleted) {
+      Navigator.of(context).pop(true);
+      return;
+    }
+    // Nothing was deleted (or only part of it was): keep the dialog up and
+    // show why, so the customer can retry or back out.
+    setState(() => _busy = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = widget.auth;
+    final withPassword = auth.confirmsDeletionWithPassword;
+    final email = auth.accountEmail;
+
+    return AlertDialog(
+      backgroundColor: MxColors.creamSoft,
+      titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
+      contentPadding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+      title: const Text('Delete my account?'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (auth.message != null) ...[
+              _FeedbackBanner(kind: 'error', text: auth.message!),
+              const SizedBox(height: 14),
+            ],
+            Text(
+              email.isEmpty
+                  ? 'This closes your MYCOSIX account for good.'
+                  : 'This closes your MYCOSIX account ($email) for good.',
+              style: MxType.bodySm(color: MxColors.charcoal),
+            ),
+            const SizedBox(height: 16),
+            Text('Deleted for good', style: MxType.label(color: MxColors.danger)),
+            const SizedBox(height: 8),
+            const _DeletionPoint(
+              text: 'Your account and your sign-in',
+            ),
+            const _DeletionPoint(
+              text: 'Your name and contact details saved with us',
+            ),
+            const _DeletionPoint(text: 'Your wishlist'),
+            const _DeletionPoint(text: 'Your saved cart, on every device'),
+            const _DeletionPoint(text: 'Order notifications on this device'),
+            const SizedBox(height: 16),
+            Text('Kept', style: MxType.label(color: MxColors.stone)),
+            const SizedBox(height: 8),
+            const _DeletionPoint(
+              text: 'Your past orders. These are the shop’s sales '
+                  'records, so we keep them — but they will no longer be '
+                  'reachable once you are signed out.',
+            ),
+            const SizedBox(height: 18),
+            if (withPassword) ...[
+              Text(
+                'Confirm it is you by entering your password.',
+                style: MxType.bodyXs(color: MxColors.stone),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                key: const Key('delete-account-password'),
+                controller: _password,
+                obscureText: _obscure,
+                enabled: !_busy,
+                autofillHints: const [AutofillHints.password],
+                onChanged: (_) => setState(() {}),
+                onSubmitted: (_) => _busy ? null : _delete(),
+                decoration: InputDecoration(
+                  labelText: 'Password',
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscure
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined,
+                      size: 20,
+                    ),
+                    onPressed: () => setState(() => _obscure = !_obscure),
+                  ),
+                ),
+              ),
+            ] else
+              Text(
+                'You signed in with Google, so you will be asked to confirm '
+                'with Google when you tap Delete.',
+                style: MxType.bodyXs(color: MxColors.stone),
+              ),
+          ],
+        ),
+      ),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Keep my account'),
+        ),
+        FilledButton(
+          key: const Key('delete-account-confirm'),
+          onPressed:
+              _busy || (withPassword && _password.text.isEmpty) ? null : _delete,
+          style: FilledButton.styleFrom(
+            backgroundColor: MxColors.danger,
+            foregroundColor: MxColors.creamSoft,
+          ),
+          child: Text(_busy ? 'Deleting…' : 'Delete my account'),
+        ),
+      ],
+    );
+  }
+}
+
+/// One line of the delete confirmation's two lists. Reads as a sentence, not
+/// a bullet point, because these are read once and never scanned.
+class _DeletionPoint extends StatelessWidget {
+  const _DeletionPoint({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 6, right: 10),
+            child: Container(
+              width: 4,
+              height: 4,
+              decoration: const BoxDecoration(
+                color: MxColors.stoneLight,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              text,
+              style: MxType.bodySm(color: MxColors.charcoalSoft),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

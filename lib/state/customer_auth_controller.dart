@@ -5,7 +5,37 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 import '../firebase/fb.dart';
+import '../services/display_mode.dart';
 import 'cart_sync_controller.dart';
+
+/// How an attempt to close a customer account ended.
+enum AccountDeletionOutcome {
+  /// The sign-in and every record this account owned are gone.
+  deleted,
+
+  /// The customer did not prove it is really them, so nothing was touched.
+  /// [CustomerAuthController.message] says why (a wrong password, a closed
+  /// Google window, and so on).
+  notConfirmed,
+
+  /// Proof was accepted but a step failed part-way. The account may still
+  /// exist; the message says what happened, and the customer can try again
+  /// or sign out and ask for help.
+  failed,
+}
+
+/// The proof a customer offers that they really are the account holder, which
+/// Firebase demands before it will delete a sign-in. An account created with
+/// an email + password confirms with that password; an account created with
+/// Google has no password to give, so it confirms with Google.
+class AccountProof {
+  const AccountProof.password(this.password) : google = false;
+
+  const AccountProof.google() : password = null, google = true;
+
+  final String? password;
+  final bool google;
+}
 
 /// Where a visitor stands on the customer-account ladder.
 enum CustomerAuthStatus {
@@ -44,20 +74,10 @@ CustomerAuthStatus resolveCustomerAuthStatus({
 String friendlyGoogleSignInError(Object error) =>
     friendlyOAuthSignInError(error, method: 'Google');
 
-/// Maps a Twitter/X sign-in failure the same way (Twitter must be switched on
-/// once in the Firebase console before it works).
-String friendlyTwitterSignInError(Object error) =>
-    friendlyOAuthSignInError(error, method: 'Twitter');
-
-/// Maps a Yahoo sign-in failure the same way (Yahoo must be switched on once
-/// in the Firebase console before it works).
-String friendlyYahooSignInError(Object error) =>
-    friendlyOAuthSignInError(error, method: 'Yahoo');
-
-/// Shared core behind the Google / Twitter / Yahoo friendly mappers: a short,
-/// human-safe message naming the provider. The "operation-not-allowed" case
-/// is expected until the owner enables that provider once in the Firebase
-/// console; anything unrecognised falls back to [Fb.friendlyMessage].
+/// The friendly mappers behind Google sign-in: a short, human-safe message
+/// naming the provider. The "operation-not-allowed" case is expected until the
+/// owner enables that provider once in the Firebase console; anything
+/// unrecognised falls back to [Fb.friendlyMessage].
 String friendlyOAuthSignInError(Object error, {required String method}) {
   if (error is FirebaseAuthException) {
     switch (error.code) {
@@ -173,6 +193,9 @@ class CustomerAuthController extends ChangeNotifier implements CartSyncAuth {
       _resolving = false;
       return;
     }
+    // A Google sign-in that left through the full-page redirect is finished
+    // here, before anything else reads the session.
+    unawaited(_completePendingRedirect());
     _authSub = Fb.auth.authStateChanges().listen(
       (u) {
         _user = u;
@@ -190,6 +213,25 @@ class CustomerAuthController extends ChangeNotifier implements CartSyncAuth {
         notifyListeners();
       },
     );
+  }
+
+  /// Completes a Google sign-in that came back through the full-page redirect
+  /// (used when the popup was blocked, and always in an installed app). Web
+  /// only - there is no redirect round trip anywhere else - and a failure is
+  /// reported on the page exactly like a popup failure would be. A launch with
+  /// nothing pending is not an error, so it stays silent.
+  Future<void> _completePendingRedirect() async {
+    if (!kIsWeb || !_backendAvailable) return;
+    try {
+      await Fb.auth.getRedirectResult();
+    } catch (e) {
+      if (e is FirebaseAuthException &&
+          (e.code == 'no-auth-event' || e.code == 'no-current-user')) {
+        return;
+      }
+      _message = friendlyGoogleSignInError(e);
+      notifyListeners();
+    }
   }
 
   /// Creates the customer's own `customers/{uid}` document if it does not
@@ -243,29 +285,17 @@ class CustomerAuthController extends ChangeNotifier implements CartSyncAuth {
     friendly: friendlyGoogleSignInError,
   );
 
-  /// Signs the customer in with their Twitter/X account (a popup window). A
-  /// first Twitter sign-in also creates the account. Expected to answer with
-  /// the friendly "not switched on yet" message until the owner enables
-  /// Twitter once in the Firebase console. Failures surface as a
-  /// customer-safe message.
-  Future<bool> signInWithTwitter() => _signInWithPopup(
-    TwitterAuthProvider(),
-    friendly: friendlyTwitterSignInError,
-  );
-
-  /// Signs the customer in with their Yahoo account (a popup window). A first
-  /// Yahoo sign-in also creates the account. Expected to answer with the
-  /// friendly "not switched on yet" message until the owner enables Yahoo
-  /// once in the Firebase console. Failures surface as a customer-safe
-  /// message.
-  Future<bool> signInWithYahoo() => _signInWithPopup(
-    OAuthProvider('yahoo.com'),
-    friendly: friendlyYahooSignInError,
-  );
-
   /// Shared body of the social popup sign-ins above: opens the provider's
   /// popup, hands the verified session to Firebase, and reports any failure
   /// as a customer-safe message. Returns success.
+  ///
+  /// The popup is not the only way in. In an INSTALLED app (a phone home-screen
+  /// icon, where the window has no browser chrome to host a popup) the redirect
+  /// is used from the start, and on a normal page any popup failure that means
+  /// "the browser would not give us a window" is retried the same way - see
+  /// [_shouldRetryAsRedirect]. Either way the customer ends up signed in; the
+  /// caller is told to stand aside through [redirectInFlight], because the
+  /// whole page is on its way to the provider.
   Future<bool> _signInWithPopup(
     AuthProvider provider, {
     required String Function(Object error) friendly,
@@ -274,29 +304,57 @@ class CustomerAuthController extends ChangeNotifier implements CartSyncAuth {
     _clearFeedback();
     _redirectInFlight = false;
     notifyListeners();
+    if (kIsWeb && isStandaloneDisplay()) {
+      return _redirectSignIn(provider, friendly: friendly);
+    }
     try {
       await Fb.auth.signInWithPopup(provider);
       return true;
     } catch (e) {
-      // On the web a blocked popup - an installed-app window, an in-app
-      // browser, or a strict popup blocker - is not a dead end: retry the
-      // same provider through the full-page redirect flow. The auth-state
-      // listener signs the customer in when the browser returns, so the
-      // caller must leave the navigator alone (see [redirectInFlight]).
-      if (kIsWeb && e is FirebaseAuthException && e.code == 'popup-blocked') {
-        try {
-          await Fb.auth.signInWithRedirect(provider);
-          _redirectInFlight = true;
-          return true;
-        } catch (redirectError) {
-          _message = friendly(redirectError);
-          notifyListeners();
-          return false;
-        }
+      if (kIsWeb && _shouldRetryAsRedirect(e)) {
+        return _redirectSignIn(provider, friendly: friendly);
       }
       _message = friendly(e);
       notifyListeners();
       return false;
+    }
+  }
+
+  /// Sends the browser to the provider and back. Returns true once the browser
+  /// has been sent; the sign-in itself completes on the way back, where the
+  /// auth-state listener picks up the session.
+  Future<bool> _redirectSignIn(
+    AuthProvider provider, {
+    required String Function(Object error) friendly,
+  }) async {
+    try {
+      await Fb.auth.signInWithRedirect(provider);
+      _redirectInFlight = true;
+      return true;
+    } catch (e) {
+      _message = friendly(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Whether a failed popup attempt is worth retrying through the redirect.
+  /// Only the visitor ending it themselves (and a second popup being asked for
+  /// while one is already opening) is taken at face value; everything else is
+  /// a popup the browser would not give us.
+  static bool _shouldRetryAsRedirect(Object error) {
+    if (error is! FirebaseAuthException) return true;
+    switch (error.code) {
+      case 'popup-closed-by-user':
+      case 'cancelled-popup-request':
+      // These are the provider/project setup itself, not the popup: the
+      // redirect would fail the same way, so it is not worth a round trip.
+      case 'operation-not-allowed':
+      case 'unauthorized-domain':
+      case 'account-exists-with-different-credential':
+        return false;
+      default:
+        return true;
     }
   }
 
@@ -410,6 +468,140 @@ class CustomerAuthController extends ChangeNotifier implements CartSyncAuth {
       _message = Fb.friendlyMessage(e);
       notifyListeners();
     }
+  }
+
+  /// True when this account signs in with an email + password, so closing it
+  /// can be confirmed by typing that password. A Google-only account has no
+  /// password to type and is confirmed with Google instead.
+  bool get confirmsDeletionWithPassword =>
+      _user?.providerData.any((p) => p.providerId == 'password') ?? false;
+
+  /// The account's display email, for the confirmation wording.
+  String get accountEmail => _user?.email ?? '';
+
+  /// Closes the customer's own account.
+  ///
+  /// Order matters, and it is chosen so a refusal never leaves a half-deleted
+  /// account behind. Firebase will only delete a sign-in that was used
+  /// recently, so the customer proves who they are FIRST ([proof]); only once
+  /// that is accepted is anything removed. Then the records this account owns
+  /// go, and last the sign-in itself - at which point the customer is signed
+  /// out, because there is no longer an account to be signed in to.
+  ///
+  /// Deliberately NOT deleted: past orders. They are the shop's sales records
+  /// and the customer's own order history is what the shop needs to keep for
+  /// accounting; the confirmation the customer reads says so plainly before
+  /// they agree. Nothing here can be undone.
+  Future<AccountDeletionOutcome> deleteAccount(AccountProof proof) async {
+    if (!_backendAvailable) return AccountDeletionOutcome.notConfirmed;
+    final u = Fb.auth.currentUser;
+    if (u == null) {
+      _message = 'You are not signed in.';
+      notifyListeners();
+      return AccountDeletionOutcome.notConfirmed;
+    }
+    _clearFeedback();
+    notifyListeners();
+
+    // 1. Prove it is really them. Until this succeeds, nothing is touched.
+    //
+    //    The Google proof is a popup, deliberately - NOT a redirect. Firebase's
+    //    redirect round trip comes back through a full page load, and by the
+    //    time it returns there is no way to tell a confirmation-for-deletion
+    //    from an ordinary sign-in, so resuming a deletion after one could
+    //    delete an account on a normal sign-in. A window that will not open is
+    //    reported instead ([_deletionProofError]), never guessed at.
+    try {
+      if (proof.google) {
+        await u.reauthenticateWithPopup(GoogleAuthProvider());
+      } else {
+        final email = u.email;
+        if (email == null || email.isEmpty) {
+          _message =
+              'This account has no email address, so it cannot be confirmed '
+              'here. Please contact us and we will close it for you.';
+          notifyListeners();
+          return AccountDeletionOutcome.notConfirmed;
+        }
+        await u.reauthenticateWithCredential(
+          EmailAuthProvider.credential(
+            email: email,
+            password: proof.password ?? '',
+          ),
+        );
+      }
+    } catch (e) {
+      _message = _deletionProofError(e, google: proof.google);
+      notifyListeners();
+      return AccountDeletionOutcome.notConfirmed;
+    }
+
+    // 2. Remove the records this account owns. Each is the customer's own
+    //    document, and the rules allow only its owner to delete it. A failure
+    //    here is reported rather than swallowed: the sign-in is still intact,
+    //    so the customer can try again.
+    try {
+      final uid = u.uid;
+      await Future.wait(<Future<void>>[
+        Fb.customers.doc(uid).delete(),
+        Fb.carts.doc(uid).delete(),
+        Fb.wishlists.doc(uid).delete(),
+        Fb.db.collection('fcmTokens').doc(uid).delete(),
+      ]);
+    } catch (e) {
+      _message =
+          'We could not remove your saved details, so your account has been '
+          'left as it is. Please try again. (${Fb.friendlyMessage(e)})';
+      notifyListeners();
+      return AccountDeletionOutcome.failed;
+    }
+
+    // 3. The sign-in itself. This is the point of no return: Firebase drops
+    //    the session here, so the app falls back to the signed-out page.
+    try {
+      await u.delete();
+      _clearFeedback();
+      notifyListeners();
+      return AccountDeletionOutcome.deleted;
+    } catch (e) {
+      _message =
+          'Your saved details are gone, but the sign-in itself could not be '
+          'removed. Please try again. (${Fb.friendlyMessage(e)})';
+      notifyListeners();
+      return AccountDeletionOutcome.failed;
+    }
+  }
+
+  /// Turns a failed deletion confirmation into something a customer can act
+  /// on. A wrong password is by far the likeliest case, and a dismissed Google
+  /// window the likeliest for a Google account.
+  String _deletionProofError(Object error, {required bool google}) {
+    if (error is FirebaseAuthException) {
+      switch (error.code) {
+        case 'wrong-password':
+        case 'invalid-credential':
+          return 'That password is not correct. Nothing has been deleted.';
+        case 'popup-closed-by-user':
+        case 'cancelled-popup-request':
+          return 'The Google window was closed, so nothing has been deleted.';
+        case 'popup-blocked':
+          return 'Your browser blocked the Google window. Allow pop-ups for '
+              'this site and try again. Nothing has been deleted.';
+        case 'operation-not-supported-in-this-environment':
+        case 'web-storage-unsupported':
+          return 'Google could not open its confirmation window here. Open '
+              'mycosix.web.app in your browser - not the installed app icon - '
+              'and close your account from there. Nothing has been deleted.';
+        case 'requires-recent-login':
+          return 'For your security please confirm once more, then try again '
+              'straight away. Nothing has been deleted.';
+        case 'network-request-failed':
+          return 'No internet connection, so nothing has been deleted.';
+        default:
+          return '${Fb.friendlyMessage(error)} Nothing has been deleted.';
+      }
+    }
+    return '${Fb.friendlyMessage(error)} Nothing has been deleted.';
   }
 
   void clearMessage() {
