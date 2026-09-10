@@ -7,6 +7,7 @@ import '../../router/routes.dart';
 import '../../state/admin_reveal.dart';
 import '../../state/auth_controller.dart';
 import '../../widgets/brand.dart';
+import '../../widgets/google_sign_in_button.dart';
 import '../pwa/pwa_admin_dock_shell.dart';
 import 'admin_scaffold.dart';
 
@@ -293,8 +294,9 @@ class _NotAuthorizedViewState extends State<_NotAuthorizedView> {
               decoration: InputDecoration(
                 labelText: 'Admin access code',
                 helperText:
-                    'Owner set. Entering the right code grants this account '
-                    'admin access now.',
+                    'Your personal code - an admin set one for your email - or '
+                    'the owner-set master code. The right code grants this '
+                    'account admin access now.',
                 prefixIcon: const Icon(Icons.key_rounded),
                 errorText: _codeError,
               ),
@@ -396,6 +398,22 @@ class _AdminSignInViewState extends State<AdminSignInView> {
     });
   }
 
+  Future<void> _google() async {
+    if (_busy) return;
+    final auth = context.read<AuthController>();
+    auth.clearMessage();
+    setState(() {
+      _busy = true;
+      _inlineError = null;
+    });
+    await auth.signInWithGoogle();
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _inlineError = auth.message;
+    });
+  }
+
   Future<void> _reset() async {
     final auth = context.read<AuthController>();
     final e = _email.text.trim();
@@ -436,11 +454,35 @@ class _AdminSignInViewState extends State<AdminSignInView> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Administrator email + password (set up in Firebase).',
+                'Administrators sign in with a Google account, or the email + '
+                'password the owner created in Firebase.',
                 textAlign: TextAlign.center,
                 style: MxType.bodyXs(color: MxColors.stone),
               ),
               const SizedBox(height: 18),
+              GoogleSignInButton(
+                onPressed: _busy ? null : _google,
+                busy: _busy,
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Divider(color: MxColors.line, height: 1),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Text(
+                      'or',
+                      style: MxType.bodyXs(color: MxColors.stoneLight),
+                    ),
+                  ),
+                  const Expanded(
+                    child: Divider(color: MxColors.line, height: 1),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
               TextFormField(
                 controller: _email,
                 keyboardType: TextInputType.emailAddress,

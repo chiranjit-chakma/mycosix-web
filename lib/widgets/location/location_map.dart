@@ -10,6 +10,7 @@ import '../../config/mx_colors.dart';
 import '../../config/mx_config.dart';
 import '../../config/mx_type.dart';
 import 'location_math.dart';
+import 'location_pan.dart';
 
 /// Interactive map pane for choosing a delivery location.
 ///
@@ -25,7 +26,10 @@ import 'location_math.dart';
 ///    spot under the pin; releasing settles on the nearest whole level,
 ///    exactly like the + / - buttons.
 ///  * Tap anywhere: drops the pin exactly under the finger (no reload).
-///  * Drag the pin: fine-tunes the spot without any reload.
+///  * Drag the pin: fine-tunes the spot; at the map edge the map keeps
+///    sliding under the pin (the paper slides beneath it), so one
+///    continuous drag can carry the spot right across the view and about
+///    a map's width beyond - never a short hop that stops at the border.
 ///  * + / - zoom (world 3 .. street 20) scales around the pin's spot too, so
 ///    the customer can zoom right down to their building without losing it.
 ///    Zooming all the way OUT to level 3 shows whole countries, so a long
@@ -368,7 +372,21 @@ class _LocationMapState extends State<LocationMap> {
         _paperDrag = true;
         _paper = _boundPaper(_paper + details.focalPointDelta);
       } else if (_pinDrag) {
-        _pin = _clampTip(_pin + details.focalPointDelta);
+        // The pin follows the finger across the whole map; once the tip
+        // reaches an edge the paper keeps sliding under it, so one
+        // continuous drag carries the candidate on past the visible map
+        // instead of stopping at the border. Releasing re-centers once.
+        final slide = slidePinDrag(
+          pin: _pin,
+          paper: _paper,
+          fingerDelta: details.focalPointDelta,
+          width: _size.width,
+          height: _size.height,
+          bandX: _paperBandX,
+          bandY: _paperBandY,
+        );
+        _pin = slide.pin;
+        _paper = slide.paper;
       } else if (_paperDrag) {
         _paper = _boundPaper(_paper + details.focalPointDelta);
       }
@@ -377,9 +395,10 @@ class _LocationMapState extends State<LocationMap> {
 
   /// One commit per gesture, whatever it mixed (paper pan, pin grab, pinch):
   /// a pinch that landed on a new zoom level re-anchors the embed around the
-  /// spot now under the pin and emits that candidate; a pure paper pan
-  /// re-centers on the spot under the pin; a pin grab just reports the pin's
-  /// spot. Each path reloads at most once.
+  /// spot now under the pin and emits that candidate; a paper pan or a pin
+  /// grab that slid the map re-centers on the spot under the pin (the pin's
+  /// final candidate); a pin grab that stayed inside the map just reports
+  /// the pin's spot. Each path reloads at most once.
   void _onGestureEnd() {
     final zoomNow = _pinching
         ? _gestureZoom.round().clamp(minZoom, maxZoom).toInt()
@@ -646,8 +665,10 @@ class _LocationMapState extends State<LocationMap> {
   }
 
   String _pillText() {
-    Offset spot = _pin;
-    if (_paperDrag) spot = _pin - _paper;
+    // The candidate is always the geo under the pin tip: pin - paper.
+    // Paper is zero unless the map is sliding (a pan, or a pin drag at
+    // the edge), so this is just the pin spot the rest of the time.
+    final spot = _pin - _paper;
     final (lat, lng) = _clamped(_latAt(spot.dy), _lngAt(spot.dx));
     return '${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}';
   }

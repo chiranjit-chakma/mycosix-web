@@ -24,6 +24,7 @@ import 'state/auth_controller.dart';
 import 'state/cart_sync_controller.dart';
 import 'state/customer_auth_controller.dart';
 import 'services/browser_geo_location_service.dart';
+import 'services/geo_location_service.dart';
 import 'services/whatsapp_order_service.dart';
 import 'services/whatsapp_otp.dart';
 import 'state/cart_controller.dart';
@@ -41,6 +42,11 @@ Future<void> main() async {
   // /shop therefore need the host to fall back to index.html — the SPA server
   // in /tool does this for local preview.
   usePathUrlStrategy();
+
+  // Reading browser storage needs nothing from the network, so it starts here
+  // and is collected once Firebase is up. These two waits used to run one
+  // after the other, and the splash sat on screen for both of them.
+  final prefsFuture = SharedPreferences.getInstance();
 
   // Optional Firebase bootstrap. The site must keep working exactly as before
   // when Firebase is unreachable or not configured, so a failure here only
@@ -72,14 +78,19 @@ Future<void> main() async {
   // Dependencies are assembled here, at the edge of the app. Repositories are
   // behind interfaces, so a Firebase-backed implementation can replace the
   // local ones without touching any widget or controller.
-  final prefs = await SharedPreferences.getInstance();
+  final prefs = await prefsFuture;
 
   final ConfigRepository configRepository;
   final ProductRepository productsRepository;
   final OrderRepository orderRepository;
+  // Completes once the remote site configuration has landed (or failed over to
+  // the bundled defaults); collected together with the saved cart below.
+  Future<void> remoteConfig = Future<void>.value();
   if (Fb.enabled) {
     final firestoreConfig = FirestoreConfigRepository();
-    await firestoreConfig.load(); // remote overrides; defaults on any failure
+    // Started, not awaited here: this read now runs alongside the rest of the
+    // boot instead of holding the whole start-up for up to its own timeout.
+    remoteConfig = firestoreConfig.load();
     configRepository = firestoreConfig;
     // Firestore first, bundled catalogue only as a genuine-failure fallback.
     productsRepository = ResilientProductRepository(
@@ -93,8 +104,19 @@ Future<void> main() async {
     orderRepository = LocalOrderRepository();
   }
 
+  // The catalogue read starts here, before the first frame, and is
+  // deliberately not awaited: the shop and home pages then open with their
+  // products already in hand rather than showing a spinner on a page that is
+  // already on screen. The pages read the controller's own loaded/error state,
+  // and the handler keeps a failed warm-up out of the console.
+  final productsController = ProductsController(productsRepository);
+  productsController.fetchAll().then<void>((_) {}, onError: (Object _) {});
+
   final cartRepository = CartRepository(prefs, productsRepository);
-  await cartRepository.load(); // restore cart + location from browser storage
+  // Restore cart + location from browser storage while the remote
+  // configuration is still arriving: two independent reads, so they are
+  // awaited together rather than one after the other.
+  await Future.wait(<Future<void>>[remoteConfig, cartRepository.load()]);
 
   // Customer accounts + cart sync. Both stay fully dormant when the backend
   // is offline: the site behaves exactly as the guest-only site did.
@@ -108,10 +130,12 @@ Future<void> main() async {
   final siteConfigController = SiteConfigController(
     initial: configRepository.settings,
   )..start();
-  final locationController = LocationController(
-    cartRepository,
-    BrowserGeoLocationService(),
-  );
+  // One shared browser geolocation service: the customer delivery flow and
+  // the admin Settings "use my current location" both read from it. The
+  // web-only implementation is created here at the edge; widgets only ever
+  // see the pure GeoLocationService interface.
+  final browserGeo = BrowserGeoLocationService();
+  final locationController = LocationController(cartRepository, browserGeo);
 
   final cartController = CartController(
     cartRepository,
@@ -154,7 +178,7 @@ Future<void> main() async {
   runApp(
     MxApp(
       cartRepository: cartRepository,
-      productsRepository: productsRepository,
+      productsController: productsController,
       configRepository: configRepository,
       orderRepository: orderRepository,
       customerAuth: customerAuth,
@@ -164,6 +188,7 @@ Future<void> main() async {
       siteConfigController: siteConfigController,
       locationController: locationController,
       orderAlertController: orderAlertController,
+      geoService: browserGeo,
     ),
   );
 }
@@ -173,7 +198,7 @@ class MxApp extends StatelessWidget {
   const MxApp({
     super.key,
     required this.cartRepository,
-    required this.productsRepository,
+    required this.productsController,
     required this.configRepository,
     required this.orderRepository,
     required this.customerAuth,
@@ -183,10 +208,11 @@ class MxApp extends StatelessWidget {
     required this.siteConfigController,
     required this.locationController,
     required this.orderAlertController,
+    required this.geoService,
   });
 
   final CartRepository cartRepository;
-  final ProductRepository productsRepository;
+  final ProductsController productsController;
   final ConfigRepository configRepository;
   final OrderRepository orderRepository;
   final CustomerAuthController customerAuth;
@@ -196,13 +222,17 @@ class MxApp extends StatelessWidget {
   final SiteConfigController siteConfigController;
   final LocationController locationController;
   final OrderAlertController orderAlertController;
+  final GeoLocationService geoService;
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(
-          create: (_) => ProductsController(productsRepository),
+        // The catalogue was already fetched from main() (see the warm-up
+        // there), so it is provided by value like the other app-lifetime
+        // singletons.
+        ChangeNotifierProvider<ProductsController>.value(
+          value: productsController,
         ),
         // App-lifetime singletons created in main() (they cross-reference
         // each other for cart sync), so they are provided by value.
@@ -217,6 +247,10 @@ class MxApp extends StatelessWidget {
         ChangeNotifierProvider<LocationController>.value(
           value: locationController,
         ),
+        // One-shot geolocation for "use my current location" controls
+        // (e.g. the admin Settings shop map). Pure interface here, so no
+        // widget ever imports the web-only implementation.
+        Provider<GeoLocationService>.value(value: geoService),
         // Same controller under the narrow sign-out contract, so the profile
         // page can clear the saved delivery point without importing web-only
         // services (widget tests compile on the VM test runner).

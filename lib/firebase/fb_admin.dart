@@ -54,6 +54,12 @@ class FbAdmin {
       db.collection('orders');
   static CollectionReference<Map<String, dynamic>> get admins =>
       db.collection('admins');
+
+  /// Per-email admin secret codes (the Admins-manager invites and each admin's
+  /// own code). Documents are keyed by the lowercase email; the rules never let
+  /// a client read them - codes are only compared server-side.
+  static CollectionReference<Map<String, dynamic>> get adminCodes =>
+      db.collection('adminCodes');
   static CollectionReference<Map<String, dynamic>> get siteConfig =>
       db.collection('siteConfig');
   static CollectionReference<Map<String, dynamic>> get customers =>

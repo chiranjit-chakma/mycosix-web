@@ -8,6 +8,7 @@ import '../../firebase/fb_admin.dart';
 import '../../state/auth_controller.dart';
 import '../../state/site_config_controller.dart';
 import '../../widgets/brand.dart';
+import 'sections/admins_section.dart';
 import 'sections/analytics_section.dart';
 import 'sections/batches_section.dart';
 import 'sections/content_team_section.dart';
@@ -29,6 +30,7 @@ enum _Area {
   requests,
   products,
   contentTeam,
+  admins,
   settings,
 }
 
@@ -55,6 +57,7 @@ class _AdminScaffoldState extends State<AdminScaffold> {
     (_Area.requests, 'Requests', Icons.forum_outlined),
     (_Area.products, 'Products', Icons.inventory_2_outlined),
     (_Area.contentTeam, 'Content & team', Icons.groups_outlined),
+    (_Area.admins, 'Admins', Icons.admin_panel_settings_outlined),
     (_Area.settings, 'Settings', Icons.settings_outlined),
   ];
 
@@ -177,6 +180,7 @@ class _AdminScaffoldState extends State<AdminScaffold> {
         _Area.requests => const RequestsSection(),
         _Area.products => const ProductsSection(),
         _Area.contentTeam => const ContentTeamSection(),
+        _Area.admins => const AdminsSection(),
         _Area.settings => const SettingsSection(),
       },
     );

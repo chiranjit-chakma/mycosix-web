@@ -9,6 +9,8 @@ import '../../../config/mx_type.dart';
 import '../../../firebase/fb_admin.dart';
 import '../../../models/site_settings.dart';
 import '../../../repositories/config_repository.dart';
+import '../../../services/geo_location_service.dart';
+import '../../../services/location_failure.dart';
 import '../../../widgets/location/location_map.dart';
 import '../admin_widgets.dart';
 
@@ -38,6 +40,8 @@ class _SettingsSectionState extends State<SettingsSection> {
   bool _deliveryEnabled = true;
   double? _shopLat;
   double? _shopLng;
+  bool _locating = false;
+  String? _locStatus;
   List<_TierDraft> _tiers = [];
 
   @override
@@ -84,6 +88,48 @@ class _SettingsSectionState extends State<SettingsSection> {
   }
 
   void _onChanged(String _) => setState(() => _dirty = true);
+
+  /// Places the pin on the device's current location. Reads the shared
+  /// browser geolocation service (registered at the app edge); failures
+  /// map to the same friendly messages the customer delivery flow shows.
+  Future<void> _useCurrentLocation() async {
+    if (_locating) return;
+    final GeoLocationService geo;
+    try {
+      geo = context.read<GeoLocationService>();
+    } catch (_) {
+      setState(() => _locStatus = LocationFailure.unsupported.userMessage);
+      return;
+    }
+    setState(() {
+      _locating = true;
+      _locStatus = null;
+    });
+    try {
+      final pos = await geo.currentPosition();
+      if (!mounted) return;
+      setState(() {
+        _shopLat = pos.lat;
+        _shopLng = pos.lng;
+        _dirty = true;
+        _locating = false;
+        _locStatus =
+            'Pin moved to your current location - check it, then Save.';
+      });
+    } on LocationFailure catch (f) {
+      if (!mounted) return;
+      setState(() {
+        _locating = false;
+        _locStatus = f.userMessage;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _locating = false;
+        _locStatus = LocationFailure.unknown.userMessage;
+      });
+    }
+  }
 
   Future<void> _save() async {
     if (_busy) return;
@@ -236,6 +282,37 @@ class _SettingsSectionState extends State<SettingsSection> {
                 Text('Shop location',
                     style: MxType.bodySm(
                         color: MxColors.charcoal, weight: FontWeight.w700)),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    onPressed: _locating ? null : _useCurrentLocation,
+                    icon: _locating
+                        ? const SizedBox(
+                            width: 15,
+                            height: 15,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Icon(Icons.my_location_rounded, size: 18),
+                    label: Text(
+                        _locating ? 'Locating…' : 'Use my location'),
+                  ),
+                ),
+                if (_locStatus != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      _locStatus!,
+                      style: MxType.bodyXs(
+                        color: _locStatus!.startsWith('Pin moved')
+                            ? MxColors.ok
+                            : MxColors.danger,
+                        weight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 8),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(MxRadius.lg),

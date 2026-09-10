@@ -5,7 +5,7 @@
     "scope": "./",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#F5F1E8",
+    "background_color": "#F2ECDF",
     "theme_color": "#4A5D44",
     "description": "Fresh oyster mushrooms, grown differently by six students. Fresh by Us. Naturally Good.",
     "orientation": "portrait-primary",

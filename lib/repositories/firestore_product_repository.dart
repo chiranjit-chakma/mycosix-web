@@ -144,7 +144,11 @@ class ResilientProductRepository
     return _primary.watchAll();
   }
 
-  static const _timeout = Duration(seconds: 10);
+  // Was 10s. A slow or unreachable Firestore should fall back to the
+  // bundled catalogue quickly rather than leaving the shop on its
+  // spinner; the live watch below replaces the list with Firestore's own
+  // snapshot the moment the connection is there, so nothing is lost.
+  static const _timeout = Duration(seconds: 4);
 
   void _logFallback(Object e) {
     _last = CatalogSource.localFallback;

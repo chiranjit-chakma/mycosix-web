@@ -280,27 +280,110 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin() && secretId == 'adminGate';
     }
 
-    // Admin grants. A signed-in user may read their own grant (so the app can
-    // learn who is an admin). A grant is created ONLY through the owner-set
-    // admin access code: the submitter must be the grant's own uid and the
-    // write must carry exactly one field - the code - which the rules engine
-    // compares against secrets/adminGate (a document no client can read). This
-    // restores the secret-code entry while keeping the security boundary
-    // server-side: a normal customer who discovers the admin URL or tampers
-    // with a request is still denied unless the write carries the correct code.
-    // Once the grant exists, the gate opens without any code. Grants are
-    // revoked by the owner through the console - client updates/deletes stay
-    // denied.
-    match /admins/{uid} {
-      allow read: if isSignedIn() && request.auth.uid == uid;
-      allow create: if isSignedIn()
-        && request.auth.uid == uid
-        && request.resource.data.size() == 1
+    // Per-email admin codes (the per-administrator "secret codes"). Every admin
+    // is invited by email with its own code, stored here keyed by the
+    // (lowercase) verified email, and no client can ever read a code - the
+    // rules engine alone compares a submitted code against the stored one.
+    //
+    //  * create - any admin may open an invite for any email, or set their own
+    //    first code, by writing exactly {code, addedBy, addedAt} (addedBy must
+    //    be the writer). Opening an invite grants nothing by itself: the code
+    //    only matters once the invitee claims it below.
+    //  * update - three narrow cases, each verified here (never client-side):
+    //      (A) CLAIM: the invitee takes their invite. Only the owner of the
+    //          email may write; the write must carry the exact code that was
+    //          set for them (rules compare it - nothing is revealed); and the
+    //          only change is stamping their uid (+ grantedAt). An owner who
+    //          already claimed (uid == self) may run it again, so a network
+    //          hiccup between claim and grant never bricks the invite.
+    //      (B) an ADMIN changes their OWN code: only the email's own admin may
+    //          write, and the only change is {code, updatedAt}. No old code is
+    //          required - the admin session is the proof.
+    //      (C) any admin RESETS an invite code that nobody has claimed yet
+    //          (!('uid' in the doc)), so a lost invite code can be replaced
+    //          before the invitee uses it. Once claimed, only that admin
+    //          (case B) may change it.
+    //  * delete - never by clients. Revoking an admin is a console action that
+    //    removes BOTH the admins/{uid} grant and this adminCodes/{email} row.
+    match /adminCodes/{email} {
+      allow read: if false;
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly(['code', 'addedBy', 'addedAt'])
         && request.resource.data.code is string
         && request.resource.data.code.size() > 0
-        && request.resource.data.code
-             == get(/databases/$(database)/documents/secrets/adminGate)
-                  .data.code;
+        && request.resource.data.code.size() <= 64
+        && request.resource.data.addedBy == request.auth.uid;
+      allow update: if isSignedIn()
+        && request.resource.data.code is string
+        && request.resource.data.code.size() > 0
+        && request.resource.data.code.size() <= 64
+        && (
+          (
+            email == request.auth.token.email
+            && (!('uid' in resource.data)
+                || resource.data.uid == request.auth.uid)
+            && request.resource.data.code == resource.data.code
+            && request.resource.data.diff(resource.data)
+                 .affectedKeys().hasOnly(['uid', 'grantedAt'])
+          )
+          || (
+            email == request.auth.token.email
+            && isAdmin()
+            && request.resource.data.diff(resource.data)
+                 .affectedKeys().hasOnly(['code', 'updatedAt'])
+          )
+          || (
+            isAdmin()
+            && !('uid' in resource.data)
+            && request.resource.data.diff(resource.data)
+                 .affectedKeys().hasOnly(['code', 'updatedAt'])
+          )
+        );
+      allow delete: if false;
+    }
+
+    // Admin grants. A signed-in user may read their own grant (so the app can
+    // learn who is an admin), and any admin may read the whole roster (to show
+    // the admin list in the Admins manager). A grant is created through EITHER
+    // of two server-verified doors:
+    //  * the owner-set admin access code (the master code): the write must
+    //    carry exactly one field - {code} - which the rules engine compares
+    //    against secrets/adminGate (a document no client can read);
+    //  * an email invite: the write must be the submitter's own uid carrying
+    //    only {email, addedAt}, email equal to their verified token email, and
+    //    their uid must already be stamped on adminCodes/<email> - which the
+    //    invitee does above by claiming the per-email code. The invite grant
+    //    doc stays code-free, so no secret ever leaks into the readable roster.
+    // Either door keeps the security boundary server-side: a stranger is still
+    // denied unless a write carries the correct code (master or their own).
+    // Once the grant exists, the gate opens without any code. Grants are
+    // revoked by the owner through the console (delete the admins/{uid} row AND
+    // its adminCodes/{email} row) - client updates/deletes stay denied.
+    match /admins/{uid} {
+      allow read: if isSignedIn()
+        && (request.auth.uid == uid || isAdmin());
+      allow create: if isSignedIn()
+        && request.auth.uid == uid
+        && (
+          (
+            request.resource.data.size() == 1
+            && request.resource.data.code is string
+            && request.resource.data.code.size() > 0
+            && request.resource.data.code
+                 == get(/databases/$(database)/documents/secrets/adminGate)
+                      .data.code
+          )
+          || (
+            request.resource.data.keys().hasOnly(['email', 'addedAt'])
+            && request.resource.data.email is string
+            && request.resource.data.email == request.auth.token.email
+            && exists(
+                 /databases/$(database)/documents/adminCodes/$(request.resource.data.email))
+            && get(
+                 /databases/$(database)/documents/adminCodes/$(request.resource.data.email))
+                 .data.uid == request.auth.uid
+          )
+        );
       allow update, delete: if false;
     }
 

@@ -57,6 +57,50 @@ AdminGateStatus resolveAdminGate({
   return AdminGateStatus.admin;
 }
 
+/// Maps a Google sign-in failure on the ADMIN session to a short, human-safe
+/// message. Kept free of controller state. The "operation-not-allowed" case is
+/// expected until the owner enables Google once in the Firebase console.
+String friendlyAdminGoogleSignInError(Object error) {
+  if (error is FirebaseAuthException) {
+    switch (error.code) {
+      case 'operation-not-allowed':
+        return 'Google sign-in is not switched on for MYCOSIX yet - the owner '
+            'needs to enable it once in the Firebase console. You can still '
+            'sign in with email + password.';
+      case 'popup-closed-by-user':
+        return 'The Google window was closed before sign-in finished. Try '
+            'again when you are ready.';
+      case 'popup-blocked':
+        return 'Your browser blocked the Google window. Allow pop-ups for '
+            'this site and try again.';
+      case 'account-exists-with-different-credential':
+        return 'An account with this email already exists with a password. '
+            'Sign in with your email + password instead.';
+      case 'unauthorized-domain':
+        return 'Google sign-in is not allowed from this web address yet. The '
+            'owner needs to add it in the Firebase console under '
+            'Authentication > Settings > Authorized domains.';
+      case 'web-storage-unsupported':
+        return 'This browser is blocking the storage Google sign-in needs '
+            "(Private/Incognito windows and 'block all cookies' both do "
+            'this). Use a normal window, or allow cookies for this site.';
+      case 'redirect-cancelled-by-user':
+        return 'The Google sign-in window was cancelled. Try again when you '
+            'are ready.';
+      case 'cancelled-popup-request':
+        return 'Another Google sign-in was already opening. Wait a moment and '
+            'try again.';
+      case 'invalid-credential':
+      case 'user-not-found':
+        return 'Google could not confirm this account. Try again, or use '
+            'email + password.';
+      default:
+        return FbAdmin.friendlyMessage(error);
+    }
+  }
+  return FbAdmin.friendlyMessage(error);
+}
+
 /// Auth state + administrator authorisation.
 ///
 /// The single source of truth for "who is signed in" is Firebase Auth. Being
@@ -160,6 +204,37 @@ class AuthController extends ChangeNotifier {
     }
   }
 
+  /// Signs the administrator in with their Google account (a popup window). A
+  /// first Google sign-in also creates the account. When the browser blocks
+  /// the popup the same provider is retried through the full-page redirect and
+  /// the auth-state listener signs the admin in when the browser returns, so
+  /// the caller must not navigate away meanwhile. Google must be switched on
+  /// for the project once in the Firebase console; failures surface as a
+  /// human-safe message on [message].
+  Future<bool> signInWithGoogle() async {
+    if (!_backendAvailable) return false;
+    _message = null;
+    notifyListeners();
+    try {
+      await FbAdmin.auth.signInWithPopup(GoogleAuthProvider());
+      return true;
+    } catch (e) {
+      if (kIsWeb && e is FirebaseAuthException && e.code == 'popup-blocked') {
+        try {
+          await FbAdmin.auth.signInWithRedirect(GoogleAuthProvider());
+          return true;
+        } catch (redirectError) {
+          _message = friendlyAdminGoogleSignInError(redirectError);
+          notifyListeners();
+          return false;
+        }
+      }
+      _message = friendlyAdminGoogleSignInError(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
   /// Sends a password-reset email for [email]. Returns success.
   Future<bool> sendPasswordReset(String email) async {
     if (!_backendAvailable) return false;
@@ -175,21 +250,64 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  /// Restores the server-verified secret-code entry: attempts to create this
-  /// user's `admins/{uid}` grant by submitting [code]. The Firestore rules
-  /// compare the code against the owner-set secrets/adminGate document (which
-  /// no client can read) and refuse unless it matches exactly and the write is
-  /// the submitter's own uid with exactly one field. On success the admin
-  /// grant snapshot watched here flips to exists -> the gate rebuilds into the
-  /// dashboard without any further code. A wrong/missing code (or a secret
-  /// the owner has not configured yet) surfaces as [AdminCodeGrant.incorrectCode]
-  /// and leaves the account non-admin.
+  /// Restores the server-verified secret-code entry: grants this account admin
+  /// access by submitting [code]. Two server-verified doors exist, tried in
+  /// order:
+  ///
+  /// 1. A per-email invite (the Admins manager): if this email has an
+  ///    `adminCodes` row, CLAIMING it with the right code stamps this uid onto
+  ///    that row, then the `admins/{uid}` create is verified against the stamp
+  ///    and records a code-free `{email, addedAt}` grant. A wrong per-email
+  ///    code - or no invite - changes nothing and falls through to ...
+  /// 2. ... the owner-set admin access code (the master code): create
+  ///    `admins/{uid}` = `{code}`; the rules compare the code against the
+  ///    unreadable secrets/adminGate document and refuse unless it matches
+  ///    exactly and the write is the submitter's own uid with exactly one
+  ///    field.
+  ///
+  /// Either way a wrong code (or no code configured yet) surfaces as
+  /// [AdminCodeGrant.incorrectCode] and leaves the account non-admin. On
+  /// success the admin grant snapshot watched here flips to exists -> the gate
+  /// rebuilds into the dashboard without any further code.
   Future<AdminCodeGrant> grantAdminWithCode(String code) async {
     if (!_backendAvailable) return AdminCodeGrant.offline;
     final u = _user;
     if (u == null) return AdminCodeGrant.offline;
     final c = code.trim();
     if (c.isEmpty) return AdminCodeGrant.incorrectCode;
+    final email = (u.email ?? '').trim().toLowerCase();
+    var claimed = false;
+    if (email.isNotEmpty) {
+      // Door 1: per-email invite. Reading adminCodes is denied to every
+      // client, so whether a row exists is discovered by attempting the claim:
+      // it only succeeds when a row exists for this email, the submitted code
+      // matches it, and this uid may stamp itself onto it.
+      try {
+        await FbAdmin.adminCodes.doc(email).update({
+          'code': c,
+          'uid': u.uid,
+          'grantedAt': FieldValue.serverTimestamp(),
+        });
+        claimed = true;
+      } catch (_) {
+        claimed = false;
+      }
+      if (claimed) {
+        try {
+          await FbAdmin.admins.doc(u.uid).set({
+            'email': email,
+            'addedAt': FieldValue.serverTimestamp(),
+          });
+          return AdminCodeGrant.granted;
+        } catch (_) {
+          // The claim landed but the grant create was refused (e.g. a transient
+          // network failure). Re-submitting re-claims (rules allow uid == self)
+          // so this is never a dead end; fall through to door 2 this attempt.
+          claimed = false;
+        }
+      }
+    }
+    // Door 2: owner-set master code.
     try {
       await FbAdmin.admins.doc(u.uid).set({'code': c});
       return AdminCodeGrant.granted;
