@@ -82,10 +82,28 @@ class CartRepository {
   int _cap(Product product) => maxFor(product);
 
   /// Loads catalog + persisted cart/location. Call once at startup.
+  ///
+  /// This is [restoreFromDevice] followed by [refreshCatalog], which is what
+  /// every caller wants; the two are separate only so the app can get the
+  /// saved cart back WITHOUT waiting for the catalog, which is a network read.
   Future<void> load() async {
-    final all = await _products.fetchAll();
-    _catalog = {for (final p in all) p.id: p};
+    restoreFromDevice();
+    await refreshCatalog();
+  }
 
+  /// Brings back the cart and the delivery point this device saved, reading
+  /// only this device. Nothing here touches the network, so it finishes in the
+  /// same breath as the first frame - which is the whole reason it is split
+  /// out of [load].
+  ///
+  /// The lines are restored as they were last saved rather than re-checked
+  /// against the catalog: the catalog is not in hand yet, and checking against
+  /// an empty one would throw the customer's cart away. Everything stored was
+  /// already put through that check when it was written, so the only thing
+  /// that can be stale is a product that has since been deleted or sold out -
+  /// and [refreshCatalog] drops those a moment later, which is why `lines`
+  /// skips a product it cannot resolve.
+  void restoreFromDevice() {
     final cartRaw = _prefs.getString(_cartKey);
     if (cartRaw != null) {
       try {
@@ -95,11 +113,7 @@ class CartRepository {
           final id = entry['productId'] as String;
           final qty = entry['quantity'] as int;
           if (id.isEmpty || qty <= 0) continue;
-          // Sanitise anything a past session may have left behind: unknown or
-          // unavailable products are dropped, quantities are re-clamped.
-          final product = _catalog[id];
-          if (product == null || !product.inStock) continue;
-          next[id] = min(qty, _cap(product));
+          next[id] = qty;
         }
         _items = next;
       } catch (_) {
@@ -117,6 +131,22 @@ class CartRepository {
         _location = null;
       }
     }
+  }
+
+  /// Fetches the live catalog and re-checks the cart against it: unknown or
+  /// unavailable products are dropped and every quantity is clamped to what
+  /// may actually be bought. Safe to call again at any time.
+  Future<void> refreshCatalog() async {
+    final all = await _products.fetchAll();
+    _catalog = {for (final p in all) p.id: p};
+
+    final next = <String, int>{};
+    _items.forEach((id, qty) {
+      final product = _catalog[id];
+      if (product == null || !product.inStock) return;
+      next[id] = min(qty, _cap(product));
+    });
+    _items = next;
   }
 
   Future<void> _persist() async {

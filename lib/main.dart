@@ -113,10 +113,29 @@ Future<void> main() async {
   productsController.fetchAll().then<void>((_) {}, onError: (Object _) {});
 
   final cartRepository = CartRepository(prefs, productsRepository);
-  // Restore cart + location from browser storage while the remote
-  // configuration is still arriving: two independent reads, so they are
-  // awaited together rather than one after the other.
-  await Future.wait(<Future<void>>[remoteConfig, cartRepository.load()]);
+  // Bring the saved cart back from this device. It is a browser-storage read,
+  // so it is done before the first frame - and it is the only part of the
+  // start-up that the first frame has to have, because it decides whether the
+  // header shows a filled basket. The CATALOGUE is not fetched here: that is a
+  // network read, it used to sit in front of the first frame, and it was the
+  // single biggest thing standing between a tap and the app appearing. It is
+  // fetched by CartController.refreshCatalog() further down, which re-checks
+  // the cart against it the moment it lands.
+  cartRepository.restoreFromDevice();
+
+  // The remote site configuration is deliberately NOT waited for. It is a
+  // Firestore round trip, and it sat directly in front of the first frame -
+  // it was most of the wait on a launch. Nothing the first screen shows needs
+  // it: SiteConfigController (below) subscribes to the very same
+  // `siteConfig/public` document the moment it is created, so the live values
+  // still arrive a few hundred milliseconds later, and everything that reads
+  // them - the cart's delivery quote included - is listening and recomputes
+  // when they do. Until then the app paints the bundled defaults, which is
+  // what it painted for the first moments of every launch before this too.
+  // The handler is attached rather than left dangling so a failed read (which
+  // the repository already swallows and falls back from) can never surface as
+  // an unhandled error.
+  remoteConfig.then<void>((_) {}, onError: (Object _) {});
 
   // Customer accounts + cart sync. Both stay fully dormant when the backend
   // is offline: the site behaves exactly as the guest-only site did.
@@ -143,6 +162,13 @@ Future<void> main() async {
     siteConfig: siteConfigController,
     location: locationController,
   );
+  // The live catalogue, in the background. This is the read that used to hold
+  // the first frame; now the app is already on screen while it runs, and the
+  // cart is re-clamped and repainted the moment it lands.
+  cartController
+      .refreshCatalog()
+      .then<void>((_) {}, onError: (Object _) {});
+
   final cartSync = CartSyncController(
     repository: cartRepository,
     cart: cartController,

@@ -132,6 +132,15 @@ class CartController extends ChangeNotifier {
 
   Future<void> hydrate() => _repo.load();
 
+  /// Brings the live catalogue in and re-checks the cart against it. At
+  /// start-up the saved cart is already back (the repository restores it from
+  /// the device alone), so this runs in the background and repaints when the
+  /// catalogue lands rather than holding the first frame for a network read.
+  Future<void> refreshCatalog() async {
+    await _repo.refreshCatalog();
+    notifyListeners();
+  }
+
   /// Merges the account cart into the local cart on the customer's explicit
   /// request (the cart page's load button). Every product is topped up to the
   /// HIGHER of its two quantities - never summed - so loading the same saved

@@ -33,32 +33,75 @@
        in dark mode - canvas for as long as that request took, and then jumped;
        that jump is the flash on open. The colour is MxColors.cream (#F2ECDF),
        the app's own page background, and manifest.json carries the same value,
-       so the OS launch screen and the loaded app are one continuous surface.
+       so the OS launch screen, the loading screen and the loaded app are one
+       continuous surface.
 
-       There is deliberately NOTHING drawn on that surface. The opening used to
-       put a MYCOSIX wordmark, a "MUSHROOMS" line and a sweeping progress bar
-       here, and then fade the whole thing away once the app had painted. On a
-       phone that made three different pictures in a row - the operating
-       system's own launch screen, then the wordmark screen, then the app - so
-       the app looked like it flashed something up, took it away again, and
-       only then opened. An empty cream field cannot come and go: whatever the
-       app paints arrives on the colour that was already there. -->
+       The screen carries the shop's name. It is the same wordmark the app
+       itself shows in its header, drawn on the same cream, so opening the app
+       reads as one screen arriving rather than as two pictures swapping. -->
   <style>
     :root { color-scheme: light; }
     html, body { margin: 0; padding: 0; background: #F2ECDF; }
     #mx-boot {
       position: fixed;
       inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
       background: #F2ECDF;
+      color: #2E332D;
+      font-family: 'Manrope', system-ui, sans-serif;
+      text-align: center;
       pointer-events: none;
       z-index: 9999;
     }
+    #mx-boot .mark {
+      font-family: 'Fraunces', Georgia, serif;
+      font-size: 26px;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      color: #4A5D44;
+    }
+    #mx-boot .sub {
+      font-size: 12px;
+      letter-spacing: 0.42em;
+      text-transform: uppercase;
+      color: #8A7D6C;
+    }
+    #mx-boot .bar {
+      width: 132px;
+      height: 2px;
+      background: #E4DCCB;
+      overflow: hidden;
+    }
+    #mx-boot .bar i {
+      display: block;
+      width: 42%;
+      height: 100%;
+      background: #4A5D44;
+      animation: mxboot 1.1s ease-in-out infinite;
+    }
+    @keyframes mxboot {
+      0% { transform: translateX(-110%); }
+      55% { transform: translateX(160%); }
+      100% { transform: translateX(260%); }
+    }
+
+    /* The loading screen holds until the app is genuinely ready. There is no
+       timer that takes it away early: fading it out on a slow phone would
+       leave a bare cream field for the last stretch of the wait, which is the
+       "it opens, then something goes, then it opens again" the shop asked us
+       to stop - and it would buy nothing, because on a fast phone the app's
+       own first frame takes the screen first anyway. */
+    #mx-boot.gone { display: none; }
 
     /* Flutter's own engine elements. The app paints every pixel of these, so
        they are transparent in normal use - but "transparent" leaves the
        browser's default white showing for the instants when the engine has a
        view and has not painted into it yet (which is exactly the moment the
-       boot surface hands over). Giving them the page colour as well means
+       loading screen hands over). Giving them the page colour as well means
        every layer of the stack is cream from the first paint, so there is no
        white left anywhere for a flash to come from. */
     flutter-view,
@@ -70,8 +113,8 @@
 
   <!-- Open the connections the app is about to need while the app itself is
        still downloading, so no request waits on a handshake. www.gstatic.com
-       serves the graphics engine; the two googleapis hosts are the database
-       and the sign-in. -->
+       serves the graphics engine and the Firebase client library; the two
+       googleapis hosts are the database and the sign-in. -->
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
   <link rel="dns-prefetch" href="https://www.gstatic.com">
   <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
@@ -79,22 +122,26 @@
   <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
   <link rel="dns-prefetch" href="https://identitytoolkit.googleapis.com">
 
-  <!-- Boot-surface hand-off. This listener has to be in place before the
-       engine can reach its first frame: flutter_bootstrap.js is an async
-       script, so on a warm cache it can run before the parser reaches a
-       <script> further down the page - which would leave the surface on screen
-       for good. Registering it here, ahead of everything, removes that race.
-       The removal is a single step with nothing to animate: the surface is the
-       same colour as the app underneath it, so taking it away cannot be seen. -->
+  <!-- Boot-screen hand-off. This listener has to be in place before the engine
+       can reach its first frame: flutter_bootstrap.js is an async script, so on
+       a warm cache it can run before the parser reaches a <script> further down
+       the page - which would leave the screen on screen for good. Registering
+       it here, ahead of everything, removes that race.
+
+       The hand-off itself is one step with nothing to animate: the wrapper is
+       the same colour as the app underneath it, so taking it away cannot be
+       seen. The loading screen goes at the exact instant the app's own first
+       frame arrives, so the name never blinks out and back - and it is never
+       taken away before then, so it cannot leave a bare field behind either. -->
   <script>
     (function () {
       function drop() {
-        var el = document.getElementById('mx-boot');
-        if (el && el.parentNode) el.parentNode.removeChild(el);
+        var b = document.getElementById('mx-boot');
+        if (b && b.parentNode) b.parentNode.removeChild(b);
       }
       window.addEventListener('flutter-first-frame', drop);
       // Belt and braces: if the first frame never arrives (a broken build, a
-      // blocked engine download), the surface must not be what the visitor is
+      // blocked engine download), the wrapper must not be what the visitor is
       // left staring at. It is the page colour and every layer under it is the
       // page colour too, so dropping it late is invisible - and it means this
       // div can never be the reason the app is not on screen.
@@ -104,7 +151,11 @@
 
 </head>
 <body>
-  <div id="mx-boot" role="status" aria-label="Loading MYCOSIX MUSHROOMS"></div>
+  <div id="mx-boot" role="status" aria-label="Loading MYCOSIX MUSHROOMS">
+    <div class="mark">MYCOSIX</div>
+    <div class="sub">Mushrooms</div>
+    <div class="bar"><i></i></div>
+  </div>
 
   <script src="mx-always-fresh.js"></script>
 

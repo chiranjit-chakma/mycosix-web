@@ -24,22 +24,22 @@ class DefaultFirebaseOptions {
     appId: '1:578755322711:web:8c5e27f0a3399549da9412',
     messagingSenderId: '578755322711',
     projectId: 'mycosix',
-    // The sign-in popup must be served from the SAME site as the app.
+    // This MUST stay `mycosix.firebaseapp.com`. It is not a preference; it is
+    // the one value Google will accept for this project's sign-in.
     //
-    // This used to be `mycosix.firebaseapp.com`, which is a different site
-    // from `mycosix.web.app`, so the sign-in popup ran cross-site. Browsers
-    // now block or partition storage between sites (Chrome's third-party
-    // cookie restrictions, Safari's ITP), and the popup hands the finished
-    // sign-in back through exactly that storage - so Google sign-in worked
-    // when it was first set up and then quietly stopped, which is precisely
-    // what the owner reported. Firebase Hosting serves the sign-in handler at
-    // /__/auth/* on our own domain (reserved paths, not part of the app), and
-    // mycosix.web.app is already in the project's Authorized domains, so
-    // pointing authDomain here makes the popup same-origin and immune to
-    // cross-site storage blocking. It also works for local development, where
-    // the page is on localhost (also an authorized domain) and the popup is
-    // cross-site exactly as before.
-    authDomain: 'mycosix.web.app',
+    // authDomain is where the sign-in popup is served from AND the host Google
+    // is told to send the answer back to (the OAuth `redirect_uri`, always
+    // `https://<authDomain>/__/auth/handler`). That address has to be listed on
+    // the project's OAuth client (Google Cloud console -> APIs & Services ->
+    // Credentials -> the Web client), and the client only lists
+    // `mycosix.firebaseapp.com/__/auth/handler`. Pointing authDomain at
+    // `mycosix.web.app` therefore made Google refuse every sign-in with
+    // "Access blocked: This app's request is invalid / Error 400:
+    // redirect_uri_mismatch" - measured, and named by Google, on 2026-09-10.
+    // Adding the web.app address to that OAuth client is the only way the
+    // web.app domain could ever be used, and that is a Google Cloud console
+    // change, not a code change.
+    authDomain: 'mycosix.firebaseapp.com',
     storageBucket: 'mycosix.firebasestorage.app',
     measurementId: 'G-37T65858QG',
   );
